@@ -1,0 +1,54 @@
+server:
+  port: 8080
+  tomcat:
+    max-swallow-size: 10MB
+    max-http-form-post-size: 10MB
+  max-http-header-size: 10KB
+
+
+spring:
+  application:
+    name: zhixue-selection
+  profiles:
+    active: mysql
+
+
+  web:
+    resources:
+      static-locations: classpath:/static/
+      # 开发/演示环境禁用静态资源缓存，避免改了前端却仍加载旧文件
+      cache:
+        cachecontrol:
+          no-store: true
+          no-cache: true
+          must-revalidate: true
+          max-age: 0
+
+  # JPA
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    defer-datasource-initialization: true
+
+
+  mvc:
+    static-path-pattern: /**
+
+
+---
+# MySQL 数据库配置（使用 --spring.profiles.active=mysql 启用）
+spring:
+  config:
+    activate:
+      on-profile: mysql
+  datasource:
+    url: jdbc:mysql://localhost:3306/zhixue?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ghy702400
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智学选课 · 大学生选课平台</title>
+<link rel="stylesheet" href="styles.css?v=1791044811">
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true"><symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 20z"/><path d="M9.5 21.5v-7h5v7"/></symbol><symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></symbol><symbol id="i-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1z"/><path d="M16 4.5h2A1.5 1.5 0 0 1 19.5 6v13A1.5 1.5 0 0 1 18 20.5H6A1.5 1.5 0 0 1 4.5 19V6A1.5 1.5 0 0 1 6 4.5h2"/><path d="M8.5 11h7M8.5 15h4.5"/></symbol><symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M8 2.5v4M16 2.5v4M3 9.5h18"/></symbol><symbol id="i-award" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M8.5 14.2 7 21.5l5-2.6 5 2.6-1.5-7.3"/></symbol><symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/></symbol><symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17.5H6.5A2.5 2.5 0 0 0 4 22z"/><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/></symbol><symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h6a4 4 0 0 1 3.5 2 4 4 0 0 1 3.5-2h6v14h-6a3 3 0 0 0-3.5 2 3 3 0 0 0-3.5-2h-6z"/><path d="M12 6v14"/></symbol><symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 2.5 7.5 12 12.5l9.5-5z"/><path d="M2.5 12.5 12 17.5l9.5-5"/><path d="M2.5 17 12 22l9.5-5"/></symbol><symbol id="i-flask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5v6.2L4.2 18a2 2 0 0 0 1.7 3h12.2a2 2 0 0 0 1.7-3l-5.3-9.3V2.5"/><path d="M8 2.5h8M6.5 15h11"/></symbol><symbol id="i-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.2 12.3 2.6 2.6 5-5.4"/></symbol><symbol id="i-x-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></symbol><symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-1.8a3.7 3.7 0 0 0-3.7-3.7H6.7A3.7 3.7 0 0 0 3 18.2V20"/><circle cx="9.5" cy="7.5" r="3.7"/><path d="M21 20v-1.8a3.7 3.7 0 0 0-2.8-3.6M15.4 4a3.7 3.7 0 0 1 0 7"/></symbol><symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 20.5v-1.9a4.1 4.1 0 0 0-4.1-4.1H9.1A4.1 4.1 0 0 0 5 18.6v1.9"/><circle cx="12" cy="7.5" r="4.1"/></symbol><symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.5H5.5A2 2 0 0 0 3.5 6.5v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V13"/><path d="M17.6 3.4a1.9 1.9 0 0 1 2.7 2.7L12 14.4l-3.6.9.9-3.6z"/></symbol><symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11.5A8.5 8.5 0 0 0 6.2 6.3L3.5 9"/><path d="M3.5 4.5V9H8"/><path d="M3.5 12.5a8.5 8.5 0 0 0 14.3 5.2l2.7-2.7"/><path d="M20.5 19.5V15H16"/></symbol><symbol id="i-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="2.5" width="15" height="19" rx="1.8"/><path d="M9.5 21.5v-4h5v4"/><path d="M8.5 7h1M8.5 11h1M8.5 15h1M14.5 7h1M14.5 11h1M14.5 15h1"/></symbol><symbol id="i-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2.5H6.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8z"/><path d="M14 2.5V8h5.5"/><path d="M8.5 13h7M8.5 16.5h4.5"/></symbol><symbol id="i-coins" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M18.2 10.9a5.5 5.5 0 1 1-7.3 7.3"/><path d="M7 6.5h1.2v4M10 14.5l1 1a1.4 1.4 0 0 1-2 2"/></symbol><symbol id="i-hourglass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5h12M6 21.5h12"/><path d="M17 2.5v4.2a2 2 0 0 1-.6 1.4L12 12.5l-4.4-4.4A2 2 0 0 1 7 6.7V2.5"/><path d="M7 21.5v-4.2a2 2 0 0 1 .6-1.4L12 11.5l4.4 4.4a2 2 0 0 1 .6 1.4v4.2"/></symbol><symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></symbol><symbol id="i-graduation-cap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 9.5 12 5 2 9.5l10 4.5z"/><path d="M6 11.7v4.6c0 1.5 2.7 2.7 6 2.7s6-1.2 6-2.7v-4.6"/><path d="M21.5 10v5"/></symbol><symbol id="i-bar-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V12M10 20V4M16 20v-6M22 20H2"/></symbol><symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2"/></symbol><symbol id="i-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10.2c0 5.8-8 11.3-8 11.3s-8-5.5-8-11.3a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.8"/></symbol><symbol id="i-alert-triangle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 2.6 17.4A2 2 0 0 0 4.3 20.4h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5M12 17h.01"/></symbol><symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.3A8.7 8.7 0 1 1 9.7 3.5a6.8 6.8 0 0 0 10.8 10.8z"/></symbol><symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2 12h2.2M19.8 12H22M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></symbol><symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8.5a6 6 0 0 0-12 0c0 6.5-2.5 8.5-2.5 8.5h17S18 15 18 8.5"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol><symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 4.6 1.6 1.6 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></symbol><symbol id="i-palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5a9.5 9.5 0 0 0 0 19 2 2 0 0 0 2-2 2 2 0 0 1 2-2h1.5a4 4 0 0 0 4-4 9.5 9.5 0 0 0-9.5-11z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15" cy="8" r="1.2"/><circle cx="17" cy="12.5" r="1.2"/></symbol><symbol id="i-log-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 21H5.5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 16.5 5-4.5-5-4.5"/><path d="M21 12H9"/></symbol><symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 19a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2H7l1.8-2.7h6.4L17 6.5h2.5a2 2 0 0 1 2 2z"/><circle cx="12" cy="13.2" r="3.8"/></symbol><symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5v13M5.5 12h13"/></symbol><symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7.5"/><path d="m20.5 20.5-4.5-4.5"/></symbol><symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 12.5H16l-1.8 2.8H9.8L8 12.5H2.5"/><path d="M6.2 4.8 2.5 12.5V18a2 2 0 0 0 2 2h15a2 2 0 0 0 2-2v-5.5l-3.7-7.7A2 2 0 0 0 16 3.5H8a2 2 0 0 0-1.8 1.3z"/></symbol><symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3.5"/><path d="m7.5 11 4.5 4.5L16.5 11"/><path d="M12 15.5V3"/></symbol><symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 13.7 8.5 18.5 10.2 13.7 12 12 17l-1.7-5L5.5 10.2 10.3 8.5z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></symbol><symbol id="i-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6.5a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.6-3.6a6 6 0 0 1-7.9 7.9l-6.7 6.7a2.1 2.1 0 0 1-3-3l6.7-6.7a6 6 0 0 1 7.9-7.9z"/></symbol><symbol id="i-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m11.5 19-7-7 7-7"/></symbol><symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19.5v-14"/><path d="m5 12 7-7 7 7"/></symbol><symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M7.5 10.5V7a4.5 4.5 0 0 1 9 0v3.5"/></symbol><symbol id="i-unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M7.5 10.5V7a4.5 4.5 0 0 1 8.7-1.7"/></symbol><symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.7l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol><symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol><symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.9 17.9A10 10 0 0 1 12 20c-7 0-10-8-10-8a18 18 0 0 1 5-6M9.9 4.2A9 9 0 0 1 12 4c7 0 10 8 10 8a18 18 0 0 1-2.2 3.2m-6.7-1a3 3 0 1 1-4.2-4.2"/><path d="M2 2l20 20"/></symbol><symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m18 6-12 12M6 6l12 12"/></symbol><symbol id="i-party" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5.8 11.3 2 22l10.7-3.8"/><path d="M4 3h.01M22 8h.01M15 2h.01M22 20h.01"/><path d="M11 13 22 2"/></symbol><symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></symbol><symbol id="i-help-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.6"/><path d="M12 17h.01"/></symbol><symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21.5 12 17l-7 4.5V4.5A1.5 1.5 0 0 1 6.5 3h11A1.5 1.5 0 0 1 19 4.5z"/></symbol><symbol id="i-cart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.2l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h9.2a1.6 1.6 0 0 0 1.6-1.3l1.4-7.2H5.6"/></symbol><symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5h17"/><path d="M8.5 6.5V4.8A1.3 1.3 0 0 1 9.8 3.5h4.4a1.3 1.3 0 0 1 1.3 1.3v1.7"/><path d="M18.5 6.5 17.6 20a1.5 1.5 0 0 1-1.5 1.4H7.9A1.5 1.5 0 0 1 6.4 20L5.5 6.5"/><path d="M10 10.5v6M14 10.5v6"/></symbol><symbol id="i-message-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15.5a2 2 0 0 1-2 2H8l-5 4V5.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol><symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3.5"/><path d="m7.5 8 4.5-4.5L16.5 8"/><path d="M12 3.5v11"/></symbol><symbol id="i-megaphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></symbol></svg>
+
+<!-- 登录页 -->
+<div id="auth-page" class="auth-page">
+  <div class="auth-bg"></div>
+  <button id="auth-theme-toggle" class="topbar-icon-btn" style="position:absolute;top:20px;right:20px;z-index:2;background:rgba(255,255,255,0.2);color:#fff;backdrop-filter:blur(10px);" title="切换主题"><svg class="icon"><use href="#i-moon"/></svg></button>
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-icon">智</div>
+      <div>
+        <h1>智学选课</h1>
+        <p>大学生课程管理平台</p>
+      </div>
+    </div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">登录</button>
+      <button class="auth-tab" data-tab="register">注册</button>
+    </div>
+
+    <!-- 登录表单 -->
+    <form id="login-form" class="auth-form">
+      <div class="form-group">
+        <label>账号</label>
+        <input type="text" id="login-no" placeholder="学号/工号/管理员账号" required>
+      </div>
+      <div class="form-group">
+        <label>密码</label>
+        <div style="position:relative"><input type="password" id="login-password" placeholder="请输入密码" required style="background:#0f172a;color:#fff;-webkit-text-fill-color:#fff;"><button type="button" class="pwd-eye" onclick="togglePwd('login-password', this)"><svg class="icon"><use href="#i-eye"/></svg></button></div>
+      </div>
+      <div class="remember-row">
+        <label class="remember-label"><input type="checkbox" id="remember-me"> 记住密码</label>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">登 录</button>
+      <div class="quick-login">
+        <span class="quick-login-label">快捷登录：</span>
+        <button type="button" class="btn btn-outline btn-sm quick-btn" data-role="student">学生</button>
+        <button type="button" class="btn btn-outline btn-sm quick-btn" data-role="teacher">老师</button>
+        <button type="button" class="btn btn-outline btn-sm quick-btn" data-role="admin">管理员</button>
+      </div>
+      <div class="auth-tip">
+        密码均为 <b>123456</b>
+      </div>
+    </form>
+
+    <!-- 注册表单（仅学生） -->
+    <form id="register-form" class="auth-form" style="display:none">
+      <div class="form-group">
+        <label>姓名</label>
+        <input type="text" id="reg-name" placeholder="请输入姓名" required>
+      </div>
+      <div class="form-group">
+        <label>学号</label>
+        <input type="text" id="reg-no" placeholder="请输入学号" required>
+      </div>
+      <div class="form-group">
+        <label>密码</label>
+        <div style="position:relative"><input type="password" id="reg-password" placeholder="请输入密码" required style="background:#0f172a;color:#fff;-webkit-text-fill-color:#fff;"><button type="button" class="pwd-eye" onclick="togglePwd('reg-password', this)"><svg class="icon"><use href="#i-eye"/></svg></button></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>学院</label>
+          <select id="reg-college">
+            <option>计算机学院</option>
+            <option>信息学院</option>
+            <option>经管学院</option>
+            <option>外语学院</option>
+            <option>数学学院</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>年级</label>
+          <select id="reg-grade">
+            <option>2021</option>
+            <option>2022</option>
+            <option>2023</option>
+            <option>2024</option>
+            <option>2025</option>
+            <option>2026</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>专业</label>
+        <input type="text" id="reg-major" placeholder="如：软件工程" required>
+      </div>
+      <div class="form-group">
+        <label>班级</label>
+        <input type="text" id="reg-class" placeholder="如：软工2301班">
+      </div>
+      <div class="form-group">
+        <label>联系电话</label>
+        <input type="text" id="reg-phone" placeholder="请输入手机号">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">注 册</button>
+    </form>
+  </div>
+</div>
+
+<!-- 主应用 -->
+<div id="app" class="app" style="display:none">
+  <!-- 侧边栏 -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">智</div>
+      <span>智学选课</span>
+      <div class="sidebar-toggle" id="sidebar-toggle">‹</div>
+    </div>
+    <nav class="sidebar-nav" id="sidebar-nav">
+      <!-- 导航项按角色动态生成 -->
+    </nav>
+    <div class="sidebar-footer">
+      <div class="time-widget" id="time-widget">
+        <div class="time-widget-time" id="tw-time">00:00:00</div>
+        <div class="time-widget-date" id="tw-date">2026年01月01日</div>
+        <div class="time-widget-week" id="tw-week">星期一</div>
+      </div>
+      <div class="round-info" id="round-info"></div>
+      <button id="reset-btn" class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px">重置演示数据</button>
+    </div>
+  </aside>
+
+  <!-- 主内容区 -->
+  <main class="main">
+    <header class="topbar">
+      <div class="page-title" id="page-title">首页</div>
+      <div class="topbar-right">
+        <button id="theme-toggle" class="topbar-icon-btn" title="切换主题"><svg class="icon"><use href="#i-moon"/></svg></button>
+        <div style="position:relative">
+          <button id="notif-btn" class="topbar-icon-btn" title="通知">
+            <svg class="icon"><use href="#i-bell"/></svg><span class="notif-dot" id="notif-dot"></span>
+          </button>
+          <div class="user-dropdown" id="notif-panel">
+            <div class="notif-header">
+              <span>通知中心</span>
+              <span style="font-size:12px;color:var(--primary);cursor:pointer" id="notif-clear">全部已读</span>
+            </div>
+            <div id="notif-list">
+              <div class="notif-item"><div class="notif-item-title">正在加载公告…</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="user-info" style="position:relative;cursor:pointer" id="user-menu-btn">
+          <div class="avatar" id="user-avatar">👤</div>
+          <div class="user-detail">
+            <span class="user-name" id="user-name">同学</span>
+            <span class="user-meta" id="user-meta">学号</span>
+          </div>
+          <div class="user-dropdown" id="user-dropdown">
+            <div class="user-dropdown-item" id="menu-profile"><svg class="icon"><use href="#i-user"/></svg> 个人信息</div>
+            <div class="user-dropdown-item" id="menu-settings"><svg class="icon"><use href="#i-settings"/></svg> 账号设置</div>
+            <div class="user-dropdown-item" id="menu-avatar"><svg class="icon"><use href="#i-palette"/></svg> 更换头像</div>
+            <div class="user-dropdown-divider"></div>
+            <div class="user-dropdown-item" id="logout-btn" style="color:var(--danger)"><svg class="icon"><use href="#i-log-out"/></svg> 退出登录</div>
+          </div>
+        </div>
+        <button id="logout-btn2" class="btn btn-ghost btn-sm">退出</button>
+      </div>
+    </header>
+
+    <div class="content" id="content">
+      <!-- 页面内容动态注入 -->
+    </div>
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- 回到顶部 -->
+<button class="back-to-top" id="back-to-top" title="回到顶部"><svg class="icon"><use href="#i-arrow-up"/></svg></button>
+
+<!-- 自定义确认弹窗 -->
+<div id="confirm-mask" style="display:none"></div>
+
+<script src="app.js?v=1791044811"></script>
+
+<!-- 个人信息模态框 -->
+<div class="modal-mask" id="profile-mask" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header"><h3><svg class="icon"><use href="#i-user"/></svg> 个人信息</h3><button class="modal-close" onclick="closeModal('profile-mask')"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="modal-body">
+      <div id="profile-form">
+        <div style="margin-bottom:16px;text-align:center">
+          <div id="profile-avatar-preview" style="width:80px;height:80px;font-size:36px;margin:0 auto 8px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;overflow:hidden">👤</div>
+          
+        </div>
+        <div class="form-group"><label>姓名</label><input type="text" id="pf-name"></div>
+        <div class="form-group"><label>工号/学号</label><input type="text" id="pf-no" disabled style="opacity:0.6"></div>
+        <div class="form-group"><label>角色</label><input type="text" id="pf-role" disabled style="opacity:0.6"></div>
+        <div class="form-row">
+          <div class="form-group"><label>学院</label><input type="text" id="pf-college"></div>
+          <div class="form-group"><label>专业/年级</label><input type="text" id="pf-major"></div>
+        </div>
+        <div class="form-group"><label>手机号</label><input type="text" id="pf-phone"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary" onclick="saveProfile()">保存修改</button></div>
+  </div>
+</div>
+
+<!-- 账号设置模态框 -->
+<div class="modal-mask" id="settings-mask" style="display:none">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header"><h3><svg class="icon"><use href="#i-settings"/></svg> 账号设置 — 修改密码</h3><button class="modal-close" onclick="closeModal('settings-mask')"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>原密码</label><input type="password" id="pwd-old" placeholder="请输入当前密码"></div>
+      <div class="form-group"><label>新密码</label><input type="password" id="pwd-new" placeholder="至少4位"></div>
+      <div class="form-group"><label>确认新密码</label><input type="password" id="pwd-new2" placeholder="再输一次"></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary" onclick="changePassword()">确认修改</button></div>
+  </div>
+</div>
+
+<!-- 头像选择模态框 -->
+<div class="modal-mask" id="avatar-mask" style="display:none">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header"><h3><svg class="icon"><use href="#i-palette"/></svg> 选择头像</h3><button class="modal-close" onclick="closeModal('avatar-mask')"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="modal-body">
+      <div style="text-align:center;margin-bottom:16px">
+        <div id="avatar-current" style="width:90px;height:90px;font-size:40px;margin:0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;box-shadow:0 8px 24px rgba(79,70,229,0.4)">👤</div>
+        <div style="margin-top:8px;font-size:12px;color:var(--text-light)">当前头像预览</div>
+      </div>
+      <div style="margin-bottom:14px;padding:16px;border:2px dashed var(--border);border-radius:10px;text-align:center;cursor:pointer;transition:all .15s" onclick="document.getElementById('avatar-file').click()" onmouseover="this.style.borderColor='var(--primary)';this.style.background='rgba(79,70,229,0.06)'" onmouseout="this.style.borderColor='var(--border)';this.style.background=''"><div style="font-size:28px;color:var(--primary)"><svg class="icon"><use href="#i-camera"/></svg></div><div style="font-weight:600;color:var(--primary);margin-top:4px">上传自定义头像</div>
+        <div style="font-size:12px;color:var(--text-light);margin-top:4px">支持 JPG/PNG，自动压缩至 200x200</div>
+        <input type="file" id="avatar-file" accept="image/*" style="display:none" onchange="uploadAvatar(this.files[0]); this.value=''">
+      </div>
+      <div style="font-weight:600;margin-bottom:8px">或选择 Emoji 头像</div>
+      <div id="emoji-grid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 管理员新增教师/用户模态框 -->
+<div class="modal-mask" id="admin-user-mask" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header"><h3 id="admin-user-title"><svg class="icon"><use href="#i-plus"/></svg> 新增教师账号</h3><button class="modal-close" onclick="closeModal('admin-user-mask')"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>角色</label>
+        <select id="nu-role"><option value="teacher">教师</option><option value="student">学生</option><option value="admin">管理员</option></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>姓名</label><input type="text" id="nu-name"></div>
+        <div class="form-group"><label>工号/学号</label><input type="text" id="nu-no"></div>
+      </div>
+      <div class="form-group"><label>初始密码</label><input type="text" id="nu-password" value="123456"></div>
+      <div class="form-row">
+        <div class="form-group"><label>学院</label><input type="text" id="nu-college"></div>
+        <div class="form-group"><label>手机号</label><input type="text" id="nu-phone"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary" onclick="adminCreateUser()">确认创建</button></div>
+  </div>
+</div>
+
+</body>
+</html>
