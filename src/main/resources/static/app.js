@@ -458,6 +458,110 @@ function animateCounter(el, target, duration = 800) {
 }
 
 // ============================================================
+// 首页呼吸感欢迎横幅（三端通用）
+// ============================================================
+function homeHeroHtml(name, roleLabel, statValue, statLabel, icon) {
+  return `<div class="home-hero">
+    <div class="home-hero-glow"></div>
+    <div class="home-hero-glow2"></div>
+    <div class="home-hero-main">
+      <div class="home-hero-hello">欢迎回来，<b>${name || '同学'}</b></div>
+      <div class="home-hero-sub">${roleLabel} · 智学选课平台</div>
+      <div class="home-hero-tip">${roleLabel === '同学' ? '愿你今天选到心仪的好课 ✨' : '愿你今天工作顺利 ✨'}</div>
+    </div>
+    <div class="home-hero-stat">
+      <div class="home-hero-stat-icon">${svgIcon(icon)}</div>
+      <div class="home-hero-stat-value">${statValue}</div>
+      <div class="home-hero-stat-label">${statLabel}</div>
+    </div>
+  </div>`;
+}
+
+// ============================================================
+// 数据可视化小组件：走势线 / 徽标 / 环形图 / 时间线
+// ============================================================
+
+function sparkSvg(values, color) {
+  var v = (values && values.length >= 2) ? values : [3,5,4,6,5,7];
+  var w = 120, h = 36, n = v.length;
+  var max = Math.max.apply(null, v), min = Math.min.apply(null, v);
+  var range = (max - min) || 1;
+  var pts = v.map(function(x, i) {
+    return [ (i/(n-1))*w, h - 4 - ((x - min)/range)*(h - 12) ];
+  });
+  var line = pts.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ');
+  var area = line + ' ' + w + ',' + h + ' 0,' + h;
+  return '<svg class="stat-spark" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none">' +
+    '<polygon points="'+area+'" fill="'+color+'" opacity="0.14"/>' +
+    '<polyline points="'+line+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<circle cx="'+pts[n-1][0].toFixed(1)+'" cy="'+pts[n-1][1].toFixed(1)+'" r="2.8" fill="'+color+'"/></svg>';
+}
+
+// 带 sparkline + 涨跌徽标的统计卡（opts: icon,color,value,label,trend,deltaText,deltaDir）
+function statCardPro(opts) {
+  var colorMap = { blue:'#667eea', green:'#10b981', red:'#ef4444', amber:'#f59e0b', purple:'#8b5cf6' };
+  var c = colorMap[opts.color] || colorMap.blue;
+  return '<div class="stat-card stat-pro">' +
+    '<div class="stat-pro-top"><div class="stat-icon '+opts.color+'">'+svgIcon(opts.icon)+'</div>' +
+    (opts.deltaText ? '<span class="stat-delta '+(opts.deltaDir||'up')+'">'+opts.deltaText+'</span>' : '') + '</div>' +
+    '<div class="stat-value">'+opts.value+'</div>' +
+    '<div class="stat-label">'+opts.label+'</div>' +
+    (opts.trend ? sparkSvg(opts.trend, c) : '') +
+    '</div>';
+}
+
+// 每小时操作量走势（取最近 buckets 小时）
+function hourlyTrend(logs, buckets) {
+  var arr = new Array(buckets).fill(0);
+  var now = Date.now(), HOUR = 3600000;
+  (logs || []).forEach(function(l) {
+    var t = new Date(String(l.createdAt).replace(' ', 'T')).getTime();
+    if (isNaN(t)) return;
+    var idx = buckets - 1 - Math.floor((now - t)/HOUR);
+    if (idx >= 0 && idx < buckets) arr[idx]++;
+  });
+  return arr;
+}
+
+function timeAgo(s) {
+  var t = new Date(String(s).replace(' ', 'T')).getTime();
+  if (isNaN(t)) return String(s);
+  var m = Math.floor((Date.now()-t)/60000);
+  if (m < 1) return '刚刚';
+  if (m < 60) return m + ' 分钟前';
+  var h = Math.floor(m/60);
+  if (h < 24) return h + ' 小时前';
+  return Math.floor(h/24) + ' 天前';
+}
+
+// conic-gradient 环形图（entries: [[name,count],...]）
+function donutHtml(entries, centerValue, centerLabel) {
+  var colors = ['#667eea','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899'];
+  var total = entries.reduce(function(s,kv){ return s + kv[1]; }, 0) || 1;
+  // 只保留前 5 类，其余合并为「其他」（参考 Traffic Source 卡片的精简图例）
+  var sorted = entries.slice().sort(function(a,b){ return b[1] - a[1]; });
+  var top = sorted.slice(0, 5);
+  var restSum = sorted.slice(5).reduce(function(s,kv){ return s + kv[1]; }, 0);
+  if (restSum > 0) top.push(['其他', restSum]);
+  var acc = 0, segs = [], glowColor = '#667eea', maxShare = 0;
+  top.forEach(function(kv, i) {
+    var from = acc/total*360; acc += kv[1];
+    var to = acc/total*360;
+    if (kv[1]/total > maxShare) { maxShare = kv[1]/total; glowColor = colors[i % colors.length]; }
+    segs.push(colors[i % colors.length] + ' ' + from.toFixed(1) + 'deg ' + to.toFixed(1) + 'deg');
+  });
+  return '<div class="donut-wrap" style="--donut-glow:' + glowColor + '">' +
+    '<div class="donut" style="background:conic-gradient(' + segs.join(',') + ')">' +
+    '<div class="donut-hole"><b>' + centerValue + '</b><span>' + centerLabel + '</span></div></div>' +
+    '<div class="donut-legend">' + top.map(function(kv, i) {
+      return '<div class="pie-item"><span class="pie-dot" style="background:' + colors[i % colors.length] + ';box-shadow:0 0 6px ' + colors[i % colors.length] + '99"></span>' +
+        '<span class="pie-label">' + kv[0] + '</span>' +
+        '<span class="pie-pct">' + (kv[1]/total*100).toFixed(1) + '%</span>' +
+        '<span class="pie-cnt">' + kv[1] + '</span></div>';
+    }).join('') + '</div></div>';
+}
+
+// ============================================================
 // 学生端
 // ============================================================
 
@@ -473,6 +577,7 @@ async function renderStudentDashboard() {
   const totalCredits = approved.reduce((s, e) => s + (e.credit || 0), 0);
 
   $('#content').innerHTML = `
+    ${homeHeroHtml(user.name, '同学', remaining, '本轮剩余积分', 'coins')}
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-icon amber">${svgIcon('coins')}</div><div><div class="stat-value">${remaining}</div><div class="stat-label">本轮剩余积分 / ${POINTS_PER_ROUND}</div></div></div>
       <div class="stat-card"><div class="stat-icon blue">${svgIcon('book')}</div><div><div class="stat-value">${approved.length}</div><div class="stat-label">已录取课程</div></div></div>
@@ -1158,6 +1263,7 @@ async function renderTeacherDashboard() {
   const pendingCourses = courses.filter(c => c.oversubscribed).length;
 
   $('#content').innerHTML = `
+    ${homeHeroHtml(user.name, '老师', courses.length, '我教授的课程', 'book-open')}
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-icon blue">${svgIcon('book-open')}</div><div><div class="stat-value">${courses.length}</div><div class="stat-label">我教授的课程</div></div></div>
       <div class="stat-card"><div class="stat-icon green">${svgIcon('users')}</div><div><div class="stat-value">${totalEnrolled}</div><div class="stat-label">总报名人数</div></div></div>
@@ -1285,26 +1391,54 @@ async function openApprove(courseId) {
 // ============================================================
 
 async function renderAdminDashboard() {
-  const [usersR, coursesR, enrR, sysR] = await Promise.all([
+  const user = getUser();
+  const [usersR, coursesR, enrR, sysR, logsR] = await Promise.all([
     api('GET', '/admin/users'),
     api('GET', '/courses?category=全部'),
     api('GET', '/enrollments/mine'),  // 复用接口拿总数不太合适，这里只展示大概
     api('GET', '/system/config'),
+    api('GET', '/logs'),
   ]);
   const users = usersR.success ? usersR.data : [];
   const courses = coursesR.success ? coursesR.data : [];
+  const recentLogs = logsR.success ? logsR.data.slice(0, 6) : [];
   const studentCount = users.filter(u => u.role === 'student').length;
   const teacherCount = users.filter(u => u.role === 'teacher').length;
 
+  const tlIcon = { '登录':'user', '选课':'book', '退课':'x-circle', '审批':'check-circle' };
+  let tlHtml = recentLogs.map(l =>
+    '<div class="tl-item"><div class="tl-dot">' + svgIcon(tlIcon[l.type] || 'cpu') + '</div>' +
+    '<div class="tl-body"><div class="tl-text"><b>' + l.userName + '</b> ' + l.operation + '</div>' +
+    '<div class="tl-time">' + timeAgo(l.createdAt) + '</div></div></div>'
+  ).join('') || emptyHtml('cpu', '暂无动态');
+
   $('#content').innerHTML = `
+    ${homeHeroHtml(user.name, '管理员', studentCount, '学生总数', 'users')}
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-icon blue">${svgIcon('users')}</div><div><div class="stat-value">${studentCount}</div><div class="stat-label">学生总数</div></div></div>
       <div class="stat-card"><div class="stat-icon green">${svgIcon('user')}</div><div><div class="stat-value">${teacherCount}</div><div class="stat-label">教师总数</div></div></div>
       <div class="stat-card"><div class="stat-icon purple">${svgIcon('book')}</div><div><div class="stat-value">${courses.length}</div><div class="stat-label">课程总数</div></div></div>
       <div class="stat-card"><div class="stat-icon amber">${svgIcon('edit')}</div><div><div class="stat-value">${courses.reduce((s,c)=>s+(c.stat?.total||0),0)}</div><div class="stat-label">选课记录</div></div></div>
     </div>
-    <div class="admin-card"><h3>当前选课状态</h3>
-      <p style="font-size:14px;color:var(--text-light)">当前为第 <b style="color:var(--primary)">${sysR.data.currentRound}</b> 轮选课，状态：${sysR.data.roundOpen ? '<span class="status-tag status-approved">进行中</span>' : '<span class="status-tag status-rejected">已关闭</span>'}</p>
+    <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:20px;">
+      <div class="admin-card round-status-card">
+        <div class="rsc-head">
+          <h3>当前选课状态</h3>
+          ${sysR.data.roundOpen ? '<span class="status-tag status-approved rsc-pill">进行中</span>' : '<span class="status-tag status-rejected rsc-pill">已关闭</span>'}
+        </div>
+        <div class="rsc-steps">
+          ${[1, 2, 3].map(n => {
+            const cls = n < sysR.data.currentRound ? 'done' : n === sysR.data.currentRound ? 'active' : '';
+            return '<div class="rsc-step ' + cls + '"><div class="rsc-dot">' + (n < sysR.data.currentRound ? '✓' : n) + '</div><div class="rsc-step-label">第 ' + n + ' 轮</div></div>';
+          }).join('<div class="rsc-line"></div>')}
+        </div>
+        <div class="rsc-stats">
+          <div class="rsc-stat"><div class="rsc-stat-value">${courses.length}</div><div class="rsc-stat-label">开放课程</div></div>
+          <div class="rsc-stat"><div class="rsc-stat-value">${courses.reduce((s,c)=>s+(c.stat?.total||0),0)}</div><div class="rsc-stat-label">本轮报名</div></div>
+          <div class="rsc-stat"><div class="rsc-stat-value">${studentCount}</div><div class="rsc-stat-label">参与学生</div></div>
+        </div>
+      </div>
+      <div class="admin-card"><h3>最近动态</h3><div class="timeline">${tlHtml}</div></div>
     </div>
     <div id="announce-slot"></div>`;
   await loadAnnouncementCards('#announce-slot');
@@ -1717,13 +1851,19 @@ async function renderStudentList() {
   const user = getUser();
   const courseR = await api('GET', '/courses/teacher/' + user.id);
   const courses = courseR.success ? courseR.data : [];
-  let html = '<div class="filter-bar"><div class="search-box"><select id="sl-course-filter"><option value="">全部课程</option>';
+  let html = '<div class="page-hero">' +
+    '<div class="page-hero-icon">' + svgIcon('users') + '</div>' +
+    '<div class="page-hero-text"><div class="page-hero-title">选课学生</div>' +
+    '<div class="page-hero-sub">选择课程查看报名学生名单，可直接录入成绩</div></div>' +
+    '<div class="page-hero-count">' + courses.length + '<span>门课程</span></div></div>' +
+    '<div class="filter-bar select-bar"><div class="search-box select-box">' + svgIcon('book') +
+    '<select id="sl-course-filter"><option value="">请选择课程…</option>';
   courses.forEach(c => { html += '<option value="' + c.id + '">' + c.name + '</option>'; });
-  html += '</select></div></div><div id="sl-list">请选择课程查看选课学生</div>';
+  html += '</select></div></div><div id="sl-list">' + emptyHtml('users', '在上方选择一门课程，即可查看选课学生名单') + '</div>';
   $('#content').innerHTML = html;
   $('#sl-course-filter').addEventListener('change', async (e) => {
     const cid = e.target.value;
-    if (!cid) { $('#sl-list').innerHTML = '请选择课程'; return; }
+    if (!cid) { $('#sl-list').innerHTML = emptyHtml('users', '在上方选择一门课程，即可查看选课学生名单'); return; }
     const r = await api('GET', '/enrollments/course/' + cid);
     const list = r.success ? r.data.filter(s => s.status === 'approved' || s.status === 'pending') : [];
     if (!list.length) { $('#sl-list').innerHTML = emptyHtml('users', '暂无选课学生'); return; }
@@ -1771,13 +1911,19 @@ async function renderGradeMgr() {
   const user = getUser();
   const courseR = await api('GET', '/courses/teacher/' + user.id);
   const courses = courseR.success ? courseR.data : [];
-  let html = '<div class="filter-bar"><div class="search-box"><select id="gm-course-filter"><option value="">选择课程</option>';
+  let html = '<div class="page-hero">' +
+    '<div class="page-hero-icon amber">' + svgIcon('edit') + '</div>' +
+    '<div class="page-hero-text"><div class="page-hero-title">成绩管理</div>' +
+    '<div class="page-hero-sub">选择课程查看学生成绩，支持录入与修改</div></div>' +
+    '<div class="page-hero-count">' + courses.length + '<span>门课程</span></div></div>' +
+    '<div class="filter-bar select-bar"><div class="search-box select-box">' + svgIcon('book') +
+    '<select id="gm-course-filter"><option value="">请选择课程…</option>';
   courses.forEach(c => { html += '<option value="' + c.id + '">' + c.name + '</option>'; });
-  html += '</select></div></div><div id="gm-list">请选择课程查看成绩</div>';
+  html += '</select></div></div><div id="gm-list">' + emptyHtml('edit', '在上方选择一门课程，即可查看成绩记录') + '</div>';
   $('#content').innerHTML = html;
   $('#gm-course-filter').addEventListener('change', async (e) => {
     const cid = e.target.value;
-    if (!cid) { $('#gm-list').innerHTML = '请选择课程'; return; }
+    if (!cid) { $('#gm-list').innerHTML = emptyHtml('edit', '在上方选择一门课程，即可查看成绩记录'); return; }
     const r = await api('GET', '/grades/course/' + cid);
     const list = r.success ? r.data : [];
     if (!list.length) { $('#gm-list').innerHTML = emptyHtml('edit', '暂无成绩记录'); return; }
@@ -1893,12 +2039,15 @@ async function renderSystemLogs() {
 
   const typeData = Object.entries(stats.byType || {});
   const total = typeData.reduce((s, kv) => s + kv[1], 0) || 1;
-  const colors = ['#667eea', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
-  let pieHtml = '';
-  typeData.forEach((kv, i) => {
-    const pct = (kv[1] / total * 100).toFixed(1);
-    pieHtml += '<div class="pie-item"><span class="pie-dot" style="background:' + colors[i % colors.length] + '"></span>' + kv[0] + ' ' + pct + '%（' + kv[1] + '）</div>';
-  });
+
+  const trend = hourlyTrend(logs, 12);
+  const succ = stats.byStatus['成功'] || 0;
+  const fail = stats.byStatus['失败'] || 0;
+  const succRate = total ? (succ / (succ + fail || 1) * 100) : 0;
+  const recentHalf = trend.slice(6).reduce((a,b)=>a+b,0);
+  const prevHalf = trend.slice(0,6).reduce((a,b)=>a+b,0);
+  const deltaPct = prevHalf ? ((recentHalf - prevHalf) / prevHalf * 100) : 0;
+  const deltaText = (deltaPct >= 0 ? '+' : '') + deltaPct.toFixed(1) + '%';
 
   const users = (stats.byUser || []).slice(0, 8);
   const maxCnt = users.length ? Math.max(...users.map(u => u.count), 1) : 1;
@@ -1919,12 +2068,12 @@ async function renderSystemLogs() {
   });
 
   $('#content').innerHTML = '<div class="stats-grid">' +
-    '<div class="stat-card"><div class="stat-icon blue">' + svgIcon('bar-chart') + '</div><div><div class="stat-value">' + logs.length + '</div><div class="stat-label">总操作数</div></div></div>' +
-    '<div class="stat-card"><div class="stat-icon green">' + svgIcon('check-circle') + '</div><div><div class="stat-value">' + (stats.byStatus['成功'] || 0) + '</div><div class="stat-label">成功</div></div></div>' +
-    '<div class="stat-card"><div class="stat-icon red">' + svgIcon('x-circle') + '</div><div><div class="stat-value">' + (stats.byStatus['失败'] || 0) + '</div><div class="stat-label">失败</div></div></div>' +
+    statCardPro({ icon:'bar-chart', color:'blue', value:logs.length, label:'总操作数', trend:trend, deltaText:deltaText, deltaDir:deltaPct>=0?'up':'down' }) +
+    statCardPro({ icon:'check-circle', color:'green', value:succ, label:'成功', trend:hourlyTrend(logs.filter(l=>l.status==='成功'),12), deltaText:succRate.toFixed(1)+'%', deltaDir:'up' }) +
+    statCardPro({ icon:'x-circle', color:'red', value:fail, label:'失败', trend:hourlyTrend(logs.filter(l=>l.status==='失败'),12), deltaText:(100-succRate).toFixed(1)+'%', deltaDir:'down' }) +
     '</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1.4fr;gap:20px;margin-top:20px;">' +
-    '<div class="card"><div class="section-title">操作类型分布</div><div>' + (pieHtml || '暂无数据') + '</div></div>' +
+    '<div class="card glow-corner"><div class="section-title">操作类型分布</div>' + (typeData.length ? donutHtml(typeData, total, '总操作') : '暂无数据') + '</div>' +
     '<div class="card"><div class="section-title">用户操作排行</div><div class="bar-chart">' + (barHtml || '暂无数据') + '</div></div>' +
     '</div>' +
     '<div class="section" style="margin-top:20px;"><div class="section-header"><div class="section-title">操作日志明细</div></div>' +

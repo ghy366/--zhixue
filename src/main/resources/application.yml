@@ -52,3 +52,20 @@ spring:
     password: ghy702400
   jpa:
     database-platform: org.hibernate.dialect.MySQLDialect
+
+
+# ===== Cloud Studio 部署配置 =====
+---
+spring:
+  config:
+    activate:
+      on-profile: cloudstudio
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/zhixue?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: zhixue123
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      ddl-auto: update
