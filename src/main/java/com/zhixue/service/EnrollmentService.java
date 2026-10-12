@@ -141,6 +141,24 @@ public class EnrollmentService {
             }
         }
 
+
+        // 每学期学分上限
+        if (!isRequiredCourse(courseId)) {
+            Map<String, Integer> stat = courseStat(courseId, round);
+            // 学生当前已 approved 的学分累加
+            int myCredit = enrollmentRepo.findByStudentIdAndRound(studentId, round).stream()
+                    .filter(e -> "approved".equals(e.getStatus()))
+                    .map(e -> courseRepo.findById(e.getCourseId()).map(Course::getCredit).orElse(0))
+                    .mapToInt(x -> x == null ? 0 : x).sum();
+            int courseCredit = course.getCredit() == null ? 0 : course.getCredit();
+            Integer maxC = sys.getMaxCreditPerSemester();
+            if (maxC != null && maxC > 0 && myCredit + courseCredit > maxC) {
+                result.put("success", false);
+                result.put("msg", "超出本学期学分上限 " + maxC + " 分，当前已修 " + myCredit + " 分，本课后 " + (myCredit + courseCredit) + " 分");
+                return result;
+            }
+        }
+
         // 删除之前被拒绝/退选的记录
         if (existing != null) enrollmentRepo.delete(existing);
 
@@ -186,6 +204,58 @@ public class EnrollmentService {
         if ("approved".equals(wasStatus)) waitlistService.promoteIfNeeded(courseId, round);
         result.put("success", true);
         result.put("msg", "pending".equals(wasStatus) ? "已撤销报名，积分已退还" : "退课成功，积分已退还");
+        return result;
+    }
+
+    /** 改选：退掉旧课（释放名额与积分）并报名新课；若配置改选惩罚，惩罚积分计入新课投入（从总积分中消耗） */
+    @Transactional
+    public Map<String, Object> reselect(Long studentId, Long oldCourseId, Long newCourseId, int points) {
+        SystemConfig sys = getSystemConfig();
+        int round = sys.getCurrentRound();
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (!sys.getRoundOpen()) {
+            result.put("success", false); result.put("msg", "当前轮次未开放，无法改选"); return result;
+        }
+        if (oldCourseId.equals(newCourseId)) {
+            result.put("success", false); result.put("msg", "请选择与原课程不同的课程"); return result;
+        }
+        if (isRequiredCourse(oldCourseId)) {
+            result.put("success", false); result.put("msg", "必修课由教学计划自动安排，不能改选"); return result;
+        }
+        Enrollment old = getEnrollment(studentId, oldCourseId, round);
+        if (old == null || "dropped".equals(old.getStatus()) || "rejected".equals(old.getStatus())) {
+            result.put("success", false); result.put("msg", "原课程状态不可改选"); return result;
+        }
+        Course nc = courseRepo.findById(newCourseId).orElse(null);
+        if (nc == null) { result.put("success", false); result.put("msg", "新课程不存在"); return result; }
+        if (isRequiredCourse(newCourseId)) {
+            result.put("success", false); result.put("msg", "必修课由教学计划自动安排，无需选课"); return result;
+        }
+        Enrollment existNew = getEnrollment(studentId, newCourseId, round);
+        if (existNew != null && !"rejected".equals(existNew.getStatus()) && !"dropped".equals(existNew.getStatus())) {
+            result.put("success", false); result.put("msg", "你已报名该课程，无需改选"); return result;
+        }
+        int penalty = sys.getReselectPenalty() == null ? 0 : sys.getReselectPenalty();
+        int effective = points + penalty;
+        String oldStatus = old.getStatus();
+        // 先退旧课（释放名额与积分）
+        old.setStatus("dropped");
+        enrollmentRepo.save(old);
+        if ("approved".equals(oldStatus)) waitlistService.promoteIfNeeded(oldCourseId, round);
+        // 报名新课（惩罚积分计入新课投入，从总积分中消耗）
+        Map<String, Object> enr = enroll(studentId, newCourseId, effective);
+        if (!(Boolean) enr.get("success")) {
+            Enrollment rollback = getEnrollment(studentId, oldCourseId, round);
+            if (rollback != null) { rollback.setStatus(oldStatus); enrollmentRepo.save(rollback); }
+            result.put("success", false);
+            result.put("msg", (String) enr.get("msg"));
+            return result;
+        }
+        result.put("success", true);
+        result.put("penalty", penalty);
+        String oldName = courseRepo.findById(oldCourseId).map(Course::getName).orElse("原课程");
+        result.put("msg", "改选成功！已退掉《" + oldName + "》，改报《" + nc.getName() + "》"
+                + (penalty > 0 ? "，本次改选消耗 " + penalty + " 积分惩罚" : ""));
         return result;
     }
 
@@ -313,5 +383,49 @@ public class EnrollmentService {
     private int toMin(String t) {
         String[] p = t.split(":");
         return Integer.parseInt(p[0]) * 60 + Integer.parseInt(p[1]);
+    }
+
+    /** 批量选课（一次投多门）。部分失败的返回明细，事务逐门处理 */
+    @Transactional
+    public Map<String, Object> enrollBatch(Long studentId, List<Long> courseIds, int pointsPerCourse) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        List<Map<String, Object>> details = new ArrayList<>();
+        int success = 0, fail = 0;
+        for (Long cid : courseIds) {
+            Map<String, Object> one = enroll(studentId, cid, pointsPerCourse);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("courseId", cid);
+            item.put("success", one.get("success"));
+            item.put("msg", one.get("msg"));
+            details.add(item);
+            if (Boolean.TRUE.equals(one.get("success"))) success++; else fail++;
+        }
+        r.put("success", fail == 0);
+        r.put("msg", fail == 0 ? ("批量报名成功，共 " + success + " 门")
+                              : ("部分失败：成功 " + success + " 门，失败 " + fail + " 门"));
+        r.put("data", details);
+        return r;
+    }
+
+    /** 批量退课 */
+    @Transactional
+    public Map<String, Object> dropBatch(Long studentId, List<Long> courseIds) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        List<Map<String, Object>> details = new ArrayList<>();
+        int success = 0, fail = 0;
+        for (Long cid : courseIds) {
+            Map<String, Object> one = drop(studentId, cid);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("courseId", cid);
+            item.put("success", one.get("success"));
+            item.put("msg", one.get("msg"));
+            details.add(item);
+            if (Boolean.TRUE.equals(one.get("success"))) success++; else fail++;
+        }
+        r.put("success", fail == 0);
+        r.put("msg", fail == 0 ? ("批量退课成功，共 " + success + " 门")
+                              : ("部分失败：成功 " + success + " 门，失败 " + fail + " 门"));
+        r.put("data", details);
+        return r;
     }
 }

@@ -67,4 +67,8 @@ public class CourseService {
     }
 
     public List<User> getAllTeachers() { return userRepo.findByRole("teacher"); }
+
+    public java.util.List<Course> hotCourses(int n) {
+        return courseRepo.findTopByEnrollmentCount(java.lang.Math.max(1, java.lang.Math.min(n, 50)));
+    }
 }

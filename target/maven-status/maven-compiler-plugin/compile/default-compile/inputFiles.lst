@@ -3,6 +3,7 @@ G:\AI\智学选课\src\main\java\com\zhixue\config\GlobalExceptionHandler.java
 G:\AI\智学选课\src\main\java\com\zhixue\config\LogInterceptor.java
 G:\AI\智学选课\src\main\java\com\zhixue\config\WebConfig.java
 G:\AI\智学选课\src\main\java\com\zhixue\controller\AdminController.java
+G:\AI\智学选课\src\main\java\com\zhixue\controller\AiChatController.java
 G:\AI\智学选课\src\main\java\com\zhixue\controller\AnnouncementController.java
 G:\AI\智学选课\src\main\java\com\zhixue\controller\AuthController.java
 G:\AI\智学选课\src\main\java\com\zhixue\controller\ClassroomController.java
@@ -43,7 +44,6 @@ G:\AI\智学选课\src\main\java\com\zhixue\entity\Semester.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\SystemConfig.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\User.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\Waitlist.java
-G:\AI\智学选课\src\main\java\com\zhixue\GraduateMessage.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\AdvisorCapacityRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\AnnouncementReadRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\AnnouncementRepository.java
@@ -64,12 +64,14 @@ G:\AI\智学选课\src\main\java\com\zhixue\repository\SemesterRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\SystemConfigRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\UserRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\WaitlistRepository.java
+G:\AI\智学选课\src\main\java\com\zhixue\service\AiService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\AnnouncementService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\AuthService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\ClassroomService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\CourseService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\DataService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\EnrollmentService.java
+G:\AI\智学选课\src\main\java\com\zhixue\service\ExcelService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\GradeService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\GraduateAdvisorService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\GraduateWorkspaceService.java

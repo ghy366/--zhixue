@@ -66,6 +66,20 @@ public class CourseController {
         return ApiResponse.ok(courseService.getAllTeachers());
     }
 
+    /** 热门课程排行 */
+    @GetMapping("/hot")
+    public ApiResponse<List<Map<String, Object>>> hotCourses(@RequestParam(defaultValue = "10") int n) {
+        int round = enrollmentService.getSystemConfig().getCurrentRound();
+        Map<String, Object> ratings = reviewService.allRatings();
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        for (Course cc : courseService.hotCourses(n)) {
+            result.add(courseToMap(cc, null, round, ratings));
+        }
+        return ApiResponse.ok(result);
+    }
+
+
+
     private Map<String, Object> courseToMap(Course c, Long userId, int round, Map<String, Object> ratings) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", c.getId());

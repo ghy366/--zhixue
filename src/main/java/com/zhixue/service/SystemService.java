@@ -39,4 +39,16 @@ public class SystemService {
         if (practice != null) c.setGradReqPractice(practice);
         return sysRepo.save(c);
     }
+
+    public SystemConfig setPhase(SystemConfig body) {
+        SystemConfig cfg = sysRepo.findById(1L).orElseGet(SystemConfig::new);
+        if (body.getRoundOpenAt()     != null) cfg.setRoundOpenAt(body.getRoundOpenAt());
+        if (body.getRoundCloseAt()    != null) cfg.setRoundCloseAt(body.getRoundCloseAt());
+        if (body.getBatchOpenAt()     != null) cfg.setBatchOpenAt(body.getBatchOpenAt());
+        if (body.getBatchCloseAt()    != null) cfg.setBatchCloseAt(body.getBatchCloseAt());
+        if (body.getReselectOpenAt()  != null) cfg.setReselectOpenAt(body.getReselectOpenAt());
+        if (body.getReselectCloseAt() != null) cfg.setReselectCloseAt(body.getReselectCloseAt());
+        if (body.getCurrentPhase()    != null) cfg.setCurrentPhase(body.getCurrentPhase());
+        return sysRepo.save(cfg);
+    }
 }

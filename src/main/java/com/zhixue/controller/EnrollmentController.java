@@ -47,6 +47,18 @@ public class EnrollmentController {
         return ApiResponse.fail((String) r.get("msg"));
     }
 
+    @PostMapping("/reselect")
+    public ApiResponse<Void> reselect(@RequestBody Map<String, Object> body,
+                                      @RequestHeader("Authorization") String token) {
+        Long userId = SessionStore.getUserId(token.replace("Bearer ", ""));
+        Long oldCourseId = Long.valueOf(body.get("oldCourseId").toString());
+        Long newCourseId = Long.valueOf(body.get("newCourseId").toString());
+        int points = Integer.parseInt(body.get("points").toString());
+        Map<String, Object> r = enrollmentService.reselect(userId, oldCourseId, newCourseId, points);
+        if ((Boolean) r.get("success")) return ApiResponse.ok((String) r.get("msg"), null);
+        return ApiResponse.fail((String) r.get("msg"));
+    }
+
     @GetMapping("/mine")
     public ApiResponse<List<Map<String, Object>>> mine(@RequestHeader("Authorization") String token,
                                                        @RequestParam(required = false) Integer round) {
@@ -176,5 +188,28 @@ public class EnrollmentController {
         Map<String, Object> r = enrollmentService.approve(courseId, selected);
         if ((Boolean) r.get("success")) return ApiResponse.ok((String) r.get("msg"), null);
         return ApiResponse.fail((String) r.get("msg"));
+    }
+
+    @PostMapping("/enroll-batch")
+    public ApiResponse<Map<String, Object>> enrollBatch(@RequestBody Map<String, Object> body,
+                                                         @RequestHeader("Authorization") String token) {
+        Long uid = com.zhixue.util.SessionStore.getUserId(token.replace("Bearer ", ""));
+        if (uid == null) return ApiResponse.fail("未登录");
+        List<?> raw = (List<?>) body.get("courseIds");
+        List<Long> ids = new java.util.ArrayList<>();
+        if (raw != null) { for (Object o : raw) ids.add(Long.valueOf(o.toString())); }
+        int points = body.get("points") == null ? 1 : Integer.parseInt(body.get("points").toString());
+        return ApiResponse.ok(enrollmentService.enrollBatch(uid, ids, points));
+    }
+
+    @PostMapping("/drop-batch")
+    public ApiResponse<Map<String, Object>> dropBatch(@RequestBody Map<String, Object> body,
+                                                       @RequestHeader("Authorization") String token) {
+        Long uid = com.zhixue.util.SessionStore.getUserId(token.replace("Bearer ", ""));
+        if (uid == null) return ApiResponse.fail("未登录");
+        List<?> raw = (List<?>) body.get("courseIds");
+        List<Long> ids = new java.util.ArrayList<>();
+        if (raw != null) { for (Object o : raw) ids.add(Long.valueOf(o.toString())); }
+        return ApiResponse.ok(enrollmentService.dropBatch(uid, ids));
     }
 }

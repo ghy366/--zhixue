@@ -79,6 +79,114 @@ function showAuth() {
   $('#auth-page').style.display = 'flex';
   $('#app').style.display = 'none';
   disconnectNotify();
+  // 重置登录按钮（退出登录后二次登录）
+  var btn = document.getElementById('login-btn');
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove('btn-globing', 'btn-check-ok', 'btn-shake');
+  }
+  loadLoginRoundBanner();
+}
+
+// ===== 登录页：选课倒计时横幅 =====
+let loginCountdownTimer = null;
+function loadLoginRoundBanner() {
+  const banner = document.getElementById('login-round-banner');
+  if (!banner) return;
+  if (loginCountdownTimer) { clearInterval(loginCountdownTimer); loginCountdownTimer = null; }
+  api('GET', '/system/config').then(r => {
+    const c = r && r.success ? (r.data || {}) : {};
+    banner.style.display = 'flex';
+    const open = !!c.roundOpen;
+    const roundBadge = document.getElementById('lrb-round');
+    if (roundBadge && c.currentRound) roundBadge.textContent = '第 ' + c.currentRound + ' 轮';
+    // 宽松解析 ISO 字符串
+    const parseISO = (s) => {
+      if (!s) return null;
+      try {
+        const t = new Date(s);
+        return isNaN(t.getTime()) ? null : t;
+      } catch (e) { return null; }
+    };
+    const oa = parseISO(c.roundOpenAt);
+    const ca = parseISO(c.roundCloseAt);
+    const p = (n) => String(n).padStart(2, '0');
+    const els = {
+      d: document.getElementById('lrb-d'),
+      h: document.getElementById('lrb-h'),
+      m: document.getElementById('lrb-m'),
+      s: document.getElementById('lrb-s'),
+    };
+    const status = document.getElementById('lrb-status');
+    const title = document.getElementById('lrb-title');
+    const fillEl = document.getElementById('lrb-progress-fill');
+    const progLabel = document.getElementById('lrb-progress-label');
+    // 数字翻牌：仅内容变化时触发翻转动画
+    const flipNum = (el, val) => {
+      if (!el || el.textContent === val) return;
+      el.textContent = val;
+      const num = el.getAttribute('data-num');
+      if (num === val) return;
+      el.setAttribute('data-num', val);
+      el.classList.remove('lrb-flip');
+      void el.offsetWidth;   // 强制回流以重启动画
+      el.classList.add('lrb-flip');
+    };
+    const setNums = (ms) => {
+      if (!els.d || !els.h || !els.m || !els.s) return;
+      if (ms <= 0) { flipNum(els.d,'00'); flipNum(els.h,'00'); flipNum(els.m,'00'); flipNum(els.s,'00'); return; }
+      const d = Math.floor(ms / 86400000);
+      const h = Math.floor((ms % 86400000) / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      flipNum(els.d, p(d));
+      flipNum(els.h, p(h));
+      flipNum(els.m, p(m));
+      flipNum(els.s, p(s));
+    };
+    const dim = (label) => {
+      setNums(0);
+      if (status) status.textContent = label;
+      if (title) title.textContent = '';
+      banner.classList.add('lrb-idle');
+      if (fillEl) { fillEl.style.width = '0%'; }
+      if (progLabel) progLabel.textContent = '';
+    };
+    // 已过去的时间比例（用于进度条）
+    const progressOf = (start, end, now) => {
+      const total = end.getTime() - start.getTime();
+      if (total <= 0) return 100;
+      const elapsed = now.getTime() - start.getTime();
+      return Math.max(0, Math.min(100, Math.round(elapsed * 100 / total)));
+    };
+    const tick = () => {
+      const n = new Date();
+      if (ca && ca.getTime() > n.getTime()) {
+        setNums(ca.getTime() - n.getTime());
+        if (status) status.textContent = open ? '选课进行中' : '本轮已关闭';
+        if (title) title.textContent = '距本轮结束';
+        banner.classList.remove('lrb-idle');
+        if (oa && fillEl && progLabel) {
+          const pct = progressOf(oa, ca, n);
+          fillEl.style.width = pct + '%';
+          progLabel.textContent = '本轮进度 ' + pct + '%';
+        } else if (fillEl) {
+          fillEl.style.width = '100%';
+        }
+      } else if (oa && oa.getTime() > n.getTime()) {
+        setNums(oa.getTime() - n.getTime());
+        if (status) status.textContent = '即将开放';
+        if (title) title.textContent = '距选课开放';
+        banner.classList.remove('lrb-idle');
+        if (fillEl) fillEl.style.width = '0%';
+        if (progLabel) progLabel.textContent = '';
+      } else {
+        dim(open ? '选课进行中' : '本轮已关闭');
+      }
+    };
+    tick();
+    loginCountdownTimer = setInterval(tick, 1000);
+  }).catch(() => { banner.style.display = 'none'; });
 }
 
 function showApp(user) {
@@ -186,19 +294,39 @@ function bindEvents() {
         document.getElementById('login-password').value = c.password || '';
         document.getElementById('remember-me').checked = true;
       } else {
-        document.getElementById('remember-me').checked = false;
+        document.getElementById('remember-me').checked = true;
       }
     } catch(e) {
-      document.getElementById('remember-me').checked = false;
+      document.getElementById('remember-me').checked = true;
     }
   })();
 
   $('#login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const loginBtn = document.getElementById('login-btn');
+    // 验证码校验（前端 canvas 验证码）
+    const capEl = document.getElementById('login-captcha');
+    if (capEl && window.__zxCaptcha) {
+      if ((capEl.value || '').trim().toUpperCase() !== window.__zxCaptcha.get()) {
+        toast('验证码错误，请重新输入', 'error');
+        capEl.value = '';
+        window.__zxCaptcha.refresh();
+        return;
+      }
+    }
     const no = $('#login-no').value.trim();
     const pwd = $('#login-password').value;
-    const r = await api('POST', '/auth/login', { no, password: pwd });
+    loginBtn.disabled = true;
+    loginBtn.classList.remove('btn-shake');
+    loginBtn.classList.add('btn-globing');
+    let r;
+    try {
+      r = await api('POST', '/auth/login', { no, password: pwd });
+    } catch (err) {
+      r = { success: false, message: '网络异常，请稍后再试' };
+    }
     if (r.success) {
+      loginBtn.classList.add('btn-check-ok');
       const remember = $('#remember-me').checked;
       if (remember) {
         localStorage.setItem('zhixue_remember', JSON.stringify({ no, password: pwd }));
@@ -208,8 +336,15 @@ function bindEvents() {
       setToken(r.data.token);
       setUser(r.data.user);
       toast('登录成功', 'success');
-      showApp(r.data.user);
-    } else toast(r.message, 'error');
+      // 等对勾动画播完再切换页面
+      setTimeout(() => showApp(r.data.user), 800);
+    } else {
+      loginBtn.classList.remove('btn-globing');
+      loginBtn.classList.add('btn-shake');
+      setTimeout(() => loginBtn.classList.remove('btn-shake'), 500);
+      loginBtn.disabled = false;
+      toast(r.message || '登录失败', 'error');
+    }
   });
 
   // 快捷登录按钮 - 自动填充账号密码
@@ -3967,4 +4102,233 @@ async function submitWsReview(paperId) {
     await renderWorkspaceDetail(null, 'teacher', aid);
     setTimeout(() => { const t = $('.ws-tab[data-tab="paper"]'); if (t) t.click(); }, 50);
   }
+}
+
+// ===== AI 智能体助手（WorkBuddy 免密钥大模型，前端 SDK 直连流式）=====
+let aiHistory = [];   // [{role:'user'|'assistant', content}]
+let aiSending = false;
+let aiCloud = null;
+let aiModelId = null;
+let aiCloudReady = false;
+
+const AI_SYSTEM_PROMPT = '你是「智学选课」大学生选课平台的内置 AI 助手。请用简体中文、友好简洁的口吻回答，'
+  + '帮助用户解答选课流程与规则、推荐学习计划、解释课程难点、提供复习与时间管理建议。'
+  + '回答控制在 300 字以内，适当用列表让内容清晰。';
+
+// 懒加载 WorkBuddy 云 SDK（避免 CDN 阻塞页面渲染）
+let aiSdkLoading = null;
+function aiLoadSdk() {
+  if (typeof WorkBuddyCloud !== 'undefined') return Promise.resolve();
+  if (aiSdkLoading) return aiSdkLoading;
+  aiSdkLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = (window.WB_PUBLIC_CONFIG && window.WB_PUBLIC_CONFIG.sdkSrc) || '';
+    s.onload = resolve;
+    s.onerror = () => { aiSdkLoading = null; reject(new Error('AI 组件加载失败，请检查网络后刷新重试')); };
+    document.head.appendChild(s);
+  });
+  return aiSdkLoading;
+}
+
+// 懒初始化：创建云客户端并拉取可用模型
+async function aiEnsureCloud() {
+  if (aiCloudReady) return true;
+  await aiLoadSdk();
+  if (typeof WorkBuddyCloud === 'undefined') {
+    throw new Error('AI 组件未加载完成，请刷新页面重试');
+  }
+  aiCloud = WorkBuddyCloud.createWorkBuddyCloud({
+    endpoint: WB_PUBLIC_CONFIG.endpoint,
+    oauthRelayBaseUrl: WB_PUBLIC_CONFIG.oauthRelayBaseUrl,
+    publishableKey: WB_PUBLIC_CONFIG.publishableKey,
+  });
+  const models = await aiCloud.llm.models.list();
+  const model = (models.find((m) => m.disabled !== true)) || (models.length ? models[0] : null);
+  if (!model) throw new Error('当前应用暂无可用的 AI 模型');
+  aiModelId = model.id;
+  aiCloudReady = true;
+  return true;
+}
+
+function aiChatToggle(force) {
+  const p = $('#ai-chat-panel');
+  if (!p) return;
+  const show = force !== undefined ? force : (p.style.display === 'none');
+  p.style.display = show ? 'flex' : 'none';
+  if (show) {
+    // 无真实对话时显示欢迎卡片，否则隐藏（保留上下文）
+    const welcome = $('#ai-chat-welcome');
+    const hasMsg = $('#ai-chat-msgs').querySelector('.ai-msg');
+    if (welcome) welcome.style.display = hasMsg ? 'none' : '';
+    const suggest = $('#ai-chat-suggest');
+    if (suggest) suggest.classList.toggle('hidden', !!hasMsg);
+    setTimeout(() => { const i = $('#ai-chat-input'); if (i) i.focus(); }, 60);
+  }
+}
+
+function aiMsg(role, text) {
+  const box = $('#ai-chat-msgs');
+  const div = document.createElement('div');
+  div.className = 'ai-msg ' + role;
+  const avatar = role === 'user' ? '<div class="ai-avatar user">我</div>' : '<div class="ai-avatar">智</div>';
+  div.innerHTML = avatar + '<div class="ai-bubble"></div>';
+  div.querySelector('.ai-bubble').textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+function aiTyping(on) {
+  let t = document.getElementById('ai-chat-typing');
+  if (on && !t) {
+    t = document.createElement('div');
+    t.id = 'ai-chat-typing';
+    t.className = 'ai-msg assistant';
+    t.innerHTML = '<div class="ai-avatar">智</div><div class="ai-bubble"><span class="ai-dot"></span><span class="ai-dot"></span><span class="ai-dot"></span></div>';
+    $('#ai-chat-msgs').appendChild(t);
+  } else if (!on && t) {
+    t.remove();
+  }
+  if (on) $('#ai-chat-msgs').scrollTop = $('#ai-chat-msgs').scrollHeight;
+}
+
+function aiErrMsg(e) {
+  const code = (e && (e.error && e.error.code || e.code)) || '';
+  if (code.indexOf('auth_') === 0) {
+    return '⚠️ 当前访问域名不在应用授权范围内。请通过 WorkBuddy 发布本应用后，再从应用地址打开即可使用此模型。';
+  }
+  if (code.indexOf('quota_') === 0) {
+    return '⚠️ 调用额度已用尽或触发限流，请稍后再试。';
+  }
+  if (code.indexOf('gateway_') === 0 || code.indexOf('model_') === 0) {
+    return '⚠️ 模型服务暂时不可用，请稍后重试。';
+  }
+  return '⚠️ ' + (e && e.message ? e.message : '请求失败，请稍后重试');
+}
+
+async function aiSend(text) {
+  const input = $('#ai-chat-input');
+  const msg = (text !== undefined ? String(text) : input.value).trim();
+  if (!msg || aiSending) return;
+  input.value = '';
+  input.style.height = 'auto';
+  // 首次真正发送：隐藏欢迎卡片与快捷提问
+  const welcome = document.getElementById('ai-chat-welcome');
+  if (welcome) welcome.style.display = 'none';
+  const suggest = document.getElementById('ai-chat-suggest');
+  if (suggest) suggest.classList.add('hidden');
+  aiMsg('user', msg);
+  aiHistory.push({ role: 'user', content: msg });
+  if (aiHistory.length > 16) aiHistory = aiHistory.slice(-16);
+  aiSending = true;
+
+  const bubble = aiMsg('assistant', '');
+  const bEl = bubble.querySelector('.ai-bubble');
+  let acc = '';
+  const box = $('#ai-chat-msgs');
+
+  // 本地开发（非 WorkBuddy 发布域名）直接走后端免费模型，干净无外部依赖；
+  // 发布到 *.workbuddy.host 后自动改用 WorkBuddy 自带模型
+  const isWBHost = /(^|\.)workbuddy\.host$/.test(location.hostname);
+  if (!isWBHost) {
+    aiSendFallback(msg, bEl);
+    return;
+  }
+
+  // 1) 优先走 WorkBuddy 免密钥模型（流式直连）
+  try {
+    await aiEnsureCloud();
+    const messages = [
+      { role: 'system', content: AI_SYSTEM_PROMPT },
+      ...aiHistory.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user', content: msg },
+    ];
+    for await (const chunk of aiCloud.llm.chat.completions.create({
+      model: aiModelId,
+      messages,
+      stream: true,
+      stream_options: { include_usage: true },
+    })) {
+      const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta;
+      if (delta && delta.content) {
+        acc += delta.content;
+        bEl.textContent = acc;
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+    if (acc) {
+      aiHistory.push({ role: 'assistant', content: acc });
+      if (aiHistory.length > 16) aiHistory = aiHistory.slice(-16);
+    } else {
+      bEl.textContent = '⚠️ 未返回内容，请重试';
+    }
+  } catch (e) {
+    const code = (e && (e.error && e.error.code || e.code)) || '';
+    // 域名不匹配（多为本地开发 localhost）时，回退到后端免费模型，保证可用
+    if (code.indexOf('auth_') === 0) {
+      aiSendFallback(msg, bEl);
+      return;
+    }
+    if (acc) {
+      bEl.textContent = acc + '\n\n⚠️ 生成被中断，可重新提问';
+    } else {
+      bEl.textContent = aiErrMsg(e);
+    }
+  }
+  aiSending = false;
+  input.focus();
+}
+
+// 兜底：云端鉴权不通过（本地开发）时走后端免费模型
+async function aiSendFallback(msg, bEl) {
+  try {
+    const r = await api('POST', '/ai/chat', { message: msg, history: aiHistory.slice(0, -1) });
+    if (r.success && r.data && r.data.reply) {
+      bEl.textContent = r.data.reply;
+      aiHistory.push({ role: 'assistant', content: r.data.reply });
+      if (aiHistory.length > 16) aiHistory = aiHistory.slice(-16);
+    } else {
+      bEl.textContent = '⚠️ ' + (r.message || '请求失败，请稍后重试');
+    }
+  } catch (e) {
+    bEl.textContent = '⚠️ 网络异常，请稍后重试';
+  }
+  aiSending = false;
+  const input = $('#ai-chat-input');
+  if (input) input.focus();
+}
+
+function bindAiChat() {
+  const btn = document.getElementById('ai-chat-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => aiChatToggle());
+  const closeBtn = document.getElementById('ai-chat-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => aiChatToggle(false));
+  const sendBtn = document.getElementById('ai-chat-send');
+  if (sendBtn) sendBtn.addEventListener('click', () => aiSend());
+  const input = document.getElementById('ai-chat-input');
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(); }
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 110) + 'px';
+    });
+  }
+  document.querySelectorAll('.ai-suggest-btn').forEach((b) => {
+    b.addEventListener('click', () => aiSend(b.textContent));
+  });
+  document.addEventListener('keydown', (e) => {
+    const p = $('#ai-chat-panel');
+    if (e.key === 'Escape' && p && p.style.display !== 'none') aiChatToggle(false);
+  });
+}
+
+// 关键：面板 DOM 在 app.js <script> 标签之后才解析，必须等 DOM 就绪再绑定事件，
+// 否则 getElementById 取到 null 会中断绑定，导致“能打开面板但无法发送消息”
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bindAiChat);
+} else {
+  bindAiChat();
 }

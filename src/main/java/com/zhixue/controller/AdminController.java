@@ -74,4 +74,20 @@ public class AdminController {
         userRepo.deleteById(id);
         return ApiResponse.ok("已删除", null);
     }
+
+    /** 管理员一键重置密码 */
+    @PutMapping("/users/{id}/reset-password")
+    public ApiResponse<Map<String, Object>> resetPassword(@PathVariable Long id,
+                                                          @RequestBody(required = false) Map<String, String> body) {
+        User u = userRepo.findById(id).orElse(null);
+        if (u == null) return ApiResponse.fail("用户不存在");
+        String newPwd = (body != null && body.get("newPassword") != null && !body.get("newPassword").isEmpty())
+                ? body.get("newPassword")
+                : "123456";
+        u.setPassword(newPwd);
+        userRepo.save(u);
+        Map<String, Object> r = new java.util.HashMap<>();
+        r.put("tempPassword", newPwd);
+        return ApiResponse.ok("密码已重置为 " + newPwd, r);
+    }
 }

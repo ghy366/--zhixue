@@ -144,6 +144,74 @@ public class DataService {
         return sb.toString();
     }
 
+    // ================= Excel(.xlsx) 行构造（供 ExcelService 生成真实 xlsx） =================
+    private static String str(Object o) { return o == null ? "" : String.valueOf(o); }
+
+    public List<List<String>> studentsRows() {
+        List<List<String>> rows = new ArrayList<>();
+        rows.add(Arrays.asList("学号", "姓名", "密码", "学院", "专业", "年级", "班级", "手机号"));
+        List<User> users = new ArrayList<>(userRepo.findAll());
+        users.sort(Comparator.comparing(u -> u.getNo() == null ? "" : u.getNo()));
+        for (User u : users) {
+            if (!"student".equals(u.getRole())) continue;
+            rows.add(Arrays.asList(esc(u.getNo()), esc(u.getName()), esc(u.getPassword()), esc(u.getCollege()),
+                    esc(u.getMajor()), u.getGrade() == null ? "" : str(u.getGrade()), esc(u.getClassNo()), esc(u.getPhone())));
+        }
+        return rows;
+    }
+
+    public List<List<String>> coursesRows() {
+        Map<Long, User> users = new HashMap<>();
+        for (User u : userRepo.findAll()) users.put(u.getId(), u);
+        List<List<String>> rows = new ArrayList<>();
+        rows.add(Arrays.asList("课程代码", "课程名称", "教师工号", "教师姓名", "学分", "学时", "容量", "类别", "上课时间", "上课地点", "校区", "考试时间"));
+        for (Course c : courseRepo.findAll()) {
+            User t = c.getTeacherId() == null ? null : users.get(c.getTeacherId());
+            rows.add(Arrays.asList(esc(c.getCourseCode()), esc(c.getName()), esc(t != null ? t.getNo() : ""),
+                    esc(t != null ? t.getName() : ""), str(c.getCredit()), str(c.getHours()), str(c.getCapacity()),
+                    esc(c.getCategory()), esc(c.getTime()), esc(c.getLocation()), esc(c.getCampus()), esc(c.getExamTime())));
+        }
+        return rows;
+    }
+
+    public List<List<String>> gradesRows() {
+        Map<Long, User> users = new HashMap<>();
+        for (User u : userRepo.findAll()) users.put(u.getId(), u);
+        Map<Long, Course> courses = new HashMap<>();
+        for (Course c : courseRepo.findAll()) courses.put(c.getId(), c);
+        List<List<String>> rows = new ArrayList<>();
+        rows.add(Arrays.asList("学号", "姓名", "课程代码", "课程名称", "平时分", "考试分", "总分"));
+        for (Grade g : gradeRepo.findAll()) {
+            User u = users.get(g.getStudentId());
+            Course c = courses.get(g.getCourseId());
+            rows.add(Arrays.asList(esc(u != null ? u.getNo() : ""), esc(u != null ? u.getName() : ""),
+                    esc(c != null ? c.getCourseCode() : ""), esc(c != null ? c.getName() : ""),
+                    str(g.getRegularScore()), str(g.getFinalScore()), str(g.getTotalScore())));
+        }
+        return rows;
+    }
+
+    public List<List<String>> courseEnrollmentsRows(Long courseId) {
+        Course course = courseRepo.findById(courseId).orElse(null);
+        String title = course != null ? course.getName() : ("课程" + courseId);
+        Map<Long, User> users = new HashMap<>();
+        for (User u : userRepo.findAll()) users.put(u.getId(), u);
+        List<List<String>> rows = new ArrayList<>();
+        rows.add(Arrays.asList("课程：" + title));
+        rows.add(Arrays.asList("学号", "姓名", "专业", "班级", "手机号", "轮次", "投入积分", "状态"));
+        List<Enrollment> list = enrollmentRepo.findAll().stream()
+                .filter(e -> courseId.equals(e.getCourseId()))
+                .sorted(Comparator.comparing(Enrollment::getPoints).reversed())
+                .toList();
+        for (Enrollment e : list) {
+            User u = users.get(e.getStudentId());
+            rows.add(Arrays.asList(esc(u != null ? u.getNo() : ""), esc(u != null ? u.getName() : ""),
+                    esc(u != null ? u.getMajor() : ""), esc(u != null ? u.getClassNo() : ""), esc(u != null ? u.getPhone() : ""),
+                    str(e.getRound()), str(e.getPoints()), esc(e.getStatus())));
+        }
+        return rows;
+    }
+
     public String studentTemplateCsv() {
         return "学号,姓名,密码,学院,专业,年级,班级,手机号\n" +
                "2023090101,张三,123456,计算机学院,软件工程,2023,软工2301班,13800000000\n";

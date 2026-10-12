@@ -1,4 +1,6 @@
+com\zhixue\service\AiService.class
 com\zhixue\entity\GraduatePaper.class
+com\zhixue\service\ExcelService.class
 com\zhixue\controller\ReviewController.class
 com\zhixue\repository\GraduateMessageRepository.class
 com\zhixue\controller\WaitlistController.class
@@ -27,6 +29,7 @@ com\zhixue\repository\WaitlistRepository.class
 com\zhixue\controller\SystemController.class
 com\zhixue\service\GraduateWorkspaceService.class
 com\zhixue\service\SemesterService.class
+com\zhixue\controller\AiChatController.class
 com\zhixue\controller\StatsController.class
 com\zhixue\repository\AnnouncementRepository.class
 com\zhixue\controller\GraduationController.class
