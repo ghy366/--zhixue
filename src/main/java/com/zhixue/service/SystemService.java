@@ -16,12 +16,14 @@ public class SystemService {
     public SystemConfig setRound(int round) {
         SystemConfig c = getConfig();
         c.setCurrentRound(round);
+        c.setAutoSchedule(false);   // 手动切换即退出自动模式，避免被时间窗口立即覆盖
         return sysRepo.save(c);
     }
 
     public SystemConfig setRoundOpen(boolean open) {
         SystemConfig c = getConfig();
         c.setRoundOpen(open);
+        c.setAutoSchedule(false);   // 手动开关即退出自动模式
         return sysRepo.save(c);
     }
 

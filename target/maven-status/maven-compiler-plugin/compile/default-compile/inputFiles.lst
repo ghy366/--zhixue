@@ -40,6 +40,7 @@ G:\AI\智学选课\src\main\java\com\zhixue\entity\GraduatePaper.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\GraduateRequirement.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\Notification.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\OperationLog.java
+G:\AI\智学选课\src\main\java\com\zhixue\entity\RoundSchedule.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\Semester.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\SystemConfig.java
 G:\AI\智学选课\src\main\java\com\zhixue\entity\User.java
@@ -60,6 +61,7 @@ G:\AI\智学选课\src\main\java\com\zhixue\repository\GraduatePaperRepository.j
 G:\AI\智学选课\src\main\java\com\zhixue\repository\GraduateRequirementRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\NotificationRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\OperationLogRepository.java
+G:\AI\智学选课\src\main\java\com\zhixue\repository\RoundScheduleRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\SemesterRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\SystemConfigRepository.java
 G:\AI\智学选课\src\main\java\com\zhixue\repository\UserRepository.java
@@ -80,6 +82,7 @@ G:\AI\智学选课\src\main\java\com\zhixue\service\IntentService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\LogService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\NotificationService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\ReviewService.java
+G:\AI\智学选课\src\main\java\com\zhixue\service\RoundScheduleService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\ScheduleService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\SemesterService.java
 G:\AI\智学选课\src\main\java\com\zhixue\service\StatsService.java

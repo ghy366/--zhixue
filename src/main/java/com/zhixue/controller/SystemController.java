@@ -1,10 +1,14 @@
 package com.zhixue.controller;
 
 import com.zhixue.dto.ApiResponse;
+import com.zhixue.entity.RoundSchedule;
 import com.zhixue.entity.SystemConfig;
+import com.zhixue.service.RoundScheduleService;
 import com.zhixue.service.SystemService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -12,10 +16,43 @@ import java.util.Map;
 public class SystemController {
 
     @Autowired private SystemService systemService;
+    @Autowired private RoundScheduleService roundScheduleService;
+
+    /** 轮次时间设置请求体 */
+    public static class ScheduleReq {
+        public Boolean autoSchedule;
+        public List<RoundSchedule> schedules;
+    }
 
     @GetMapping("/config")
     public ApiResponse<SystemConfig> config() {
         return ApiResponse.ok(systemService.getConfig());
+    }
+
+    /** 读取三轮时间窗口 + 当前自动推导出的状态 */
+    @GetMapping("/round-schedule")
+    public ApiResponse<Map<String, Object>> getRoundSchedule() {
+        Map<String, Object> r = new LinkedHashMap<>(roundScheduleService.status());
+        r.put("schedules", roundScheduleService.list());
+        return ApiResponse.ok(r);
+    }
+
+    /** 保存三轮时间窗口 / 自动开关，并立即同步状态 */
+    @PostMapping("/round-schedule")
+    public ApiResponse<Map<String, Object>> saveRoundSchedule(@RequestBody ScheduleReq body) {
+        SystemConfig c = roundScheduleService.save(body.schedules, body.autoSchedule);
+        String msg;
+        if (Boolean.TRUE.equals(c.getAutoSchedule())) {
+            msg = "时间设置已保存，系统将按设定时间自动开放与结束选课";
+            if (Boolean.TRUE.equals(c.getRoundOpen())) msg += "（当前第 " + c.getCurrentRound() + " 轮进行中）";
+            else if (c.getRoundOpenAt() != null) msg += "（第 " + c.getCurrentRound() + " 轮尚未开放）";
+            else msg += "（当前无开放轮次）";
+        } else {
+            msg = "时间设置已保存，自动模式已关闭，当前为手动控制";
+        }
+        Map<String, Object> r = new LinkedHashMap<>(roundScheduleService.status());
+        r.put("schedules", roundScheduleService.list());
+        return ApiResponse.ok(msg, r);
     }
 
     @PostMapping("/round")

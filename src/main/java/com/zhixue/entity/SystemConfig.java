@@ -74,6 +74,10 @@ public class SystemConfig {
     @Column(name = "current_phase", length = 16)
     private String currentPhase = "regular";
 
+    /** 是否按预设时间窗口自动开放 / 自动结束选课（开启后 currentRound 与 roundOpen 由时间推导） */
+    @Column(name = "auto_schedule")
+    private Boolean autoSchedule = false;
+
     public SystemConfig() {}
 
     public Long getId() { return id; }
@@ -115,4 +119,6 @@ public class SystemConfig {
     public void setReselectCloseAt(java.time.LocalDateTime v) { this.reselectCloseAt = v; }
     public String getCurrentPhase() { return currentPhase; }
     public void setCurrentPhase(String v) { this.currentPhase = v; }
+    public Boolean getAutoSchedule() { return autoSchedule; }
+    public void setAutoSchedule(Boolean v) { this.autoSchedule = v; }
 }

@@ -159,8 +159,17 @@ function loadLoginRoundBanner() {
       const elapsed = now.getTime() - start.getTime();
       return Math.max(0, Math.min(100, Math.round(elapsed * 100 / total)));
     };
+    let refreshPending = false;
     const tick = () => {
       const n = new Date();
+      // 倒计时归零 = 刚跨过「自动开放」或「自动结束」节点，重新拉取一次状态
+      const hasFuture = (ca && ca.getTime() > n.getTime()) || (oa && oa.getTime() > n.getTime());
+      if (hasFuture) {
+        refreshPending = false;
+      } else if (!refreshPending) {
+        refreshPending = true;
+        setTimeout(() => loadLoginRoundBanner(), 1500);
+      }
       if (ca && ca.getTime() > n.getTime()) {
         setNums(ca.getTime() - n.getTime());
         if (status) status.textContent = open ? '选课进行中' : '本轮已关闭';
@@ -262,16 +271,48 @@ function renderSidebar(role) {
   $$('.nav-item').forEach(item => item.addEventListener('click', () => navigate(item.dataset.page)));
 }
 
+let roundInfoTimer = null;
 async function renderRoundInfo() {
   const r = await api('GET', '/system/config');
-  if (r.success) {
-    const c = r.data;
-    $('#round-info').innerHTML = `
-      <div>当前选课</div>
-      <div class="round-num">第 ${c.currentRound} 轮</div>
-      <span class="round-status ${c.roundOpen ? 'round-open' : 'round-closed'}">${c.roundOpen ? '进行中' : '已关闭'}</span>
-    `;
+  if (!r.success) return;
+  const c = r.data;
+  $('#round-info').innerHTML = `
+    <div>当前选课</div>
+    <div class="round-num">第 ${c.currentRound} 轮</div>
+    <span class="round-status ${c.roundOpen ? 'round-open' : 'round-closed'}">${c.roundOpen ? '进行中' : '已关闭'}</span>
+    <div class="round-left" id="round-left"></div>
+  `;
+  if (roundInfoTimer) { clearInterval(roundInfoTimer); roundInfoTimer = null; }
+  const closeAt = c.roundCloseAt ? new Date(c.roundCloseAt) : null;
+  const openAt = c.roundOpenAt ? new Date(c.roundOpenAt) : null;
+  const now0 = Date.now();
+  let target = null, label = '';
+  if (closeAt && closeAt.getTime() > now0) { target = closeAt; label = '距本轮结束'; }
+  else if (openAt && openAt.getTime() > now0) { target = openAt; label = '距开放'; }
+  if (!target) {
+    const el = document.getElementById('round-left');
+    if (el) el.textContent = c.roundOpen ? '未设结束时间' : '';
+    return;
   }
+  const p = n => String(n).padStart(2, '0');
+  let didRefresh = false;
+  const tick = () => {
+    const el = document.getElementById('round-left');
+    if (!el) { clearInterval(roundInfoTimer); roundInfoTimer = null; return; }
+    const ms = target.getTime() - Date.now();
+    if (ms <= 0) {
+      el.textContent = '';
+      if (!didRefresh) { didRefresh = true; setTimeout(() => renderRoundInfo(), 1500); }
+      return;
+    }
+    const d = Math.floor(ms / 86400000);
+    const h = Math.floor((ms % 86400000) / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    el.textContent = label + ' ' + (d > 0 ? d + '天 ' : '') + p(h) + ':' + p(m) + ':' + p(s);
+  };
+  tick();
+  roundInfoTimer = setInterval(tick, 1000);
 }
 
 // ===== 事件绑定 =====
@@ -1580,12 +1621,63 @@ async function renderAdminDashboard() {
 }
 
 async function renderRoundMgr() {
-  const r = await api('GET', '/system/config');
+  const [r, sr] = await Promise.all([
+    api('GET', '/system/config'),
+    api('GET', '/system/round-schedule')
+  ]);
   const c = r.data;
+  const sd = (sr && sr.success) ? sr.data : { autoSchedule: false, schedules: [], stage: 'closed' };
+  const schedules = sd.schedules || [];
+  const dtVal = (v) => v ? String(v).slice(0, 16) : '';
+  const fmtDT = (v) => v ? String(v).replace('T', ' ').slice(0, 16) : '—';
+  const now = new Date();
+  const stateOf = (s) => {
+    if (!s || (!s.openAt && !s.closeAt)) return { t: '未配置', cls: 'rs-off' };
+    const oa = s.openAt ? new Date(s.openAt) : null;
+    const ca = s.closeAt ? new Date(s.closeAt) : null;
+    if (oa && now < oa) return { t: '待开放', cls: 'rs-wait' };
+    if (ca && now >= ca) return { t: '已结束', cls: 'rs-done' };
+    return { t: '进行中', cls: 'rs-live' };
+  };
+  const auto = !!sd.autoSchedule;
+  const stageText = c.roundOpen ? '选课进行中'
+    : (c.roundOpenAt ? '尚未开放' : (auto ? '当前无开放轮次' : '已关闭'));
+  const statusLine = auto
+    ? `当前：第 ${c.currentRound || '—'} 轮 · ${stageText}`
+      + (c.roundCloseAt ? ` · 本轮将于 ${fmtDT(c.roundCloseAt)} 自动结束`
+        : (c.roundOpenAt ? ` · 将于 ${fmtDT(c.roundOpenAt)} 自动开放` : ''))
+    : `当前：第 ${c.currentRound || '—'} 轮 · ${c.roundOpen ? '进行中' : '已关闭'}（手动模式）`;
+
   $('#content').innerHTML = `
     <div class="admin-card">
-      <h3>选课轮次管理</h3>
-      <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">切换当前选课轮次。每轮学生拥有 ${POINTS_PER_ROUND} 积分。</p>
+      <h3>选课时间设置 <span class="rs-tag">按时间自动开放 / 自动结束</span></h3>
+      <p class="rs-hint">为每一轮设置<b>开始时间</b>与<b>结束时间</b>。到开始时间系统自动开放该轮选课，到结束时间自动关闭，无需人工值守切换；学生端登录页倒计时与「当前轮次」会同步更新。</p>
+      <label class="rs-switch">
+        <input type="checkbox" id="rs-auto" ${auto ? 'checked' : ''}>
+        <span class="rs-slider"></span>
+        <span class="rs-switch-label">启用自动模式（关闭后回到手动切换）</span>
+      </label>
+      <div class="rs-rows">
+        ${[1, 2, 3].map(n => {
+          const s = schedules.find(x => x.roundNo === n) || { roundNo: n };
+          const st = stateOf(s);
+          return `<div class="rs-row">
+            <span class="rs-round">第 ${n} 轮</span>
+            <label class="rs-field"><span>开始</span><input type="datetime-local" id="rs-open-${n}" value="${dtVal(s.openAt)}"></label>
+            <label class="rs-field"><span>结束</span><input type="datetime-local" id="rs-close-${n}" value="${dtVal(s.closeAt)}"></label>
+            <span class="rs-state ${st.cls}">${st.t}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="rs-actions">
+        <button class="btn btn-primary" onclick="saveRoundSchedule()">保存时间设置</button>
+        <button class="btn" onclick="clearRoundSchedule()">清空全部时间</button>
+        <span class="rs-statusline">${statusLine}</span>
+      </div>
+    </div>
+    <div class="admin-card">
+      <h3>手动控制${auto ? ' <span class="rs-tag rs-tag-warn">自动模式开启中，手动操作会关闭自动模式</span>' : ''}</h3>
+      <p style="font-size:13px;color:var(--text-light);margin-bottom:16px">切换当前选课轮次。每轮学生拥有 ${POINTS_PER_ROUND} 积分。${auto ? '当前已启用自动模式，手动点击将立即退出自动模式。' : ''}</p>
       <div class="round-controls">
         ${[1, 2, 3].map(n => `<button class="round-btn ${c.currentRound === n ? 'active' : ''}" onclick="changeRound(${n})">第 ${n} 轮</button>`).join('')}
         <button class="btn ${c.roundOpen ? 'btn-danger' : 'btn-success'}" onclick="toggleRoundOpen()">${c.roundOpen ? '关闭本轮选课' : '开放本轮选课'}</button>
@@ -1630,6 +1722,38 @@ async function renderRoundMgr() {
     </div>`;
 }
 
+async function saveRoundSchedule() {
+  const autoEl = document.getElementById('rs-auto');
+  const auto = autoEl ? autoEl.checked : false;
+  const schedules = [1, 2, 3].map(n => {
+    const o = document.getElementById('rs-open-' + n);
+    const cl = document.getElementById('rs-close-' + n);
+    return { roundNo: n, openAt: (o && o.value) ? o.value : null, closeAt: (cl && cl.value) ? cl.value : null };
+  });
+  for (const s of schedules) {
+    if ((s.openAt && !s.closeAt) || (!s.openAt && s.closeAt)) {
+      toast(`第 ${s.roundNo} 轮需要同时填写开始与结束时间`, 'error'); return;
+    }
+    if (s.openAt && s.closeAt && s.openAt >= s.closeAt) {
+      toast(`第 ${s.roundNo} 轮的结束时间必须晚于开始时间`, 'error'); return;
+    }
+  }
+  if (auto && !schedules.some(s => s.openAt && s.closeAt)) {
+    toast('启用自动模式前，请至少为一轮填写完整的时间窗口', 'error'); return;
+  }
+  const r = await api('POST', '/system/round-schedule', { autoSchedule: auto, schedules });
+  toast(r.message || '已保存', r.success ? 'success' : 'error');
+  if (r.success) navigate('rounds');
+}
+
+function clearRoundSchedule() {
+  [1, 2, 3].forEach(n => {
+    const o = document.getElementById('rs-open-' + n); if (o) o.value = '';
+    const c = document.getElementById('rs-close-' + n); if (c) c.value = '';
+  });
+  toast('已清空输入框，点击「保存时间设置」后生效', '');
+}
+
 async function changeRound(r) {
   const res = await api('POST', '/system/round', { currentRound: r });
   toast(res.message, 'success'); navigate('rounds');
@@ -1644,6 +1768,7 @@ async function toggleRoundOpen() {
     const need = courses.filter(c => c.oversubscribed).length;
     if (need > 0) tip = `，${need} 门课程超容量，请提醒任课老师按积分优先录取（积分相同由老师选择）`;
   }
+  if (cur.data.autoSchedule) tip += '；已退出自动模式，改为手动控制';
   const res = await api('POST', '/system/round-open', { roundOpen: !cur.data.roundOpen });
   toast(res.message + tip, 'success'); navigate('rounds');
 }

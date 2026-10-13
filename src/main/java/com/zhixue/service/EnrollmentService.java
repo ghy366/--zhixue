@@ -21,9 +21,11 @@ public class EnrollmentService {
     @Autowired private SystemConfigRepository sysRepo;
     @Autowired private WaitlistService waitlistService;
     @Autowired private NotificationService notificationService;
+    @Autowired private RoundScheduleService roundScheduleService;
 
     public SystemConfig getSystemConfig() {
-        SystemConfig c = sysRepo.findById(1L).orElseGet(() -> sysRepo.save(new SystemConfig()));
+        // 每次读取都按预设时间窗口校准一次：到点自动开放 / 自动结束
+        SystemConfig c = roundScheduleService.sync();
         if (c.getConfirmMinutes() == null) { c.setConfirmMinutes(30); c = sysRepo.save(c); }
         return c;
     }
