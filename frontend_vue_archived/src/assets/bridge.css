@@ -1,0 +1,133 @@
+/* ==========================================================================
+   bridge.css —— Vue 组件通用类 → 复用 legacy.css 设计 token
+   仅补齐 legacy.css 中「不存在」的类，使新组件观感与原版一致。
+   加载顺序在 legacy.css / vue.css 之后。
+   ========================================================================== */
+
+/* 顶栏下拉定位包裹 */
+.topbar-drop { position: relative; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+
+/* 页面标题区 */
+.page-head { margin-bottom: 22px; }
+.page-head h1 { font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.page-head p { font-size: 14px; color: var(--text-light); }
+
+/* 卡片头 */
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 10px; }
+.card-header h3 { font-size: 16px; font-weight: 600; color: var(--text); }
+
+/* 表格（对齐原版 .data-table） */
+.table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.table th { background: #f9fafb; padding: 13px 16px; text-align: left; font-size: 13px; font-weight: 600; color: var(--text-light); border-bottom: 1px solid var(--border); }
+.table td { padding: 13px 16px; font-size: 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover td { background: #f9fafb; }
+.card .table { box-shadow: none; border-radius: var(--radius-sm); }
+
+/* 徽标 */
+.badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+.badge-ok { background: #dcfce7; color: #15803d; }
+.badge-warn { background: #fef3c7; color: #b45309; }
+
+/* 分段控件 */
+.seg { display: inline-flex; background: var(--bg); border-radius: var(--radius-sm); padding: 4px; gap: 4px; }
+.seg-btn { padding: 7px 16px; border: none; background: transparent; border-radius: 6px; font-size: 13px; color: var(--text-light); cursor: pointer; transition: all .18s; }
+.seg-btn.active { background: var(--card); color: var(--primary); font-weight: 600; box-shadow: var(--shadow); }
+
+/* 搜索 / 筛选行 */
+.search-input { padding: 9px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); font-size: 14px; outline: none; transition: border-color .18s; }
+.search-input:focus { border-color: var(--primary); }
+.filter-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 18px; }
+
+/* 快捷入口 */
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.quick-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); cursor: pointer; font-size: 13px; color: var(--text); transition: all .2s; }
+.quick-tile:hover { border-color: var(--primary); color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.quick-tile .icon { width: 24px; height: 24px; }
+
+/* 课程卡内部 */
+.course-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.course-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+/* 空态卡 */
+.empty-card { padding: 40px 20px; text-align: center; color: var(--text-light); font-size: 14px; }
+
+/* 意向单录入行 */
+.intent-add { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+
+/* 通知面板 */
+.notif-list { max-height: 360px; overflow: auto; }
+.notif-item-sub { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+.notif-item.unread { background: var(--primary-bg); }
+.notif-readall { font-size: 12px; color: var(--primary); cursor: pointer; }
+
+/* Tab */
+.tab { padding: 8px 16px; font-size: 14px; color: var(--text-light); cursor: pointer; border-bottom: 2px solid transparent; transition: all .18s; }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.ws-tab-body { padding-top: 14px; }
+
+/* 毕业设计工作台 */
+.ws-teacher-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+.ws-teacher-list { display: flex; flex-direction: column; gap: 8px; max-height: 72vh; overflow: auto; }
+.ws-detail-col { min-width: 0; }
+.ws-stu-avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--primary), var(--accent)); color: #fff; font-weight: 600; flex: 0 0 auto; }
+.ws-stu-meta { flex: 1; min-width: 0; }
+.ws-stu-name { font-weight: 600; font-size: 14px; color: var(--text); }
+.ws-stu-sub { font-size: 12px; color: var(--text-light); }
+.ws-stu-topic { font-size: 12px; color: var(--text-lighter); margin-top: 2px; }
+
+/* AI 面板 */
+.ai-md { line-height: 1.7; }
+.ai-md p { margin: 0 0 8px; }
+.ai-time { font-size: 11px; color: var(--text-lighter); margin-top: 4px; }
+.ai-typing { color: var(--text-light); font-size: 13px; }
+
+/* 公告卡内部 */
+.announce-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.announce-tags { display: flex; gap: 6px; }
+.announce-body { font-size: 13px; color: var(--text-light); white-space: pre-wrap; }
+
+/* 环形/占比图例 */
+.donut-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.donut-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+
+/* 进度条 */
+.req-list { display: flex; flex-direction: column; gap: 10px; }
+.req-item { display: flex; flex-direction: column; gap: 4px; }
+.req-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-light); }
+.req-bar { height: 8px; background: var(--bg); border-radius: 6px; overflow: hidden; }
+.req-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); border-radius: 6px; transition: width .3s; }
+
+/* 杂项 */
+.tag { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 12px; background: var(--primary-bg); color: var(--primary); }
+.red { color: var(--danger); }
+.alert { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 12px; }
+.alert-ok { background: #dcfce7; color: #15803d; }
+.alert-warn { background: #fef3c7; color: #b45309; }
+.captcha-canvas { cursor: pointer; border-radius: 6px; background: #fff; }
+
+/* 个人信息页 */
+.profile-grid { display: grid; grid-template-columns: 320px 1fr; gap: 18px; margin-bottom: 18px; }
+.profile-avatar-big { width: 88px; height: 88px; border-radius: 50%; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; font-size: 40px; background: linear-gradient(135deg, var(--primary), var(--accent)); color: #fff; overflow: hidden; }
+.profile-avatar-big img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 6px; max-height: 190px; overflow: auto; }
+.avatar-cell { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 20px; cursor: pointer; border: 2px solid transparent; transition: all .15s; }
+.avatar-cell:hover { background: var(--primary-bg); }
+.avatar-cell.active { border-color: var(--primary); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > span { font-size: 13px; color: var(--text-light); }
+.field input { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); font-size: 14px; outline: none; transition: border-color .18s; }
+.field input:focus { border-color: var(--primary); }
+.field input:disabled { background: var(--bg); color: var(--text-light); }
+
+/* 星级评分（文本框形式，用于评价弹窗） */
+.star-row .star-btn { font-size: 22px; line-height: 1; color: var(--border); background: transparent; border: none; cursor: pointer; padding: 0 2px; width: auto; height: auto; }
+.star-row .star-btn.on { color: #f59e0b; }
+.review-stars { color: #f59e0b; letter-spacing: 1px; }
+
+/* 小屏适配 */
+@media (max-width: 900px) {
+  .profile-grid, .ws-teacher-layout { grid-template-columns: 1fr; }
+}
