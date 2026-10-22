@@ -4,6 +4,7 @@ import com.zhixue.entity.*;
 import com.zhixue.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -27,7 +28,11 @@ public class DataInitializer implements CommandLineRunner {
             SystemConfig c = new SystemConfig();
             c.setCurrentRound(1);
             c.setRoundOpen(true);
-            sysRepo.save(c);
+            try {
+                sysRepo.save(c);
+            } catch (DataIntegrityViolationException ignored) {
+                // 定时任务可能在同一时刻创建了 id=1 的配置行；唯一键冲突说明配置已存在，继续初始化即可
+            }
         }
 
         if (userRepo.count() == 0) {

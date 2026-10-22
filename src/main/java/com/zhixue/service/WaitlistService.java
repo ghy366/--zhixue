@@ -5,6 +5,7 @@ import com.zhixue.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -109,7 +110,7 @@ public class WaitlistService {
     }
 
     // 退出候补
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public Map<String, Object> cancel(Long studentId, Long courseId) {
         int round = getConfig().getCurrentRound();
         Waitlist w = findActive(studentId, courseId, round).orElse(null);
@@ -122,7 +123,7 @@ public class WaitlistService {
     }
 
     // 确认录取（递补成功后的限时确认）
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public Map<String, Object> confirm(Long waitlistId, Long studentId) {
         Waitlist w = waitlistRepo.findById(waitlistId).orElse(null);
         if (w == null || !w.getStudentId().equals(studentId)) return fail("候补记录不存在");
@@ -156,9 +157,10 @@ public class WaitlistService {
     }
 
     // 递补：有空位时按队列顺序把 waiting 变为 confirming 并设置确认截止时间
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void promoteIfNeeded(Long courseId, int round) {
-        Course course = courseRepo.findById(courseId).orElse(null);
+        // 锁课程行：退课、候补超时、手动确认等多条路径同时释放名额时，避免重复递补超出容量
+        Course course = courseRepo.findByIdForUpdate(courseId).orElse(null);
         if (course == null || course.getCapacity() == null) return;
         int capacity = course.getCapacity();
         int reserved = reserved(courseId, round);
@@ -213,8 +215,8 @@ public class WaitlistService {
     }
 
     // 定时扫描超时未确认的名额并释放给下一位
-    @Scheduled(fixedDelay = 60000)
-    @Transactional
+    @Scheduled(fixedDelay = 60000, initialDelay = 10000)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void timeoutScan() {
         List<Waitlist> overdue = waitlistRepo.findByStatusAndDeadlineBefore("confirming", LocalDateTime.now());
         if (overdue.isEmpty()) return;

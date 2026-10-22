@@ -33,6 +33,12 @@ public class SystemService {
         return sysRepo.save(c);
     }
 
+    public SystemConfig setMaxCredit(int maxCredit) {
+        SystemConfig c = getConfig();
+        c.setMaxCreditPerSemester(maxCredit);
+        return sysRepo.save(c);
+    }
+
     public SystemConfig setGraduationReqs(Integer required, Integer elective, Integer general, Integer practice) {
         SystemConfig c = getConfig();
         if (required != null) c.setGradReqRequired(required);

@@ -56,7 +56,7 @@ public class IntentService {
     public int totalPoints(Long studentId) {
         int sum = 0;
         for (CourseIntent it : intentRepo.findByStudentIdOrderByCreatedAtAsc(studentId)) {
-            sum += (it.getDesiredPoints() != null && it.getDesiredPoints() > 0) ? it.getDesiredPoints() : 10;
+            sum += (it.getDesiredPoints() != null && it.getDesiredPoints() >= 0) ? it.getDesiredPoints() : 10;
         }
         return sum;
     }
@@ -66,6 +66,12 @@ public class IntentService {
         Map<String, Object> r = new HashMap<>();
         Course c = courseRepo.findById(courseId).orElse(null);
         if (c == null) { r.put("success", false); r.put("msg", "课程不存在"); return r; }
+        // 必修课由系统自动安排进课表，不允许加入意向单
+        if (enrollmentService.isRequiredCourse(courseId)) {
+            r.put("success", false);
+            r.put("msg", "必修课已自动安排进课表，无需选课");
+            return r;
+        }
         CourseIntent it = intentRepo.findByStudentIdAndCourseId(studentId, courseId).orElse(null);
         boolean isNew = it == null;
         if (isNew) {
@@ -74,7 +80,8 @@ public class IntentService {
             it.setCourseId(courseId);
             it.setCreatedAt(LocalDateTime.now());
         }
-        it.setDesiredPoints(points != null && points > 0 ? points : 10);
+        // 0-69 分自由投入：0 分表示暂不投入积分（未传值时才默认 10 分）
+        it.setDesiredPoints(points != null && points >= 0 ? points : 10);
         it.setNote(note);
         intentRepo.save(it);
         r.put("success", true);
@@ -114,7 +121,7 @@ public class IntentService {
             Map<String, Object> r = new HashMap<>();
             r.put("success", false); r.put("msg", "意向单中没有该课程"); return r;
         }
-        int pts = (it.getDesiredPoints() != null && it.getDesiredPoints() > 0) ? it.getDesiredPoints() : 10;
+        int pts = (it.getDesiredPoints() != null && it.getDesiredPoints() >= 0) ? it.getDesiredPoints() : 10;
         Map<String, Object> res = enrollmentService.enroll(studentId, courseId, pts);
         if (Boolean.TRUE.equals(res.get("success"))) {
             intentRepo.delete(it);
@@ -130,7 +137,7 @@ public class IntentService {
         List<Map<String, Object>> details = new ArrayList<>();
         int ok = 0, fail = 0;
         for (CourseIntent it : list) {
-            int pts = (it.getDesiredPoints() != null && it.getDesiredPoints() > 0) ? it.getDesiredPoints() : 10;
+            int pts = (it.getDesiredPoints() != null && it.getDesiredPoints() >= 0) ? it.getDesiredPoints() : 10;
             Map<String, Object> res = enrollmentService.enroll(studentId, it.getCourseId(), pts);
             boolean success = Boolean.TRUE.equals(res.get("success"));
             Course c = courseRepo.findById(it.getCourseId()).orElse(null);

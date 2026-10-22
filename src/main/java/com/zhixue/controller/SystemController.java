@@ -2,14 +2,22 @@ package com.zhixue.controller;
 
 import com.zhixue.dto.ApiResponse;
 import com.zhixue.entity.RoundSchedule;
+import com.zhixue.entity.StaggerWindow;
 import com.zhixue.entity.SystemConfig;
+import com.zhixue.entity.User;
+import com.zhixue.repository.UserRepository;
 import com.zhixue.service.RoundScheduleService;
+import com.zhixue.service.StaggerService;
 import com.zhixue.service.SystemService;
+import com.zhixue.util.SessionStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/system")
@@ -17,6 +25,8 @@ public class SystemController {
 
     @Autowired private SystemService systemService;
     @Autowired private RoundScheduleService roundScheduleService;
+    @Autowired private StaggerService staggerService;
+    @Autowired private UserRepository userRepository;
 
     /** 轮次时间设置请求体 */
     public static class ScheduleReq {
@@ -55,6 +65,63 @@ public class SystemController {
         return ApiResponse.ok(msg, r);
     }
 
+    /** 错峰开放配置：读取全部「轮次+年级→开放时间」 */
+    @GetMapping("/stagger")
+    public ApiResponse<List<StaggerWindow>> getStagger() {
+        return ApiResponse.ok(staggerService.listAll());
+    }
+
+    /** 错峰开放配置：全量覆盖保存（仅第 1、2 轮有效，第三轮不参与错峰） */
+    @PostMapping("/stagger")
+    public ApiResponse<List<StaggerWindow>> saveStagger(@RequestBody List<StaggerWindow> body) {
+        List<StaggerWindow> saved = staggerService.saveAll(body);
+        return ApiResponse.ok("错峰开放配置已保存（共 " + saved.size() + " 条，仅第 1、2 轮生效）", saved);
+    }
+
+    /** 学生年级分布（入学年份 → 人数），错峰配置界面用它生成候选年级 */
+    @GetMapping("/grade-stats")
+    public ApiResponse<Map<String, Object>> gradeStats() {
+        List<User> students = userRepository.findByRole("student");
+        Map<Integer, Long> counts = students.stream()
+                .filter(u -> u.getGrade() != null)
+                .collect(Collectors.groupingBy(User::getGrade, TreeMap::new, Collectors.counting()));
+        List<Map<String, Object>> items = counts.entrySet().stream().map(e -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("grade", e.getKey());
+            m.put("count", e.getValue());
+            return m;
+        }).collect(Collectors.toList());
+        long unknown = students.stream().filter(u -> u.getGrade() == null).count();
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("items", items);
+        r.put("unknownCount", unknown);
+        return ApiResponse.ok(r);
+    }
+
+    /** 学生查询自己在当前轮的错峰开放时间 */
+    @GetMapping("/my-window")
+    public ApiResponse<Map<String, Object>> myWindow(
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        SystemConfig c = systemService.getConfig();
+        r.put("currentRound", c.getCurrentRound());
+        r.put("roundOpen", c.getRoundOpen());
+        r.put("roundOpenAt", c.getRoundOpenAt());
+        r.put("roundCloseAt", c.getRoundCloseAt());
+        r.put("now", LocalDateTime.now());
+        Long uid = token == null ? null : SessionStore.getUserId(token.replace("Bearer ", ""));
+        User u = uid == null ? null : userRepository.findById(uid).orElse(null);
+        Integer grade = u == null ? null : u.getGrade();
+        LocalDateTime myOpenAt = staggerService.openAtFor(c.getCurrentRound(), grade);
+        boolean staggered = myOpenAt != null;
+        boolean myOpen = !staggered || !LocalDateTime.now().isBefore(myOpenAt);
+        r.put("grade", grade);
+        r.put("staggered", staggered);
+        r.put("myOpenAt", myOpenAt);
+        r.put("myOpen", myOpen);
+        return ApiResponse.ok(r);
+    }
+
     @PostMapping("/round")
     public ApiResponse<SystemConfig> setRound(@RequestBody SystemConfig body) {
         return ApiResponse.ok("已切换到第 " + body.getCurrentRound() + " 轮", systemService.setRound(body.getCurrentRound()));
@@ -62,7 +129,9 @@ public class SystemController {
 
     @PostMapping("/round-open")
     public ApiResponse<SystemConfig> setRoundOpen(@RequestBody SystemConfig body) {
-        SystemConfig c = systemService.setRoundOpen(body.getRoundOpen());
+        systemService.setRoundOpen(body.getRoundOpen());
+        // 手动切换后补齐本轮时间窗，保证登录页/侧边栏倒计时能拿到目标时间
+        SystemConfig c = roundScheduleService.fillCurrentWindow();
         return ApiResponse.ok(body.getRoundOpen() ? "本轮选课已开放" : "本轮选课已关闭", c);
     }
 
@@ -70,6 +139,13 @@ public class SystemController {
     public ApiResponse<SystemConfig> setConfirmMinutes(@RequestBody SystemConfig body) {
         int m = body.getConfirmMinutes() != null ? body.getConfirmMinutes() : 30;
         return ApiResponse.ok("候补确认时限已设为 " + m + " 分钟", systemService.setConfirmMinutes(m));
+    }
+
+    /** 每学期学分上限 */
+    @PostMapping("/max-credit")
+    public ApiResponse<SystemConfig> setMaxCredit(@RequestBody SystemConfig body) {
+        int v = body.getMaxCreditPerSemester() != null ? body.getMaxCreditPerSemester() : 24;
+        return ApiResponse.ok("每学期学分上限已设为 " + v, systemService.setMaxCredit(v));
     }
 
     @PostMapping("/graduation-reqs")

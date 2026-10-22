@@ -4,6 +4,7 @@ import com.zhixue.entity.Course;
 import com.zhixue.entity.Enrollment;
 import com.zhixue.entity.SystemConfig;
 import com.zhixue.repository.EnrollmentRepository;
+import com.zhixue.util.CourseGroup;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -18,17 +19,15 @@ public class GraduationService {
 
     private static final String[] KEYS = {"必修", "选修", "通识", "实践"};
 
-    /** 课程类别 → 毕业学分大类（必修/选修/通识/实践） */
+    /** 课程类别 → 毕业学分大类（必修/选修/通识/实践）。统一使用 {@link CourseGroup#groupOf} */
     public String groupOf(String category) {
-        if (category == null) return "选修";
-        if (category.contains("必修")) return "必修";
-        if (category.contains("通识")) return "通识";
-        if (category.contains("实践")) return "实践";
-        return "选修";
+        return CourseGroup.groupOf(category);
     }
 
     /** 毕业进度汇总：各类别已获/差额 + 推荐可修课程 */
     public Map<String, Object> summary(Long studentId) {
+        // 必修课由系统自动排课：先补齐，保证必修学分直接计入毕业进度
+        try { enrollmentService.ensureRequiredEnrollments(studentId); } catch (Exception ignored) {}
         SystemConfig cfg = enrollmentService.getSystemConfig();
         Map<String, Integer> reqMap = new LinkedHashMap<>();
         reqMap.put("必修", nz(cfg.getGradReqRequired()));
@@ -39,10 +38,15 @@ public class GraduationService {
         Map<String, Integer> earned = new LinkedHashMap<>();
         for (String k : KEYS) earned.put(k, 0);
         Set<Long> approvedIds = new HashSet<>();
+        // 同一门课程可能在多轮次都有记录，按课程去重，避免学分重复累加
+        Map<Long, Course> approvedCourses = new LinkedHashMap<>();
         for (Enrollment e : enrollmentRepo.findByStudentId(studentId)) {
             if (!"approved".equals(e.getStatus())) continue;
             Course c = courseService.findById(e.getCourseId());
             if (c == null) continue;
+            approvedCourses.putIfAbsent(c.getId(), c);
+        }
+        for (Course c : approvedCourses.values()) {
             approvedIds.add(c.getId());
             String g = groupOf(c.getCategory());
             earned.put(g, earned.get(g) + nz(c.getCredit()));

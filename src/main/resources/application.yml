@@ -15,7 +15,7 @@ spring:
 
   web:
     resources:
-      static-locations: classpath:/static/
+      static-locations: classpath:/static-vue/
       # 开发/演示环境禁用静态资源缓存，避免改了前端却仍加载旧文件
       cache:
         cachecontrol:

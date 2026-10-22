@@ -63,6 +63,14 @@ public class AdminController {
         if (body.containsKey("classNo")) u.setClassNo(body.get("classNo"));
         if (body.containsKey("phone")) u.setPhone(body.get("phone"));
         if (body.containsKey("avatar")) u.setAvatar(body.get("avatar"));
+        if (body.containsKey("grade")) {
+            String g = body.get("grade");
+            if (g == null || g.isEmpty()) {
+                u.setGrade(null);            // 显式传空：允许清掉配错的年级
+            } else {
+                try { u.setGrade(Integer.parseInt(g)); } catch (NumberFormatException ignored) {}
+            }
+        }
         if (body.containsKey("password") && body.get("password") != null && !body.get("password").isEmpty()) {
             u.setPassword(body.get("password"));
         }

@@ -3,7 +3,10 @@ package com.zhixue.entity;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "enrollments")
+@Table(name = "enrollments",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_enrollment_student_course_round",
+                columnNames = {"student_id", "course_id", "round"}))
 public class Enrollment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

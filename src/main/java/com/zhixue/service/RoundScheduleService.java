@@ -56,20 +56,22 @@ public class RoundScheduleService {
             }
         }
         repo.saveAll(map.values());
+        SystemConfig c = config();
         if (auto != null) {
-            SystemConfig c = config();
             c.setAutoSchedule(auto);
-            sysRepo.save(c);
+            c = sysRepo.save(c);
         }
-        return sync();
+        // 保存时间窗后无条件立即同步一次：无论自动/手动模式，
+        // 侧边栏、登录页倒计时读取的 SystemConfig 都要拿到最新窗口
+        return syncOnce(c);
     }
 
     private SystemConfig config() {
         return sysRepo.findById(1L).orElseGet(() -> sysRepo.save(new SystemConfig()));
     }
 
-    /** 定时巡检：到点自动开放 / 自动结束（每 30 秒） */
-    @Scheduled(fixedRate = 30000)
+    /** 定时巡检：到点自动开放 / 自动结束（每 30 秒，首次延迟 10 秒，避开启动数据初始化） */
+    @Scheduled(fixedRate = 30000, initialDelay = 10000)
     public void tick() { sync(); }
 
     /**
@@ -79,8 +81,13 @@ public class RoundScheduleService {
      */
     public synchronized SystemConfig sync() {
         SystemConfig c = config();
+        // 自动模式关闭时不巡检：手动开放/关闭状态由用户控制，避免被时间窗覆盖
         if (!Boolean.TRUE.equals(c.getAutoSchedule())) return c;
+        return syncOnce(c);
+    }
 
+    /** 按时间窗推导一次状态并写入 SystemConfig（无自动模式门槛，保存后立即调用用） */
+    private synchronized SystemConfig syncOnce(SystemConfig c) {
         List<RoundSchedule> all = list();
 
         boolean anyConfigured = all.stream()
@@ -144,9 +151,30 @@ public class RoundScheduleService {
         return c;
     }
 
+    /**
+     * 手动开放/关闭后，用当前轮排期把 SystemConfig 的时间窗补齐。
+     * 手动模式下 sync() 不巡检，若不补这里，roundOpenAt/roundCloseAt 会一直为 null，
+     * 登录页倒计时、侧边栏倒计时都拿不到目标时间而整块消失。
+     */
+    public synchronized SystemConfig fillCurrentWindow() {
+        SystemConfig c = config();
+        Integer r = c.getCurrentRound() == null ? 1 : c.getCurrentRound();
+        RoundSchedule hit = list().stream()
+                .filter(s -> r.equals(s.getRoundNo()))
+                .findFirst().orElse(null);
+        if (hit == null) return c;
+        boolean changed = false;
+        if (c.getRoundOpenAt() == null && hit.getOpenAt() != null) {
+            c.setRoundOpenAt(hit.getOpenAt()); changed = true;
+        }
+        if (c.getRoundCloseAt() == null && hit.getCloseAt() != null) {
+            c.setRoundCloseAt(hit.getCloseAt()); changed = true;
+        }
+        return changed ? sysRepo.save(c) : c;
+    }
+
     /** 前端状态汇总：阶段 + 倒计时目标时间 */
-    public Map<String, Object> status() {
-        SystemConfig c = sync();
+    public Map<String, Object> status() {        SystemConfig c = sync();
         LocalDateTime now = LocalDateTime.now();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("autoSchedule", Boolean.TRUE.equals(c.getAutoSchedule()));

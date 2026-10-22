@@ -1,9 +1,12 @@
 package com.zhixue.controller;
 
 import com.zhixue.dto.ApiResponse;
+import com.zhixue.entity.Enrollment;
 import com.zhixue.entity.Grade;
 import com.zhixue.entity.User;
+import com.zhixue.repository.EnrollmentRepository;
 import com.zhixue.repository.UserRepository;
+import com.zhixue.service.EnrollmentService;
 import com.zhixue.service.GradeService;
 import com.zhixue.util.SessionStore;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,24 +20,31 @@ public class GradeController {
 
     @Autowired private GradeService gradeService;
     @Autowired private UserRepository userRepo;
+    @Autowired private EnrollmentRepository enrollmentRepo;
+    @Autowired private EnrollmentService enrollmentService;
 
-    // 老师查看某课程的学生成绩
+    // 老师查看某课程的学生成绩：以本轮已录取选课记录为准（未录入成绩的学生也显示，成绩为空）
     @GetMapping("/course/{courseId}")
     public ApiResponse<List<Map<String, Object>>> courseGrades(@PathVariable Long courseId) {
-        List<Grade> grades = gradeService.findByCourse(courseId);
+        int round = enrollmentService.getSystemConfig().getCurrentRound();
+        List<Enrollment> enrolls = enrollmentRepo.findByCourseIdAndRound(courseId, round).stream()
+                .filter(e -> "approved".equals(e.getStatus()))
+                .sorted(Comparator.comparing(Enrollment::getId))
+                .toList();
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Grade g : grades) {
-            User u = userRepo.findById(g.getStudentId()).orElse(null);
+        for (Enrollment e : enrolls) {
+            User u = userRepo.findById(e.getStudentId()).orElse(null);
+            Grade g = gradeService.findByStudentAndCourse(e.getStudentId(), courseId);
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("gradeId", g.getId());
-            m.put("studentId", g.getStudentId());
+            m.put("gradeId", g != null ? g.getId() : null);
+            m.put("studentId", e.getStudentId());
             m.put("studentNo", u != null ? u.getNo() : "");
             m.put("studentName", u != null ? u.getName() : "未知");
             m.put("studentMajor", u != null ? u.getMajor() : "");
             m.put("studentClass", u != null ? u.getClassNo() : "");
-            m.put("regularScore", g.getRegularScore());
-            m.put("finalScore", g.getFinalScore());
-            m.put("totalScore", g.getTotalScore());
+            m.put("regularScore", g != null ? g.getRegularScore() : null);
+            m.put("finalScore", g != null ? g.getFinalScore() : null);
+            m.put("totalScore", g != null ? g.getTotalScore() : null);
             result.add(m);
         }
         return ApiResponse.ok(result);

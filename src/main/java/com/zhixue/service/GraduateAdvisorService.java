@@ -186,6 +186,7 @@ public class GraduateAdvisorService {
             m.put("teacherId", t.getId());
             m.put("teacherName", t.getName());
             m.put("teacherNo", t.getNo());
+            m.put("teacherCollege", t.getCollege());
             m.put("capacity", teacherCapacity(t.getId()));
             m.put("approved", gaRepo.countByTeacherIdAndStatus(t.getId(), "approved"));
             m.put("pending", gaRepo.countByTeacherIdAndStatus(t.getId(), "pending"));

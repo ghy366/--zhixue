@@ -64,6 +64,8 @@ public class EnrollmentController {
                                                        @RequestParam(required = false) Integer round) {
         Long userId = SessionStore.getUserId(token.replace("Bearer ", ""));
         if (round == null) round = enrollmentService.getSystemConfig().getCurrentRound();
+        // 必修课由系统自动排课：读取前先补齐，保证课表/我的课程里一定有必修课
+        try { enrollmentService.ensureRequiredEnrollments(userId); } catch (Exception ignored) {}
         List<Enrollment> list = enrollmentRepo.findByStudentIdAndRound(userId, round).stream()
                 .filter(e -> !"dropped".equals(e.getStatus())).toList();
         List<Map<String, Object>> result = new ArrayList<>();
@@ -80,6 +82,13 @@ public class EnrollmentController {
             m.put("points", e.getPoints());
             m.put("status", e.getStatus());
             m.put("round", e.getRound());
+            Grade g = gradeService.findByStudentAndCourse(userId, e.getCourseId());
+            if (g != null && g.getTotalScore() != null) {
+                double sc = g.getTotalScore();
+                m.put("grade", sc == Math.floor(sc) ? String.valueOf((long) sc) : String.valueOf(sc));
+            } else {
+                m.put("grade", null);
+            }
             result.add(m);
         }
         return ApiResponse.ok(result);
@@ -123,10 +132,17 @@ public class EnrollmentController {
     @GetMapping("/scores")
     public ApiResponse<List<Map<String, Object>>> scores(@RequestHeader("Authorization") String token) {
         Long userId = SessionStore.getUserId(token.replace("Bearer ", ""));
-        List<Enrollment> list = enrollmentRepo.findByStudentId(userId).stream()
-                .filter(e -> "approved".equals(e.getStatus())).toList();
+        // 同一门课可能存在多条历史轮次记录：按课程去重，优先保留已有成绩的那条
+        Map<Long, Enrollment> byCourse = new LinkedHashMap<>();
+        for (Enrollment e : enrollmentRepo.findByStudentId(userId)) {
+            if (!"approved".equals(e.getStatus())) continue;
+            Enrollment prev = byCourse.get(e.getCourseId());
+            if (prev == null) { byCourse.put(e.getCourseId(), e); continue; }
+            boolean curScored = gradeService.findByStudentAndCourse(userId, e.getCourseId()) != null;
+            if (curScored) byCourse.put(e.getCourseId(), e);
+        }
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Enrollment e : list) {
+        for (Enrollment e : byCourse.values()) {
             Course c = courseService.findById(e.getCourseId());
             if (c == null) continue;
             Grade g = gradeService.findByStudentAndCourse(userId, c.getId());
