@@ -1,125 +1,152 @@
 # 智学选课平台
 
-智学选课是一个以 Spring Boot 提供 REST API、以原生 HTML/CSS/JavaScript 提供前端页面的全栈选课演示项目。后端同时负责提供 `src/main/resources/static/` 下的页面资源，开发时通常只需启动一个服务，默认访问 `http://localhost:8080`。
+智学选课是一个面向高校场景的全栈选课演示系统：后端以 Spring Boot 提供 REST API，前端为 Vue 3 单页应用，构建产物由 Spring Boot 直接托管，开发时通常只需启动一个服务，默认访问 `http://localhost:8080`。
+
+系统围绕"三轮录取机制"构建：第 1、2 轮为积分选课（截止后统一按积分排序录取），第 3 轮为先到先得补选，并配套候补队列、按年级错峰开放、学分封顶、毕业进度跟踪、毕设导师双向选择与工作台、AI 选课助手等完整教学场景功能。
 
 ## 技术栈
 
-- Java 17、Spring Boot 3.3.5、Maven
-- Spring Web、Spring Data JPA、Bean Validation
-- MySQL（当前默认启用的配置）；项目还包含 H2 和 MySQL JDBC 驱动
-- 原生 HTML、CSS、JavaScript
-- Apache POI：Excel 文件导入与导出
+- **后端**：Java 17、Spring Boot 3.3.5、Spring Web、Spring Data JPA、Bean Validation、Maven
+- **数据库**：MySQL 8（`application.yml` 默认启用 `mysql` profile）；仓库同时包含 H2 与 MySQL JDBC 驱动
+- **前端**：Vue 3、TypeScript、Vite、Pinia、Vue Router、Element Plus（源码位于 `frontend/`）
+- **其他**：Apache POI（Excel 导入导出）、大模型兼容接口（AI 助手）
+
+> `src/main/resources/static/` 保留的是旧版原生 HTML/CSS/JS 前端，仅作对照；当前默认服务的是 Vue 构建产物 `src/main/resources/static-vue/`（由 `application.yml` 的 `spring.web.resources.static-locations` 指定）。
 
 ## 项目结构
 
 ```text
+frontend/                            # Vue 3 前端源码（npm run build 输出 static-vue）
+├── src/views/                       # 32 个业务页面（学生/教师/管理员）
+├── src/components/                  # 布局、键帽侧边栏、透明顶栏等
+├── src/stores/、src/router/、src/api/
+└── src/styles/original.css          # 全局样式（新拟物键帽菜单、透明顶栏等）
+
 src/main/java/com/zhixue/
-├── config/       # Spring MVC、请求日志、异常处理、启动数据初始化
-├── controller/   # REST API 控制器，负责接收请求和组织响应
-├── dto/          # API 数据传输对象和统一响应结构
-├── entity/       # JPA 实体及数据库映射
-├── repository/   # Spring Data JPA 数据访问接口
-├── service/      # 业务逻辑
-├── util/         # 会话等通用工具
-└── ZhixueApplication.java
+├── config/      # Spring MVC、请求日志、异常处理、启动数据初始化、自动结算任务
+├── controller/  # REST API 控制器
+├── dto/         # 统一响应结构 ApiResponse
+├── entity/      # JPA 实体（含错峰窗口 StaggerWindow）
+├── repository/  # Spring Data JPA 数据访问接口
+├── service/     # 业务逻辑（选课结算、候补、错峰、毕业要求等）
+└── util/        # 会话管理、毕业大类映射 CourseGroup 等
 
+src/test/java/                       # 单元测试（结算规则）
 src/main/resources/
-├── application.yml  # Spring Boot、数据库和 AI 助手配置
-└── static/
-    ├── index.html   # 单页应用入口及页面结构
-    ├── app.js       # 页面交互、状态和 /api 请求
-    ├── styles.css   # 页面样式
-    └── bg-effects.js
+├── application.yml                  # 数据库、AI 助手、静态资源配置
+├── static-vue/                      # Vue 构建产物（由构建生成，不进版本库）
+└── static/                          # 旧版原生前端（对照保留）
 
-init-mysql.sql       # MySQL 演示数据脚本（含删除表语句，使用前务必检查）
-pom.xml              # Java 版本、依赖和 Maven 构建配置
-deploy.sh            # Linux/Cloud Studio 演示部署脚本
+init-mysql.sql    # MySQL 演示数据脚本（含 DROP TABLE，使用前务必检查）
+pom.xml           # Java 版本、依赖与 Maven 构建配置
+deploy.sh         # Linux/Cloud Studio 演示部署脚本
 ```
 
-## 本地开发
+## 环境要求
 
-### 环境要求
+- JDK 17、MySQL 8（使用默认 `mysql` profile 时）
+- Node.js 18+（仅构建前端时需要）
+- Maven 3.6+；仓库中也提供 Maven 3.9.6 可执行文件
 
-- JDK 17
-- MySQL 8（使用当前默认配置时）
-- Maven 3.6+；仓库目录中也提供了 Maven 3.9.6 可执行文件
+## 构建与启动
 
-### 配置数据库
-
-当前 `application.yml` 默认激活 `mysql` profile，连接本机 `zhixue` 数据库，端口为 `3306`。启动前请确认 MySQL 正在运行，并检查该 profile 中的连接地址、用户名和密码是否适合你的本地环境。不要把个人或生产环境凭据提交到版本库。
-
-`pom.xml` 中虽然包含 H2 依赖，但当前配置没有启用 H2 profile；不要仅因依赖存在就假定应用默认使用 H2。
-
-### 构建和启动
-
-在 Windows PowerShell 中，从仓库根目录执行：
+前端产物已在 `static-vue/` 时可跳过第 1 步。在仓库根目录执行：
 
 ```powershell
-# 如果已安装 Maven
-mvn clean package
+# 1) 构建前端（输出到 src/main/resources/static-vue）
+npm --prefix frontend install          # 首次需要
+npm --prefix frontend run build
 
-# 或使用仓库中提供的 Maven
+# 2) 打包后端（前端产物一并打进 jar）
 .\apache-maven-3.9.6\bin\mvn.cmd clean package
 
-# 启动应用
+# 3) 启动
 java -jar .\target\zhixue-selection-1.0.0.jar
 ```
 
-也可以在 IDE 中运行 `com.zhixue.ZhixueApplication`。启动后打开 `http://localhost:8080`。
+也可以在 IDE 中直接运行 `com.zhixue.ZhixueApplication`。注意 IDE 运行读取的是 `target/classes/`：修改前端后需要重新执行 `npm --prefix frontend run build`，并把 `static-vue` 同步到 `target/classes/`（或重新执行一次 `mvn compile`），刷新浏览器（Ctrl+F5）即可生效。
 
 本地运行 AI 助手时，可通过环境变量设置兼容接口参数；未设置时使用 `application.yml` 中的默认值：
 
 ```powershell
 $env:AI_BASE_URL = "https://your-compatible-api.example/v1"
-$env:AI_API_KEY = "your-api-key"
-$env:AI_MODEL = "your-model"
+$env:AI_API_KEY  = "your-api-key"
+$env:AI_MODEL    = "your-model"
 ```
 
 密钥仅用于本地环境配置，不要粘贴到文档、提交记录或公开日志中。
 
+## 演示账号
+
+应用启动时 `config/DataInitializer.java` 会在对应表为空时初始化演示数据：
+
+| 角色 | 账号 | 密码 |
+|---|---|---|
+| 管理员 | `admin` | `admin` |
+| 教师 | `T001` ~ `T004` | `123456` |
+| 学生 | `2023010101` ~ `2023010105` | `123456` |
+
 ## 数据初始化与重置
 
-应用启动时，`config/DataInitializer.java` 会在相应数据表为空时创建演示数据（用户、课程、选课记录、学期、教室和公告等）。有数据的表不会由这段初始化逻辑清空。
-
-`init-mysql.sql` 是独立的 MySQL 演示初始化脚本，其中包含 `DROP TABLE`。运行它可能删除同名表及其中的数据；对已有数据库执行前，请先备份并检查脚本内容。数据库结构也由 JPA 实体映射，开发配置使用 Hibernate `ddl-auto: update`。
+- `DataInitializer` 只在数据表为空时写入演示数据，不会清空已有数据。
+- `init-mysql.sql` 是独立的 MySQL 演示初始化脚本，其中包含 `DROP TABLE`；对已有数据库执行前请先备份并检查脚本内容。
+- 数据库结构由 JPA 实体映射，开发配置使用 `ddl-auto: update`；`enrollments` 的 `(student_id, course_id, round)` 唯一约束也依赖该机制自动创建。
 
 ## 前后端协作约定
 
-- 前端静态资源由 Spring Boot 从 `src/main/resources/static/` 提供。
-- API 路径以 `/api` 开头；前端请求封装位于 `static/app.js`。
-- API 通常返回统一结构：`success` 表示是否成功，`message` 提供说明，`data` 携带结果；结构定义在 `dto/ApiResponse.java`。
-- 登录后端使用会话 token；前端将 token 和用户信息保存在浏览器 `localStorage`，请求时通过 `Authorization: Bearer <token>` 发送 token。
-- 新增或调整业务时，优先保持 `Controller → Service → Repository → Entity` 的职责分层；请求/响应结构较复杂时，在 `dto/` 中定义类型，不要把业务规则堆进控制器或前端。
+- API 路径以 `/api` 开头；前端请求封装位于 `frontend/src/api/`，登录后 token 与用户信息保存在 `localStorage`，请求通过 `Authorization: Bearer <token>` 传递。
+- API 返回统一结构：`success` 表示是否成功，`message` 提供说明，`data` 携带结果；结构定义在 `dto/ApiResponse.java`。
+- 业务逻辑遵循 `Controller → Service → Repository → Entity` 分层；不要把业务规则堆进控制器或前端。
+- 前端菜单按角色渲染，仅是体验层隔离；权限判断需以后端为准（见"已知简化"）。
 
-## 功能模块与 API 入口
+## 核心业务规则
 
-控制器集中在 `controller/`，主要 API 前缀如下：
+### 三轮录取机制
 
-| 模块 | API 前缀 | 主要职责 |
-|---|---|---|
-| 登录与个人资料 | `/api/auth` | 登录、注册、退出、资料和密码管理 |
-| 课程与选课 | `/api/courses`、`/api/enrollments`、`/api/intents` | 课程浏览、选课、退课、意向课程和积分 |
-| 等候与排课 | `/api/waitlist`、`/api/schedule` | 候补队列、课表和冲突检查 |
-| 教学与成绩 | `/api/grades`、`/api/reviews` | 成绩、课程评价及相关审批 |
-| 教务管理 | `/api/admin`、`/api/system`、`/api/semesters` | 用户、选课轮次、系统配置和学期管理 |
-| 通知与公告 | `/api/notify`、`/api/announcements` | 消息推送、通知和公告 |
-| 毕业与研究生工作区 | `/api/graduation`、`/api/advisor`、`/api/workspace` | 毕业信息、导师和研究生工作区 |
-| 数据与统计 | `/api/data`、`/api/stats`、`/api/logs` | 数据导入导出、统计报表和操作日志 |
-| AI 助手 | `/api/ai` | AI 对话 |
+- 第 1、2 轮为积分选课：报名阶段只记录 `pending` 与积分投入，窗口期内任意时间提交都有效；截止后系统按积分全局降序统一录取（同分随机抽签）。
+- 第 3 轮为先到先得：确认加入即录取，不使用积分。
+- 候补队列：课程满员时学生可手动加入；退课或改选释放名额后按加入时间顺序递补，递补者需在限时内确认（默认 30 分钟，确认时复检时间冲突），超时则顺延给下一位。
+- 支持改选：改选成功后才释放旧课的候补位（`EnrollmentService` 在旧课释放后触发 `promoteIfNeeded` 递补）。
 
-服务端业务规则放在对应 `service/` 类中；数据库查询放在 `repository/` 接口中；持久化字段和关系定义在 `entity/` 中。增加实体或字段时，应同步检查初始化逻辑、前端展示以及相关导入导出流程。
+### 选课并发与结算约束
+
+- 第 1、2 轮报名阶段只记录 `pending`，结算时按投入积分全局降序录取（同分随机），并在录取前重新校验时间冲突和学期学分上限，避免"报名时都合法、结算后互相冲突"。
+- 第 3 轮先到先得在课程行锁内统计已录取人数再插入，并发抢最后一个名额不会超卖。
+- `enrollments` 对 `(student_id, course_id, round)` 建立唯一约束；选课、退课、改选会锁定学生行和课程行（按课程 ID 升序加锁），避免重复报名、积分超扣和交叉死锁。
+- 手动结算与定时结算通过 `system_config` 行锁互斥；自动结算必须在该轮结束时间之后执行。
+- 使用非 `ddl-auto: update` 的部署方式时，需要手动创建上述唯一约束。
+
+### 学分封顶
+
+- 每学期总学分受系统配置的学期上限约束（默认 24 分）。
+- 毕业学分按毕业要求分类封顶：必修/选修/通识/实践分别按 `grad_req_*` 配置封顶，分类口径由 `CourseGroup` 统一维护（选课入口与结算使用同一口径）。
+- 第 3 轮在报名入口即时校验封顶；第 1、2 轮允许超报，由结算统一裁决。
+
+### 错峰开放
+
+- 管理员可为第 1、2 轮配置"年级 → 开放时间"窗口；学生的年级为入学年份（如 2023 表示 2023 级），可在用户管理中维护，注册时优先取显式值、否则从学号前 4 位推导。
+- 错峰只影响提交时间，不影响截止后的统一排序结果；未配置窗口或未设置年级的学生跟随全局开放时间。
 
 ## 测试与校验
 
 ```powershell
-mvn test
-mvn clean package
+.\apache-maven-3.9.6\bin\mvn.cmd test
 ```
 
-目前仓库的 `src/` 下未发现测试文件。新增功能时，请同时补充对应的服务层或 API 测试，并使用 `mvn test` 验证。
+`src/test/java/com/zhixue/service/EnrollmentSettlementTest.java` 覆盖结算的积分排序、容量限制、时间冲突、学分分类封顶、重复报名等规则（共 7 个用例）。新增业务规则时请同步补充测试。
 
 ## 配置与部署注意事项
 
 - 服务默认监听 `8080`；数据库连接、Hibernate 和 AI 助手配置位于 `src/main/resources/application.yml`。
-- `deploy.sh` 面向 Linux/Cloud Studio，包含环境安装、MySQL 容器和应用启动步骤；不是 Windows 部署脚本。使用前请审查其中的账号、口令、端口映射及 Docker 操作，并替换为安全配置。
-- 仓库中的演示数据和默认配置仅用于本地演示。不要将演示账号、默认口令或内置密钥用于生产环境；生产部署前应改用外部密钥管理，并关闭或替换演示初始化数据。
+- `deploy.sh` 面向 Linux/Cloud Studio，包含环境安装、MySQL 容器和应用启动步骤；不是 Windows 部署脚本，使用前请审查其中的账号、口令、端口映射及 Docker 操作。
+- 仓库中的演示数据和默认配置仅用于本地演示，不要用于生产环境。
+
+## 已知简化（演示取舍）
+
+以下实现是为单机演示做的简化，答辩或扩展时可作为改进方向：
+
+- **会话**：token 存于内存 `ConcurrentHashMap`，服务重启后登录态失效、无过期时间；生产应改用 JWT + Redis。
+- **口令**：用户口令为明文存储比对；生产应使用 BCrypt 等哈希加盐。
+- **权限**：后端暂未统一拦截校验角色，接口主要依赖前端菜单隔离；生产应在拦截器/网关统一校验 token 与角色。
+- **通知**：通知中心为前端本地数据，SSE 推送未接入。
+- **分页**：部分列表接口为全量返回，数据量大时应加分页。
