@@ -1,0 +1,25 @@
+# ===== 构建产物 =====
+target/
+src/main/resources/static-vue/
+frontend/dist/
+frontend/node_modules/
+
+# ===== 打包与临时文件 =====
+*.jar
+*.log
+tmp_*.out.log
+tmp_*.err.log
+tmp_*.pid
+tmp_extract/
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+
+# ===== 本地工具与调试痕迹（WorkBuddy 会话数据，不进版本库） =====
+.workbuddy/
+
+# ===== 根目录调试截图与脚本副本 =====
+/*.png
+/app.js
