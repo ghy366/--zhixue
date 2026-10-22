@@ -2,7 +2,7 @@
 target/
 src/main/resources/static-vue/
 frontend/dist/
-frontend/node_modules/
+node_modules/
 
 # ===== 打包与临时文件 =====
 *.jar
@@ -23,3 +23,8 @@ tmp_extract/
 # ===== 根目录调试截图与脚本副本 =====
 /*.png
 /app.js
+
+# ===== 误入库的打包产物、本地工具与旧前端归档（已从版本库移除，本地保留） =====
+/app.jar
+/apache-maven-3.9.6/
+/frontend_vue_archived/
