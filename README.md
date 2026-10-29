@@ -76,7 +76,10 @@ $env:AI_MODEL    = "your-model"
 
 密钥仅用于本地环境配置，不要粘贴到文档、提交记录或公开日志中。
 
-## 演示账号
+【关键设计 — advisorId 文件隔离】
+所有论文/消息/公告都带 graduate_advisor 表的主键 advisorId
+下载接口双重校验：ga.studentId == 当前用户ID 或 ga.teacherId == 当前用户ID
+不匹配 → 403 拒绝，跨导师/跨学生数据完全不可见
 
 应用启动时 `config/DataInitializer.java` 会在对应表为空时初始化演示数据：
 
