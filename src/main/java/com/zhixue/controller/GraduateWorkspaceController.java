@@ -88,6 +88,8 @@ public class GraduateWorkspaceController {
 
         if (!"student".equals(u.getRole())) return ApiResponse.fail("仅学生");
 
+        ws.syncAdvisorFromCourses(u.getId());   // 课程教师 → 毕设导师 同步（幂等）
+
         return ApiResponse.ok(ws.studentWorkspaces(u.getId()));
 
     }
@@ -131,6 +133,21 @@ public class GraduateWorkspaceController {
     }
 
 
+
+    // ===== 学生确认课题 =====
+    @PostMapping("/topic")
+    public ApiResponse<?> setTopic(@RequestBody Map<String, Object> body, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"student".equals(u.getRole())) return ApiResponse.fail("仅学生");
+        Long advisorId = Long.valueOf(body.get("advisorId").toString());
+        String title = (String) body.get("title");
+        try {
+            return ApiResponse.ok(ws.confirmTopic(advisorId, u.getId(), title));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
 
     // ===== 教师发布要求 =====
 
@@ -275,6 +292,75 @@ public class GraduateWorkspaceController {
 
 
     
+
+    // ===== 流程里程碑：开题报告 → 中期检查 → 论文终稿 → 答辩 =====
+
+    /** 查询流程节点（学生本人 / 指导教师） */
+    @GetMapping("/milestones")
+    public ApiResponse<?> milestones(@RequestParam Long advisorId, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        try {
+            return ApiResponse.ok(ws.milestones(advisorId, u.getId(), u.getRole()));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /** 学生提交节点材料（multipart，文件可选） */
+    @PostMapping(value = "/milestones/{id}/submit", consumes = "multipart/form-data")
+    public ApiResponse<?> submitMilestone(@PathVariable Long id,
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String content,
+            @RequestParam(required = false) MultipartFile file,
+            HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"student".equals(u.getRole())) return ApiResponse.fail("仅学生可提交流程材料");
+        try {
+            return ApiResponse.ok("已提交，等待导师审核", ws.submitMilestone(id, u.getId(), file, title, content));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /** 导师审核节点（passed/returned；答辩节点通过须带 advisorScore + defenseScore） */
+    @PostMapping("/milestones/{id}/review")
+    public ApiResponse<?> reviewMilestone(@PathVariable Long id,
+            @RequestBody Map<String, Object> body, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"teacher".equals(u.getRole())) return ApiResponse.fail("仅教师可审核");
+        String decision = (String) body.get("decision");
+        String comment = (String) body.get("comment");
+        Integer advisorScore = body.get("advisorScore") == null ? null : Integer.valueOf(body.get("advisorScore").toString());
+        Integer defenseScore = body.get("defenseScore") == null ? null : Integer.valueOf(body.get("defenseScore").toString());
+        try {
+            return ApiResponse.ok("passed".equals(decision) ? "已通过" : "已退回",
+                    ws.reviewMilestone(id, u.getId(), decision, comment, advisorScore, defenseScore));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /** 里程碑材料下载 */
+    @GetMapping("/milestones/{id}/download")
+    public ResponseEntity<Resource> downloadMilestone(@PathVariable Long id, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ResponseEntity.status(401).build();
+        Path p = ws.milestoneAbsPath(id, u.getId(), u.getRole());
+        if (p == null || !p.toFile().exists()) return ResponseEntity.status(404).build();
+        try {
+            Resource res = new UrlResource(p.toUri());
+            String encoded = URLEncoder.encode(p.getFileName().toString(), StandardCharsets.UTF_8).replace("+", "%20");
+            return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(res);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
 
     // ===== 聊天：查看对话（学生 + 老师都能用）=====
     @GetMapping("/chat")

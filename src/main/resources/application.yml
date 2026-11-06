@@ -6,11 +6,37 @@ server:
   max-http-header-size: 10KB
 
 
+# ===== AI 智能体助手配置（OpenAI 兼容接口）=====
+# 注意：必须放在默认 document（第一个 --- 之前），否则只对特定 profile 生效！
+# 主通道 = 阿里云百炼 Qwen（OpenAI 兼容模式：dashscope.aliyuncs.com/compatible-mode/v1）
+# API Key 通过环境变量 DASHSCOPE_API_KEY 或外部 application-local.yml 的 ai.api-key 提供
+# 可用环境变量 AI_BASE_URL / DASHSCOPE_API_KEY / AI_MODEL / AI_FALLBACK_MODELS 覆盖
+ai:
+  base-url: ${AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+  # api-key 只在外部 application-local.yml 定义（唯一来源，避免与 config import 的属性优先级打架）；
+  # @Value("${ai.api-key:}") 有空值兜底，未加载外部文件时也不会导致启动失败
+  model: ${AI_MODEL:qwen-flash}
+  # 同一网关内的备用模型（主模型失败时依次切换）；
+  # 注意：fallback-models 与主通道共用 base-url / api-key，只能填百炼自家模型
+  fallback-models: ${AI_FALLBACK_MODELS:qwen-plus}
+  # 需显式关闭深度思考的模型名（逗号分隔，按模型名精确匹配）；当前主通道 qwen-flash 无深度思考，留空。
+  # 留空时思考模型的推理过程会在前端 Chat.vue 的「思考过程」折叠块中展示
+  no-thinking-models: ${AI_NO_THINKING_MODELS:}
+  # 全部通道失败时自动回退的无密钥兜底通道
+  fallback-base-url: ${AI_FALLBACK_BASE_URL:https://text.pollinations.ai/v1}
+  # 备用网关列表（不同 baseUrl，JSON 数组）：Intern-AI / 七牛云
+  # 值放 E:/buyyd数据缓存/application-local.yml（spring.config.import 导入，不入 git）
+  extra-channels: ${AI_EXTRA_CHANNELS:}
+
+
 spring:
   application:
     name: zhixue-selection
   profiles:
     active: mysql
+  # 本地私有配置（密钥等不入 git；文件不存在时自动跳过）
+  config:
+    import: "optional:file:E:/buyyd数据缓存/application-local.yml"
 
 
   web:
@@ -69,18 +95,3 @@ spring:
     database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
-
-
-# ===== AI 智能体助手配置（OpenAI 兼容接口）=====
-# 默认接入 Intern-AI 书生·浦语 发现 API（https://discovery-api.intern-ai.org.cn/v1）。
-# 该平台聚合多个模型，用统一 key 鉴权；以下是已验证可用的模型（AI_MODEL 可切换）：
-#   deepseek-v4-flash-0731  轻量快、便宜、中文好（默认）
-#   deepseek-v4-pro-0813    更强推理
-#   glm-5.3 / qwen3.8-27b / kimi-k2.6 / minimax-m3 / intern-s2（书生·S2） 等
-# 仍可用环境变量 AI_BASE_URL / AI_API_KEY / AI_MODEL 覆盖（便于本地不提交密钥）。
-ai:
-  base-url: ${AI_BASE_URL:https://discovery-api.intern-ai.org.cn/v1}
-  api-key: ${AI_API_KEY:sk-e9c00dd160dd43ca8c4c551baecbf5faff899fcb17ab60eb304892883a263cd5}
-  model: ${AI_MODEL:deepseek-v4-flash-0731}
-  # 主通道失败（额度用尽/限流/网络异常）时自动回退的免费兜底通道，保证始终能聊
-  fallback-base-url: ${AI_FALLBACK_BASE_URL:https://text.pollinations.ai/v1}

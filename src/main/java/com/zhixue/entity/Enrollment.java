@@ -27,6 +27,21 @@ public class Enrollment {
     @Column(nullable = false)
     private String status;       // pending / approved / rejected / dropped
 
+    /**
+     * 学生修读学期序（1~8，参照培养方案）：真实高校每学期的选课/修读记录归属该学期，
+     * 「我的选课/课表/冲突检测」只看当前学期，毕业学分累计才跨全部学期。
+     */
+    @Column(name = "semester_no")
+    private Integer semesterNo;
+
+    /**
+     * 换课保底标记（Swap，借鉴 Auto_courseGrabber）：本条报名是新课 B，
+     * swapFromCourseId 指向被换的原课 A。结算时 B 被录取 → 自动退掉 A 完成互换；
+     * B 未录取 → 本条落选退分、A 原样保留。换课成交（或保底失效）后置回 null。
+     */
+    @Column(name = "swap_from_course_id")
+    private Long swapFromCourseId;
+
     public Enrollment() {}
 
     public Long getId() { return id; }
@@ -41,4 +56,8 @@ public class Enrollment {
     public void setPoints(Integer points) { this.points = points; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public Integer getSemesterNo() { return semesterNo; }
+    public void setSemesterNo(Integer semesterNo) { this.semesterNo = semesterNo; }
+    public Long getSwapFromCourseId() { return swapFromCourseId; }
+    public void setSwapFromCourseId(Long v) { this.swapFromCourseId = v; }
 }

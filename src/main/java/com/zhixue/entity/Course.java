@@ -31,6 +31,21 @@ public class Course {
     @Column(length = 1000)
     private String intro;
 
+    /**
+     * 培养方案开课学期序（1~8，参照真实高校教学计划：必修课按学期排定）。
+     * 必修课标注后，系统按学生当前学期序自动排课（未来学期不排、历史学期未通过的自动重修）；
+     * 选修课/未标注的必修课保持原行为。null = 未排期。
+     */
+    @Column(name = "semester_no")
+    private Integer semesterNo;
+
+    /**
+     * 先修课程 ID（参照真实高校：未通过先修课不可选修本课）。null = 无先修要求。
+     * 校验口径：该先修课「总评 ≥ 60」才允许报名/录取；挂科重修不影响本课报名资格判定。
+     */
+    @Column(name = "prereq_id")
+    private Long prereqId;
+
     public Course() {}
 
     public Long getId() { return id; }
@@ -59,5 +74,8 @@ public class Course {
     public void setCampus(String campus) { this.campus = campus; }
     public String getExamTime() { return examTime; }
     public void setExamTime(String examTime) { this.examTime = examTime; }
+    public Integer getSemesterNo() { return semesterNo; }
+    public void setSemesterNo(Integer semesterNo) { this.semesterNo = semesterNo; }
+    public Long getPrereqId() { return prereqId; }
+    public void setPrereqId(Long prereqId) { this.prereqId = prereqId; }
 }
-

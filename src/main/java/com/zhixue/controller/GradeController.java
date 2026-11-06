@@ -45,19 +45,22 @@ public class GradeController {
             m.put("regularScore", g != null ? g.getRegularScore() : null);
             m.put("finalScore", g != null ? g.getFinalScore() : null);
             m.put("totalScore", g != null ? g.getTotalScore() : null);
+            m.put("examType", g != null ? g.getExamType() : null);
+            m.put("attempt", g != null ? g.getAttempt() : null);
             result.add(m);
         }
         return ApiResponse.ok(result);
     }
 
-    // 老师录入/更新成绩
+    // 老师录入/更新成绩（examType：normal 正常 / makeup 补考 / retake 重修；留空自动推断——已有成绩再录视为补考）
     @PostMapping
     public ApiResponse<Grade> saveGrade(@RequestBody Map<String, Object> body) {
         Long studentId = Long.valueOf(body.get("studentId").toString());
         Long courseId = Long.valueOf(body.get("courseId").toString());
         Double regular = body.get("regularScore") != null ? Double.valueOf(body.get("regularScore").toString()) : null;
         Double finalScore = body.get("finalScore") != null ? Double.valueOf(body.get("finalScore").toString()) : null;
-        Grade g = gradeService.save(studentId, courseId, regular, finalScore);
+        String examType = body.get("examType") != null ? body.get("examType").toString() : null;
+        Grade g = gradeService.save(studentId, courseId, regular, finalScore, examType);
         return ApiResponse.ok("成绩已保存", g);
     }
 
@@ -73,6 +76,8 @@ public class GradeController {
             m.put("regularScore", g.getRegularScore());
             m.put("finalScore", g.getFinalScore());
             m.put("totalScore", g.getTotalScore());
+            m.put("examType", g.getExamType());
+            m.put("attempt", g.getAttempt());
             result.add(m);
         }
         return ApiResponse.ok(result);

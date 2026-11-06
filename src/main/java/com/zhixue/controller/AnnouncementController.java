@@ -55,6 +55,13 @@ public class AnnouncementController {
         return ApiResponse.ok(Map.of("count", annService.unreadCount(uid(token))));
     }
 
+    /** 公告已读统计（管理员）：学生总数，配合公告列表自带的 readCount 计算已读率 */
+    @GetMapping("/read-stats")
+    public ApiResponse<Map<String, Object>> readStats(@RequestHeader(value = "Authorization", required = false) String token) {
+        if (!isAdmin(uid(token))) return ApiResponse.fail("仅管理员可查看");
+        return ApiResponse.ok(Map.of("studentCount", userRepo.findByRole("student").size()));
+    }
+
     @PostMapping("/{id}/read")
     public ApiResponse<Void> read(@PathVariable Long id, @RequestHeader(value = "Authorization", required = false) String token) {
         annService.markRead(uid(token), id);

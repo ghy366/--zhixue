@@ -27,16 +27,20 @@ public class SystemConfig {
     private java.time.LocalDateTime roundCloseAt;
 
     @Column(name = "grad_req_required")
-    private Integer gradReqRequired = 12;
+    private Integer gradReqRequired = 6;
 
     @Column(name = "grad_req_elective")
-    private Integer gradReqElective = 10;
+    private Integer gradReqElective = 5;
 
     @Column(name = "grad_req_general")
-    private Integer gradReqGeneral = 6;
+    private Integer gradReqGeneral = 3;
 
     @Column(name = "grad_req_practice")
-    private Integer gradReqPractice = 4;
+    private Integer gradReqPractice = 2;
+
+    /** 毕业最少通过课程数：与学分双达标（真实高校「修满学分与课程门数」模式） */
+    @Column(name = "grad_req_courses")
+    private Integer gradReqCourses = 9;
 
     /** 导师选择总开关 */
     @Column(name = "advisor_open")
@@ -53,6 +57,10 @@ public class SystemConfig {
     /** 每学期学分上限，超过拒绝选课（null/0 表示不限制） */
     @Column(name = "max_credit_per_semester")
     private Integer maxCreditPerSemester = 24;
+
+    /** 每学期选课门数上限，超过拒绝选课/候补确认/结算录取（null/0 表示不限制） */
+    @Column(name = "max_courses_per_semester")
+    private Integer maxCoursesPerSemester = 2;
 
     /** 补选开放时间 */
     @Column(name = "batch_open_at")
@@ -78,6 +86,14 @@ public class SystemConfig {
     @Column(name = "auto_schedule")
     private Boolean autoSchedule = false;
 
+    /** 教师每学期最多授课门数（真实高校教师工作量约束，课程管理新增/编辑时校验） */
+    @Column(name = "teacher_max_courses")
+    private Integer teacherMaxCourses = 3;
+
+    /** 学期滚动偏移：管理员推进学期后 +1，当前学期序 = 日期推算 + 偏移（学期滚动机制） */
+    @Column(name = "semester_offset")
+    private Integer semesterOffset = 0;
+
     public SystemConfig() {}
 
     public Long getId() { return id; }
@@ -100,6 +116,8 @@ public class SystemConfig {
     public void setGradReqGeneral(Integer gradReqGeneral) { this.gradReqGeneral = gradReqGeneral; }
     public Integer getGradReqPractice() { return gradReqPractice; }
     public void setGradReqPractice(Integer gradReqPractice) { this.gradReqPractice = gradReqPractice; }
+    public Integer getGradReqCourses() { return gradReqCourses; }
+    public void setGradReqCourses(Integer gradReqCourses) { this.gradReqCourses = gradReqCourses; }
     public Boolean getAdvisorOpen() { return advisorOpen; }
     public void setAdvisorOpen(Boolean advisorOpen) { this.advisorOpen = advisorOpen; }
     public Integer getAdvisorDefaultCapacity() { return advisorDefaultCapacity; }
@@ -109,6 +127,8 @@ public class SystemConfig {
 
     public Integer getMaxCreditPerSemester() { return maxCreditPerSemester; }
     public void setMaxCreditPerSemester(Integer v) { this.maxCreditPerSemester = v; }
+    public Integer getMaxCoursesPerSemester() { return maxCoursesPerSemester; }
+    public void setMaxCoursesPerSemester(Integer v) { this.maxCoursesPerSemester = v; }
     public java.time.LocalDateTime getBatchOpenAt() { return batchOpenAt; }
     public void setBatchOpenAt(java.time.LocalDateTime v) { this.batchOpenAt = v; }
     public java.time.LocalDateTime getBatchCloseAt() { return batchCloseAt; }
@@ -121,4 +141,8 @@ public class SystemConfig {
     public void setCurrentPhase(String v) { this.currentPhase = v; }
     public Boolean getAutoSchedule() { return autoSchedule; }
     public void setAutoSchedule(Boolean v) { this.autoSchedule = v; }
+    public Integer getTeacherMaxCourses() { return teacherMaxCourses; }
+    public void setTeacherMaxCourses(Integer v) { this.teacherMaxCourses = v; }
+    public Integer getSemesterOffset() { return semesterOffset; }
+    public void setSemesterOffset(Integer v) { this.semesterOffset = v; }
 }

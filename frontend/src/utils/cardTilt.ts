@@ -8,7 +8,7 @@ export function setupCardTilt() {
   if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
-  const SELECTOR = '.course-card'
+  const SELECTOR = '.course-card, .stat-card, .tc-card, .wl-card, .advisor-card'
   const MAX_TILT = 6      // 最大倾斜角度（度）
   const SCALE = 1.015     // 悬浮轻微放大
   let raf = 0

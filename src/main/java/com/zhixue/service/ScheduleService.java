@@ -17,7 +17,8 @@ public class ScheduleService {
     @Autowired private CourseService courseService;
     @Autowired private EnrollmentRepository enrollmentRepo;
 
-    private static final Pattern TIME_P = Pattern.compile("(周[一二三四五六日])\\s+(\\d{2}:\\d{2})-(\\d{2}:\\d{2})");
+    // 星期与时刻之间允许无空格（"周一08:00-09:40" 也识别），漏解析的时段会绕过冲突检测
+    private static final Pattern TIME_P = Pattern.compile("(周[一二三四五六日])\\s*(\\d{2}:\\d{2})-(\\d{2}:\\d{2})");
 
     private List<Map<String, String>> parseSlots(String timeStr) {
         List<Map<String, String>> slots = new ArrayList<>();
@@ -71,9 +72,13 @@ public class ScheduleService {
     }
 
     private List<Course> approvedCourses(Long studentId, int round) {
+        // 冲突基准取本学期全部已录取课程（跨轮次、按课程去重）——
+        // 只看当前轮会漏掉之前轮次录取的课，推荐/冲突检测就会撞上已有课表（如周二满课仍推荐周二课程）
         List<Course> out = new ArrayList<>();
-        for (Enrollment e : enrollmentRepo.findByStudentIdAndRound(studentId, round)) {
+        Set<Long> seen = new HashSet<>();
+        for (Enrollment e : enrollmentRepo.findByStudentId(studentId)) {
             if (!"approved".equals(e.getStatus())) continue;
+            if (!seen.add(e.getCourseId())) continue;
             Course c = courseService.findById(e.getCourseId());
             if (c != null) out.add(c);
         }

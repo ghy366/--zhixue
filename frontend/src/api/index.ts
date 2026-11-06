@@ -21,7 +21,14 @@ http.interceptors.response.use(
     // 后端统一返回 { success, message, data }
     if (data && typeof data.success === 'boolean') {
       if (!data.success) {
-        return Promise.reject(new Error(data.message || '请求失败'))
+        const msg = data.message || '请求失败'
+        // 后端重启会清空内存 SessionStore，旧 token 会返回"登录已过期" → 清理并回登录页
+        if (msg.includes('登录已过期') || msg.includes('未登录') || msg.includes('请重新登录')) {
+          const auth = useAuthStore()
+          auth.logout()
+          if (router.currentRoute.value.path !== '/login') router.push('/login')
+        }
+        return Promise.reject(new Error(msg))
       }
       return data // 返回整个 ApiResponse { success, message, data }
     }
@@ -32,6 +39,10 @@ http.interceptors.response.use(
       const auth = useAuthStore()
       auth.logout()
       router.push('/login')
+    }
+    // 403 = 后端统一鉴权拦截器拒绝（角色不匹配）：透出后端的具体提示，不跳登录页
+    if (err.response?.status === 403) {
+      return Promise.reject(new Error(err.response?.data?.message || '权限不足'))
     }
     return Promise.reject(err)
   }

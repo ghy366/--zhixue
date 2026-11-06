@@ -24,6 +24,18 @@ public class Grade {
     @Column(name = "total_score")
     private Double totalScore;
 
+    /** 最近一次成绩性质：normal 正常 / makeup 补考 / retake 重修（真实高校：挂科先补考，再不过重修） */
+    @Column(name = "exam_type", length = 16)
+    private String examType = "normal";
+
+    /** 修读次数：首次录课为 1，每次补考/重修 +1 */
+    @Column(name = "attempt")
+    private Integer attempt = 1;
+
+    /** 成绩归属学期序（= 课程培养方案学期；选修为录课时的当前学期序） */
+    @Column(name = "semester_no")
+    private Integer semesterNo;
+
     public Grade() {}
 
     public Long getId() { return id; }
@@ -38,4 +50,10 @@ public class Grade {
     public void setFinalScore(Double finalScore) { this.finalScore = finalScore; }
     public Double getTotalScore() { return totalScore; }
     public void setTotalScore(Double totalScore) { this.totalScore = totalScore; }
+    public String getExamType() { return examType; }
+    public void setExamType(String examType) { this.examType = examType; }
+    public Integer getAttempt() { return attempt; }
+    public void setAttempt(Integer attempt) { this.attempt = attempt; }
+    public Integer getSemesterNo() { return semesterNo; }
+    public void setSemesterNo(Integer semesterNo) { this.semesterNo = semesterNo; }
 }

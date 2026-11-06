@@ -28,3 +28,9 @@ tmp_extract/
 /app.jar
 /apache-maven-3.9.6/
 /frontend_vue_archived/
+
+# ===== AI 密钥本地配置（真实生效版在仓库外 E 盘，任何副本不入库） =====
+/application-local.yml
+
+# ===== ZCode 工具会话数据 =====
+.zcode/

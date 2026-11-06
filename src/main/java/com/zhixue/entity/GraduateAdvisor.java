@@ -26,6 +26,10 @@ public class GraduateAdvisor {
     @Column(length = 200)
     private String topic;
 
+    /** 志愿序（多志愿双选）：1=第一志愿，2=第二志愿，3=第三志愿；历史单志愿记录默认 1 */
+    @Column(name = "priority")
+    private Integer priority;
+
     /** 学生备注（自我介绍 / 想跟老师做的方向） */
     @Column(name = "preference_text", length = 500)
     private String preferenceText;
@@ -52,6 +56,8 @@ public class GraduateAdvisor {
     public void setStatus(String status) { this.status = status; }
     public String getTopic() { return topic; }
     public void setTopic(String topic) { this.topic = topic; }
+    public Integer getPriority() { return priority; }
+    public void setPriority(Integer priority) { this.priority = priority; }
     public String getPreferenceText() { return preferenceText; }
     public void setPreferenceText(String preferenceText) { this.preferenceText = preferenceText; }
     public String getTeacherReply() { return teacherReply; }

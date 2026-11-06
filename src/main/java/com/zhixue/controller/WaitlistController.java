@@ -26,7 +26,10 @@ public class WaitlistController {
                                                  @RequestHeader("Authorization") String token) {
         Long userId = SessionStore.getUserId(token.replace("Bearer ", ""));
         Long courseId = Long.valueOf(body.get("courseId").toString());
-        Map<String, Object> r = waitlistService.join(userId, courseId);
+        // 可选换课保底：候补确认时自动退掉该课完成换课
+        Long swapFrom = body.get("swapFromCourseId") == null
+                ? null : Long.valueOf(body.get("swapFromCourseId").toString());
+        Map<String, Object> r = waitlistService.join(userId, courseId, swapFrom);
         if ((Boolean) r.get("success")) return ApiResponse.ok((String) r.get("msg"), (Map<String, Object>) r.get("data"));
         return ApiResponse.fail((String) r.get("msg"));
     }
@@ -41,10 +44,15 @@ public class WaitlistController {
         return ApiResponse.fail((String) r.get("msg"));
     }
 
+    /** 确认递补；body 可选 swapFromCourseId：按换课确认（自动退掉该课完成原子互换） */
     @PostMapping("/confirm/{id}")
-    public ApiResponse<Void> confirm(@PathVariable Long id, @RequestHeader("Authorization") String token) {
+    public ApiResponse<Void> confirm(@PathVariable Long id,
+                                     @RequestBody(required = false) Map<String, Object> body,
+                                     @RequestHeader("Authorization") String token) {
         Long userId = SessionStore.getUserId(token.replace("Bearer ", ""));
-        Map<String, Object> r = waitlistService.confirm(id, userId);
+        Long swapFrom = (body == null || body.get("swapFromCourseId") == null)
+                ? null : Long.valueOf(body.get("swapFromCourseId").toString());
+        Map<String, Object> r = waitlistService.confirm(id, userId, swapFrom);
         if ((Boolean) r.get("success")) return ApiResponse.ok((String) r.get("msg"), null);
         return ApiResponse.fail((String) r.get("msg"));
     }
@@ -70,6 +78,12 @@ public class WaitlistController {
             m.put("queueTotal", waitlistService.activeForCourse(w.getCourseId(), round).size());
             m.put("deadline", w.getDeadline() != null ? java.sql.Timestamp.valueOf(w.getDeadline()).getTime() : null);
             m.put("joinTime", w.getJoinTime() != null ? java.sql.Timestamp.valueOf(w.getJoinTime()).getTime() : null);
+            // 换课保底：确认后自动退掉的源课
+            if (w.getSwapFromCourseId() != null) {
+                Course src = courseService.findById(w.getSwapFromCourseId());
+                m.put("swapFromCourseId", w.getSwapFromCourseId());
+                m.put("swapFromName", src != null ? src.getName() : "（课程已删除）");
+            }
             result.add(m);
         }
         return ApiResponse.ok(result);

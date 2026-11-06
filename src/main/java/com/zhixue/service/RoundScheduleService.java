@@ -152,9 +152,11 @@ public class RoundScheduleService {
     }
 
     /**
-     * 手动开放/关闭后，用当前轮排期把 SystemConfig 的时间窗补齐。
-     * 手动模式下 sync() 不巡检，若不补这里，roundOpenAt/roundCloseAt 会一直为 null，
-     * 登录页倒计时、侧边栏倒计时都拿不到目标时间而整块消失。
+     * 手动开放/关闭后，校正 SystemConfig 的时间窗，保证登录页/侧边栏倒计时能拿到正确目标时间。
+     * 手动模式下 sync() 不巡检，时间窗只在这里维护。
+     * 开放时：若现有窗口已整体过期（closeAt <= now，例如上轮测试遗留），
+     * 过期窗口会压过 roundOpen=true 让登录页显示「已结束」——此时重置为「立即生效 · 不限时」；
+     * 当前轮排期窗口尚未结束则沿用排期窗口。关闭时只补缺失字段，不回填已过期的排期。
      */
     public synchronized SystemConfig fillCurrentWindow() {
         SystemConfig c = config();
@@ -162,13 +164,33 @@ public class RoundScheduleService {
         RoundSchedule hit = list().stream()
                 .filter(s -> r.equals(s.getRoundNo()))
                 .findFirst().orElse(null);
-        if (hit == null) return c;
+        LocalDateTime now = LocalDateTime.now();
         boolean changed = false;
-        if (c.getRoundOpenAt() == null && hit.getOpenAt() != null) {
-            c.setRoundOpenAt(hit.getOpenAt()); changed = true;
-        }
-        if (c.getRoundCloseAt() == null && hit.getCloseAt() != null) {
-            c.setRoundCloseAt(hit.getCloseAt()); changed = true;
+
+        if (Boolean.TRUE.equals(c.getRoundOpen())) {
+            boolean hitValid = hit != null && hit.getCloseAt() != null && hit.getCloseAt().isAfter(now);
+            if (hitValid) {
+                if (!hit.getOpenAt().equals(c.getRoundOpenAt())) {
+                    c.setRoundOpenAt(hit.getOpenAt()); changed = true;
+                }
+                if (!hit.getCloseAt().equals(c.getRoundCloseAt())) {
+                    c.setRoundCloseAt(hit.getCloseAt()); changed = true;
+                }
+            } else if (c.getRoundOpenAt() == null || c.getRoundCloseAt() != null) {
+                // 无有效排期或旧窗口已过期：手动开放 = 立即生效、不限时
+                c.setRoundOpenAt(now);
+                c.setRoundCloseAt(null);
+                changed = true;
+            }
+        } else {
+            if (c.getRoundOpenAt() == null && hit != null && hit.getOpenAt() != null
+                    && hit.getCloseAt() != null && hit.getCloseAt().isAfter(now)) {
+                c.setRoundOpenAt(hit.getOpenAt()); changed = true;
+            }
+            if (c.getRoundCloseAt() == null && hit != null && hit.getCloseAt() != null
+                    && hit.getCloseAt().isAfter(now)) {
+                c.setRoundCloseAt(hit.getCloseAt()); changed = true;
+            }
         }
         return changed ? sysRepo.save(c) : c;
     }

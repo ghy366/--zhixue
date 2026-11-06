@@ -7,14 +7,21 @@ import com.zhixue.entity.GraduateAnnouncement;
 import com.zhixue.entity.GraduateRequirement;
 
 import com.zhixue.entity.GraduateMessage;
+import com.zhixue.entity.GraduateMilestone;
+import com.zhixue.entity.Course;
+import com.zhixue.entity.Enrollment;
 import com.zhixue.entity.User;
+import com.zhixue.repository.CourseRepository;
+import com.zhixue.repository.EnrollmentRepository;
 import com.zhixue.repository.GraduateAdvisorRepository;
 import com.zhixue.repository.GraduatePaperRepository;
 import com.zhixue.repository.GraduateRequirementRepository;
+import com.zhixue.repository.GraduateMilestoneRepository;
 import com.zhixue.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -32,7 +39,10 @@ public class GraduateWorkspaceService {
     @Autowired private GraduatePaperRepository paperRepo;
     @Autowired private com.zhixue.repository.GraduateMessageRepository msgRepo;
     @Autowired private com.zhixue.repository.GraduateAnnouncementRepository annoRepo;
+    @Autowired private GraduateMilestoneRepository msRepo;
     @Autowired private UserRepository userRepo;
+    @Autowired private CourseRepository courseRepo;
+    @Autowired private EnrollmentRepository enrollmentRepo;
     private final ObjectMapper om = new ObjectMapper();
 
     @Value("${zhixue.upload.path:${user.home}/zhixue-uploads/papers}")
@@ -44,9 +54,76 @@ public class GraduateWorkspaceService {
             .filter(g -> "approved".equals(g.getStatus())).collect(java.util.stream.Collectors.toList());
     }
 
+    /** 学生确认课题：从导师推荐题目中选定，或自定义题目（仅限本人、导师已确认的 advisorship） */
+    @Transactional
+    public Map<String, Object> confirmTopic(Long advisorId, Long studentId, String title) {
+        GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+        if (ga == null || !ga.getStudentId().equals(studentId)) {
+            throw new RuntimeException("工作台不存在或无权操作");
+        }
+        if (!"approved".equals(ga.getStatus())) {
+            throw new RuntimeException("导师确认申请后才能确定课题");
+        }
+        if (title == null || title.isBlank()) {
+            throw new RuntimeException("题目不能为空");
+        }
+        ga.setTopic(title.trim());
+        ga.setUpdatedAt(LocalDateTime.now());
+        gaRepo.save(ga);
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("success", true);
+        r.put("topic", ga.getTopic());
+        r.put("msg", "课题已确认：" + ga.getTopic());
+        return r;
+    }
+
     /** 列出某教师所有已确认的学生 */
     public List<GraduateAdvisor> teacherApproved(Long teacherId) {
         return gaRepo.findByTeacherIdAndStatusOrderByIdDesc(teacherId, "approved");
+    }
+
+    /** 课程教师 → 毕设导师同步：学生被录取进「毕业设计(上)/(下)」后，
+     *  授课教师（优先 (上)，开题环节主带）自动成为其毕业设计导师。
+     *  advisorId 保持不变——已上传的文件与流程节点全部保留；幂等，重复调用无副作用。
+     *  学生端工作台加载时触发（懒同步）。 */
+    @Transactional
+    public void syncAdvisorFromCourses(Long studentId) {
+        List<Enrollment> enrolls = enrollmentRepo.findByStudentId(studentId).stream()
+                .filter(e -> "approved".equals(e.getStatus()))
+                .collect(Collectors.toList());
+        Long targetTeacher = null;
+        String courseName = null;
+        for (Enrollment e : enrolls) {
+            Course c = courseRepo.findById(e.getCourseId()).orElse(null);
+            if (c == null || c.getName() == null || !c.getName().startsWith("毕业设计")
+                    || c.getTeacherId() == null) continue;
+            /* 优先「毕业设计(上)」：开题环节由该教师主带 */
+            if (c.getName().contains("(上)") || c.getName().contains("（上）")) {
+                targetTeacher = c.getTeacherId(); courseName = c.getName(); break;
+            }
+            if (targetTeacher == null) { targetTeacher = c.getTeacherId(); courseName = c.getName(); }
+        }
+        if (targetTeacher == null) return;
+
+        java.util.List<GraduateAdvisor> approved = studentApproved(studentId);
+        if (approved.isEmpty()) {
+            GraduateAdvisor ga = new GraduateAdvisor();
+            ga.setStudentId(studentId);
+            ga.setTeacherId(targetTeacher);
+            ga.setStatus("approved");
+            ga.setTopic(courseName);
+            ga.setCreatedAt(LocalDateTime.now());
+            ga.setUpdatedAt(LocalDateTime.now());
+            ga = gaRepo.save(ga);
+            ensureMilestones(ga.getId());
+            return;
+        }
+        GraduateAdvisor ga = approved.get(0);              // 多条时取最新一条
+        if (targetTeacher.equals(ga.getTeacherId())) return;   // 已同步，幂等
+        ga.setTeacherId(targetTeacher);                    // 课程教师为准；advisorId 不变，文件与流程全保留
+        ga.setUpdatedAt(LocalDateTime.now());
+        gaRepo.save(ga);
+        ensureMilestones(ga.getId());
     }
 
     /** 组装工作台视图（一个 advisorId 的完整数据） */
@@ -195,6 +272,200 @@ public class GraduateWorkspaceService {
         return Paths.get(uploadRoot, p.getFilePath());
     }
 
+    // ============ 流程里程碑：开题报告 → 中期检查 → 论文终稿 → 答辩 ============
+
+    /** 固定串行阶段顺序 */
+    private static final List<String> STAGES = List.of("opening", "midterm", "final", "defense");
+
+    /** 懒初始化：已确认的导师关系若无里程碑记录则补齐 4 条（含历史数据兼容） */
+    public void ensureMilestones(Long advisorId) {
+        List<GraduateMilestone> exist = msRepo.findByAdvisorId(advisorId);
+        if (exist.size() >= STAGES.size()) return;
+        Set<String> has = exist.stream().map(GraduateMilestone::getStage).collect(Collectors.toSet());
+        LocalDateTime now = LocalDateTime.now();
+        for (String st : STAGES) {
+            if (has.contains(st)) continue;
+            GraduateMilestone m = new GraduateMilestone();
+            m.setAdvisorId(advisorId);
+            m.setStage(st);
+            m.setStatus("none");
+            m.setCreatedAt(now);
+            msRepo.save(m);
+        }
+    }
+
+    /** 按学生/导师身份查询流程节点（含 canSubmit/canReview 操作标记与串行解锁状态） */
+    public List<Map<String, Object>> milestones(Long advisorId, Long userId, String role) {
+        GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+        if (ga == null) throw new IllegalArgumentException("工作台不存在");
+        if ("student".equals(role) && !ga.getStudentId().equals(userId)) throw new IllegalArgumentException("无权查看");
+        if ("teacher".equals(role) && !ga.getTeacherId().equals(userId)) throw new IllegalArgumentException("无权查看");
+        if (!"approved".equals(ga.getStatus())) throw new IllegalArgumentException("导师关系未确认，暂无流程节点");
+        ensureMilestones(advisorId);
+
+        List<GraduateMilestone> all = msRepo.findByAdvisorId(advisorId);
+        List<GraduateMilestone> ordered = new ArrayList<>();
+        for (String st : STAGES) {
+            all.stream().filter(m -> st.equals(m.getStage())).findFirst().ifPresent(ordered::add);
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        String prevStatus = "passed"; // 第一节点始终可提交
+        for (GraduateMilestone m : ordered) {
+            Map<String, Object> mm = milestoneMap(m);
+            boolean unlocked = "passed".equals(prevStatus);
+            mm.put("unlocked", unlocked);
+            mm.put("canSubmit", "student".equals(role) && unlocked
+                    && ("none".equals(m.getStatus()) || "returned".equals(m.getStatus())));
+            mm.put("canReview", "teacher".equals(role) && "submitted".equals(m.getStatus()));
+            out.add(mm);
+            prevStatus = m.getStatus();
+        }
+        return out;
+    }
+
+    /** 学生提交节点材料（文件可选，标题/说明至少一项） */
+    public GraduateMilestone submitMilestone(Long id, Long studentId, MultipartFile file,
+            String title, String content) throws IOException {
+        GraduateMilestone m = msRepo.findById(id).orElse(null);
+        if (m == null) throw new IllegalArgumentException("流程节点不存在");
+        GraduateAdvisor ga = gaRepo.findById(m.getAdvisorId()).orElse(null);
+        if (ga == null || !ga.getStudentId().equals(studentId)) throw new IllegalArgumentException("无权提交");
+        if (!"approved".equals(ga.getStatus())) throw new IllegalArgumentException("导师关系未确认");
+        if (!"none".equals(m.getStatus()) && !"returned".equals(m.getStatus())) {
+            throw new IllegalArgumentException("该节点当前不可提交（待审核或已通过）");
+        }
+        // 串行校验：前置节点须全部通过
+        List<GraduateMilestone> all = msRepo.findByAdvisorId(m.getAdvisorId());
+        int idx = STAGES.indexOf(m.getStage());
+        for (int i = 0; i < idx; i++) {
+            final String st = STAGES.get(i);
+            GraduateMilestone prev = all.stream().filter(x -> st.equals(x.getStage())).findFirst().orElse(null);
+            if (prev == null || !"passed".equals(prev.getStatus())) {
+                throw new IllegalArgumentException("前一道环节尚未通过，请先完成「" + stageName(STAGES.get(i)) + "」");
+            }
+        }
+        boolean hasFile = file != null && !file.isEmpty();
+        if ((title == null || title.isBlank()) && (content == null || content.isBlank()) && !hasFile) {
+            throw new IllegalArgumentException("标题、说明与材料文件至少填写/上传一项");
+        }
+        if (hasFile) {
+            long maxBytes = 100L * 1024 * 1024;
+            if (file.getSize() > maxBytes) throw new IllegalArgumentException("文件超过 100MB");
+            String origName = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
+            String lower = origName.toLowerCase();
+            boolean okExt = lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx")
+                          || lower.endsWith(".txt") || lower.endsWith(".zip") || lower.endsWith(".rar")
+                          || lower.endsWith(".ppt") || lower.endsWith(".pptx");
+            if (!okExt) throw new IllegalArgumentException("仅支持 pdf/doc/docx/txt/zip/rar/ppt/pptx");
+            StringBuilder sb = new StringBuilder(origName.length());
+            for (char c : origName.toCharArray()) {
+                if ("\\/:*?\"<>|".indexOf(c) >= 0) sb.append('_'); else sb.append(c);
+            }
+            String safeName = sb.toString();
+            String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            String relPath = "milestones/" + m.getAdvisorId() + "/" + m.getStage() + "_" + ts + "_" + safeName;
+            Path absDir = Paths.get(uploadRoot, "milestones", String.valueOf(m.getAdvisorId()));
+            Files.createDirectories(absDir);
+            Files.copy(file.getInputStream(), absDir.resolve(m.getStage() + "_" + ts + "_" + safeName),
+                    StandardCopyOption.REPLACE_EXISTING);
+            m.setFileName(safeName);
+            m.setFilePath(relPath);
+            m.setFileSizeBytes(file.getSize());
+        }
+        if (title != null && !title.isBlank()) m.setTitle(title.trim());
+        if (content != null && !content.isBlank()) m.setContent(content.trim());
+        m.setStatus("submitted");
+        m.setSubmittedAt(LocalDateTime.now());
+        return msRepo.save(m);
+    }
+
+    /** 导师审核节点；decision=passed/returned。答辩节点通过时须录入导师评分与答辩组评分（40%/60% 合成总评） */
+    public GraduateMilestone reviewMilestone(Long id, Long teacherId, String decision, String comment,
+            Integer advisorScore, Integer defenseScore) {
+        GraduateMilestone m = msRepo.findById(id).orElse(null);
+        if (m == null) throw new IllegalArgumentException("流程节点不存在");
+        GraduateAdvisor ga = gaRepo.findById(m.getAdvisorId()).orElse(null);
+        if (ga == null || !ga.getTeacherId().equals(teacherId)) throw new IllegalArgumentException("无权审核");
+        if (!"submitted".equals(m.getStatus())) throw new IllegalArgumentException("该节点没有待审核的提交");
+        if ("passed".equals(decision)) {
+            if ("defense".equals(m.getStage())) {
+                if (advisorScore == null || defenseScore == null
+                        || advisorScore < 0 || advisorScore > 100 || defenseScore < 0 || defenseScore > 100) {
+                    throw new IllegalArgumentException("答辩通过须录入 0-100 的导师评分与答辩组评分");
+                }
+                m.setAdvisorScore(advisorScore);
+                m.setDefenseScore(defenseScore);
+                m.setTotalScore((int) Math.round(advisorScore * 0.4 + defenseScore * 0.6));
+            }
+            m.setStatus("passed");
+        } else if ("returned".equals(decision)) {
+            m.setStatus("returned");
+        } else {
+            throw new IllegalArgumentException("decision 必须是 passed 或 returned");
+        }
+        if (comment != null) m.setTeacherComment(comment.trim());
+        m.setReviewedAt(LocalDateTime.now());
+        return msRepo.save(m);
+    }
+
+    /** 毕设总评（答辩节点合成结果；未出成绩返回 null） */
+    public Integer thesisScore(Long advisorId) {
+        return msRepo.findByAdvisorId(advisorId).stream()
+                .filter(m -> "defense".equals(m.getStage()))
+                .map(GraduateMilestone::getTotalScore)
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+    }
+
+    /** 按学生取毕设总评（找其已确认导师关系对应工作台；无则 null） */
+    public Integer studentThesisScore(Long studentId) {
+        return studentApproved(studentId).stream()
+                .map(ga -> thesisScore(ga.getId()))
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+    }
+
+    /** 里程碑文件绝对路径（学生本人 / 指导教师 / 管理员） */
+    public Path milestoneAbsPath(Long id, Long userId, String role) {
+        GraduateMilestone m = msRepo.findById(id).orElse(null);
+        if (m == null || m.getFilePath() == null) return null;
+        GraduateAdvisor ga = gaRepo.findById(m.getAdvisorId()).orElse(null);
+        if (ga == null) return null;
+        if ("student".equals(role) && !ga.getStudentId().equals(userId)) return null;
+        if ("teacher".equals(role) && !ga.getTeacherId().equals(userId)) return null;
+        return Paths.get(uploadRoot, m.getFilePath());
+    }
+
+    private static String stageName(String stage) {
+        return switch (stage) {
+            case "opening" -> "开题报告";
+            case "midterm" -> "中期检查";
+            case "final" -> "论文终稿";
+            case "defense" -> "答辩";
+            default -> stage;
+        };
+    }
+
+    private Map<String, Object> milestoneMap(GraduateMilestone m) {
+        Map<String, Object> mm = new LinkedHashMap<>();
+        mm.put("id", m.getId());
+        mm.put("advisorId", m.getAdvisorId());
+        mm.put("stage", m.getStage());
+        mm.put("stageName", stageName(m.getStage()));
+        mm.put("status", m.getStatus());
+        mm.put("title", m.getTitle());
+        mm.put("content", m.getContent());
+        mm.put("fileName", m.getFileName());
+        mm.put("fileSizeBytes", m.getFileSizeBytes());
+        mm.put("teacherComment", m.getTeacherComment());
+        mm.put("advisorScore", m.getAdvisorScore());
+        mm.put("defenseScore", m.getDefenseScore());
+        mm.put("totalScore", m.getTotalScore());
+        mm.put("submittedAt", m.getSubmittedAt() != null ? java.sql.Timestamp.valueOf(m.getSubmittedAt()).getTime() : null);
+        mm.put("reviewedAt", m.getReviewedAt() != null ? java.sql.Timestamp.valueOf(m.getReviewedAt()).getTime() : null);
+        return mm;
+    }
+
     // ============ 辅助 ============
     private Map<String, Object> userMap(User u) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -204,7 +475,7 @@ public class GraduateWorkspaceService {
         m.put("role", u.getRole());
         m.put("college", u.getCollege());
         m.put("major", u.getMajor());
-        
+
         return m;
     }
 

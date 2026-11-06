@@ -1,6 +1,7 @@
 package com.zhixue.controller;
 
 import com.zhixue.dto.ApiResponse;
+import com.zhixue.entity.GradeRequirement;
 import com.zhixue.entity.RoundSchedule;
 import com.zhixue.entity.StaggerWindow;
 import com.zhixue.entity.SystemConfig;
@@ -141,6 +142,21 @@ public class SystemController {
         return ApiResponse.ok("候补确认时限已设为 " + m + " 分钟", systemService.setConfirmMinutes(m));
     }
 
+    /** 学期滚动：推进到下一学期（旧学期成绩归档、新学期必修自动排入） */
+    @PostMapping("/semester-advance")
+    public ApiResponse<SystemConfig> advanceSemester() {
+        SystemConfig c = systemService.getConfig();
+        int off = c.getSemesterOffset() == null ? 0 : c.getSemesterOffset();
+        systemService.setSemesterOffset(off + 1);
+        return ApiResponse.ok("已推进到下一学期（偏移 " + (off + 1) + "），新学期必修课将自动排入", systemService.getConfig());
+    }
+
+    /** 教师每学期最多授课门数 */
+    @PostMapping("/teacher-max-courses")
+    public ApiResponse<SystemConfig> setTeacherMaxCourses(@RequestBody SystemConfig body) {
+        return ApiResponse.ok("教师每学期授课上限已设为 " + systemService.setTeacherMaxCourses(body.getTeacherMaxCourses()).getTeacherMaxCourses() + " 门", systemService.getConfig());
+    }
+
     /** 每学期学分上限 */
     @PostMapping("/max-credit")
     public ApiResponse<SystemConfig> setMaxCredit(@RequestBody SystemConfig body) {
@@ -148,12 +164,51 @@ public class SystemController {
         return ApiResponse.ok("每学期学分上限已设为 " + v, systemService.setMaxCredit(v));
     }
 
+    /** 每学期选课门数上限 */
+    @PostMapping("/max-courses")
+    public ApiResponse<SystemConfig> setMaxCourses(@RequestBody SystemConfig body) {
+        int v = body.getMaxCoursesPerSemester() != null ? body.getMaxCoursesPerSemester() : 2;
+        return ApiResponse.ok("每学期选课门数上限已设为 " + v, systemService.setMaxCourses(v));
+    }
+
     @PostMapping("/graduation-reqs")
     public ApiResponse<SystemConfig> setGraduationReqs(@RequestBody SystemConfig body) {
         SystemConfig c = systemService.setGraduationReqs(
                 body.getGradReqRequired(), body.getGradReqElective(),
-                body.getGradReqGeneral(), body.getGradReqPractice());
-        return ApiResponse.ok("毕业学分要求已更新", c);
+                body.getGradReqGeneral(), body.getGradReqPractice(), body.getGradReqCourses());
+        return ApiResponse.ok("毕业要求已更新", c);
+    }
+
+    /* ---------- 按年级差异化毕业要求 ---------- */
+
+    @GetMapping("/grade-reqs")
+    public ApiResponse<?> gradeReqs() {
+        return ApiResponse.ok(systemService.listGradeReqs());
+    }
+
+    /** 整表保存：以提交列表为准全量替换 */
+    @PostMapping("/grade-reqs")
+    public ApiResponse<Void> saveGradeReqs(@RequestBody Map<String, Object> body) {
+        Object itemsObj = body.get("items");
+        java.util.List<GradeRequirement> items = new java.util.ArrayList<>();
+        if (itemsObj instanceof List<?> list) {
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            for (Object o : list) {
+                try { items.add(om.convertValue(o, GradeRequirement.class)); } catch (Exception ignored) {}
+            }
+        }
+        Map<String, Object> r = systemService.saveGradeReqs(items);
+        return Boolean.TRUE.equals(r.get("success"))
+                ? ApiResponse.ok((String) r.get("msg"), null)
+                : ApiResponse.fail((String) r.get("msg"));
+    }
+
+    @DeleteMapping("/grade-reqs/{id}")
+    public ApiResponse<Void> deleteGradeReq(@PathVariable Long id) {
+        Map<String, Object> r = systemService.deleteGradeReq(id);
+        return Boolean.TRUE.equals(r.get("success"))
+                ? ApiResponse.ok((String) r.get("msg"), null)
+                : ApiResponse.fail((String) r.get("msg"));
     }
 
     @PostMapping("/phase")
@@ -191,6 +246,11 @@ public class SystemController {
         r.put("reselectCloseAt", cfg.getReselectCloseAt());
         r.put("roundOpen", cfg.getRoundOpen());
         r.put("maxCreditPerSemester", cfg.getMaxCreditPerSemester());
+        r.put("gradReqRequired", cfg.getGradReqRequired());
+        r.put("gradReqElective", cfg.getGradReqElective());
+        r.put("gradReqGeneral", cfg.getGradReqGeneral());
+        r.put("gradReqPractice", cfg.getGradReqPractice());
+        r.put("gradReqCourses", cfg.getGradReqCourses());
         return ApiResponse.ok(r);
     }
 }

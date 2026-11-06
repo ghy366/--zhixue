@@ -4,50 +4,50 @@
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-icon blue" v-html="svgIcon('users')" />
-        <div><div class="stat-value">{{ overview.teacherCount ?? 0 }}</div><div class="stat-label">导师总数</div></div>
+        <div><div class="stat-value">{{ overview.teacherCount ?? 0 }}</div><div class="stat-label">{{ t('导师总数') }}</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon green" v-html="svgIcon('check-circle')" />
-        <div><div class="stat-value">{{ overview.totalApproved ?? 0 }}</div><div class="stat-label">已确认配对</div></div>
+        <div><div class="stat-value">{{ overview.totalApproved ?? 0 }}</div><div class="stat-label">{{ t('已确认配对') }}</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon amber" v-html="svgIcon('hourglass')" />
-        <div><div class="stat-value">{{ overview.totalPending ?? 0 }}</div><div class="stat-label">待审批申请</div></div>
+        <div><div class="stat-value">{{ overview.totalPending ?? 0 }}</div><div class="stat-label">{{ t('待审批申请') }}</div></div>
       </div>
       <div class="stat-card">
         <div class="stat-icon purple" v-html="svgIcon('star')" />
-        <div><div class="stat-value">{{ overview.teachersWithSpace ?? 0 }}</div><div class="stat-label">有空位导师</div></div>
+        <div><div class="stat-value">{{ overview.teachersWithSpace ?? 0 }}</div><div class="stat-label">{{ t('有空位导师') }}</div></div>
       </div>
     </div>
 
     <!-- 全局配置 -->
     <div class="section">
       <div class="section-header">
-        <div class="section-title" v-html="svgIcon('settings') + ' 全局配置'" />
+        <div class="section-title" v-html="svgIcon('settings') + ' ' + t('全局配置')" />
       </div>
       <div class="cfg-row">
         <label class="cfg-item">
           <el-switch v-model="cfg.open" />
-          <span>开启导师选择</span>
+          <span>{{ t('开启导师选择') }}</span>
         </label>
         <label class="cfg-item">
-          <span>默认容量</span>
+          <span>{{ t('默认容量') }}</span>
           <el-input-number v-model="cfg.defaultCapacity" :min="1" :max="99" size="small" style="width:100px" />
         </label>
-        <el-button type="primary" size="small" :loading="cfgSaving" @click="saveCfg">保存配置</el-button>
-        <span class="cfg-tip">新导师未单独设置容量时，使用此默认值</span>
+        <el-button type="primary" size="small" :loading="cfgSaving" @click="saveCfg">{{ t('保存配置') }}</el-button>
+        <span class="cfg-tip">{{ t('新导师未单独设置容量时，使用此默认值') }}</span>
       </div>
     </div>
 
     <!-- 导师容量管理 -->
     <div class="section">
       <div class="section-header">
-        <div class="section-title" v-html="svgIcon('graduation-cap') + ' 导师容量管理'" />
+        <div class="section-title" v-html="svgIcon('graduation-cap') + ' ' + t('导师容量管理')" />
       </div>
       <div class="data-table">
         <table>
           <thead>
-            <tr><th>导师</th><th>工号</th><th>学院</th><th>已指导</th><th>容量</th><th>状态</th></tr>
+            <tr><th>{{ t('导师') }}</th><th>{{ t('工号') }}</th><th>{{ t('学院') }}</th><th>{{ t('已指导') }}</th><th>{{ t('容量') }}</th><th>{{ t('状态') }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="a in caps" :key="a.teacherId">
@@ -56,7 +56,7 @@
               <td>{{ a.teacherCollege || '—' }}</td>
               <td>
                 {{ (a.approved ?? 0) + (a.pending ?? 0) }}
-                <span class="sub-note">(已确认 {{ a.approved ?? 0 }} + 待确认 {{ a.pending ?? 0 }})</span>
+                <span class="sub-note">({{ t('已确认 {n}', { n: a.approved ?? 0 }) }} + {{ t('待确认 {n}', { n: a.pending ?? 0 }) }})</span>
               </td>
               <td>
                 <el-input-number
@@ -68,25 +68,25 @@
               </td>
               <td>
                 <span class="status-tag" :class="(a.approved ?? 0) >= (a.capacity ?? 999) ? 'status-pending' : 'status-approved'">
-                  {{ (a.approved ?? 0) >= (a.capacity ?? 999) ? '已满' : '可接受' }}
+                  {{ (a.approved ?? 0) >= (a.capacity ?? 999) ? t('已满') : t('可接受') }}
                 </span>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div class="empty-state" v-if="!caps.length" style="padding:40px;color:var(--text-light);text-align:center">暂无导师数据</div>
+      <div class="empty-state" v-if="!caps.length" style="padding:40px;color:var(--text-light);text-align:center">{{ t('暂无导师数据') }}</div>
     </div>
 
     <!-- 全部申请 -->
     <div class="section">
       <div class="section-header">
-        <div class="section-title" v-html="svgIcon('file-text') + ' 全部申请（' + list.length + '）'" />
+        <div class="section-title" v-html="svgIcon('file-text') + ' ' + t('全部申请（{n}）', { n: list.length })" />
       </div>
       <div class="data-table" v-if="list.length">
         <table>
           <thead>
-            <tr><th>学生</th><th>导师</th><th>论文方向</th><th>状态</th><th>时间</th><th>操作</th></tr>
+            <tr><th>{{ t('学生') }}</th><th>{{ t('导师') }}</th><th>{{ t('论文方向') }}</th><th>{{ t('状态') }}</th><th>{{ t('时间') }}</th><th>{{ t('操作') }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="r in list" :key="r.id">
@@ -101,13 +101,13 @@
               </td>
               <td class="mono">{{ fmtTime(r.createdAt) }}</td>
               <td>
-                <el-button size="small" plain @click="removeRow(r)">删除</el-button>
+                <el-button size="small" plain @click="removeRow(r)">{{ t('删除') }}</el-button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div class="empty-state" v-else style="padding:40px;color:var(--text-light);text-align:center">暂无申请记录</div>
+      <div class="empty-state" v-else style="padding:40px;color:var(--text-light);text-align:center">{{ t('暂无申请记录') }}</div>
     </div>
   </div>
 </template>
@@ -116,6 +116,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api'
+import { t } from '@/i18n'
 
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
 
@@ -131,7 +132,7 @@ const cfgSaving = ref(false)
 const STATUS: Record<string, string> = {
   approved: '已确认', pending: '待审批', rejected: '已拒绝', cancelled: '已取消'
 }
-const statusText = (s: string) => STATUS[s] || s || '—'
+const statusText = (s: string) => { const v = STATUS[s] || s; return v ? t(v) : '—' }
 const statusCls = (s: string) =>
   s === 'approved' ? 'status-approved'
   : s === 'pending' ? 'status-pending'
@@ -164,7 +165,7 @@ async function load() {
     caps.value = c?.data || []
     list.value = l?.data || []
   } catch (e: any) {
-    ElMessage.warning(errMsg(e, '加载失败'))
+    ElMessage.warning(errMsg(e, t('加载失败')))
   }
 }
 
@@ -174,7 +175,7 @@ async function updateCap(a: any, v: number) {
   if (savingId.value !== null) return   // 防连点：一次只允许一个提交
   const val = Number(v)
   if (!Number.isFinite(val) || val < 1) {
-    ElMessage.warning('容量至少为 1')
+    ElMessage.warning(t('容量至少为 1'))
     load()
     return
   }
@@ -182,9 +183,9 @@ async function updateCap(a: any, v: number) {
   try {
     const r: any = await http.post('/advisor/admin/cfg', { teacherId: a.teacherId, teacherCapacity: val })
     a.capacity = val
-    ElMessage.success(r?.message || `${a.teacherName} 容量已更新为 ${val}`)
+    ElMessage.success(r?.message || t('{name} 容量已更新为 {n}', { name: a.teacherName, n: val }))
   } catch (e: any) {
-    ElMessage.error(errMsg(e, '更新失败'))
+    ElMessage.error(errMsg(e, t('更新失败')))
     load()
   } finally {
     savingId.value = null
@@ -198,10 +199,10 @@ async function saveCfg() {
       open: cfg.open,
       defaultCapacity: cfg.defaultCapacity
     })
-    ElMessage.success(r?.message || '配置已保存')
+    ElMessage.success(r?.message || t('配置已保存'))
     load()
   } catch (e: any) {
-    ElMessage.error(errMsg(e, '保存失败'))
+    ElMessage.error(errMsg(e, t('保存失败')))
   } finally {
     cfgSaving.value = false
   }
@@ -210,16 +211,16 @@ async function saveCfg() {
 async function removeRow(r: any) {
   try {
     await ElMessageBox.confirm(
-      `确定删除「${r.studentName} → ${r.teacherName}」这条申请记录？`, '删除申请',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+      t('确定删除「{a} → {b}」这条申请记录？', { a: r.studentName, b: r.teacherName }), t('删除申请'),
+      { type: 'warning', confirmButtonText: t('删除'), cancelButtonText: t('取消') }
     )
   } catch { return }
   try {
     const res: any = await http.delete(`/advisor/admin/${r.id}`)
-    ElMessage.success(res?.message || '已删除')
+    ElMessage.success(res?.message || t('已删除'))
     load()
   } catch (e: any) {
-    ElMessage.error(errMsg(e, '删除失败'))
+    ElMessage.error(errMsg(e, t('删除失败')))
   }
 }
 

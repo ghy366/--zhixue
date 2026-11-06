@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface WaitlistRepository extends JpaRepository<Waitlist, Long> {
+    List<Waitlist> findByRound(Integer round);
     List<Waitlist> findByCourseIdAndRoundAndStatusInOrderByJoinTimeAsc(Long courseId, Integer round, List<String> statuses);
     List<Waitlist> findByStudentIdAndRoundAndStatusInOrderByJoinTimeAsc(Long studentId, Integer round, List<String> statuses);
     Optional<Waitlist> findByStudentIdAndCourseIdAndRound(Long studentId, Long courseId, Integer round);

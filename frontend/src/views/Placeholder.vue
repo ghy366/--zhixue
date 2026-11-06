@@ -1,11 +1,11 @@
 ﻿<template>
   <div class="placeholder">
     <div class="ph-icon">🛠️</div>
-    <h2>{{ route.meta.title || '页面' }}</h2>
-    <p>Vue 迁移中 —— 阶段④将实现完整功能</p>
+    <h2>{{ t((route.meta.title as string) || '页面') }}</h2>
+    <p>{{ t('Vue 迁移中 —— 阶段④将实现完整功能') }}</p>
     <div class="ph-info">
-      <div><b>路由：</b>{{ route.path }}</div>
-      <div><b>角色：</b>{{ auth.user?.role }}</div>
+      <div><b>{{ t('路由：') }}</b>{{ route.path }}</div>
+      <div><b>{{ t('角色：') }}</b>{{ auth.user?.role }}</div>
     </div>
   </div>
 </template>
@@ -13,6 +13,7 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { t } from '@/i18n'
 const route = useRoute()
 const auth = useAuthStore()
 </script>

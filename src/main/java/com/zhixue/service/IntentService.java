@@ -19,6 +19,7 @@ public class IntentService {
     @Autowired private CourseRepository courseRepo;
     @Autowired private CourseService courseService;
     @Autowired private EnrollmentService enrollmentService;
+    @Autowired private com.zhixue.repository.EnrollmentRepository enrollmentRepo;
 
     private Map<String, Object> row(CourseIntent it) {
         Course c = courseRepo.findById(it.getCourseId()).orElse(null);
@@ -39,9 +40,57 @@ public class IntentService {
         return m;
     }
 
+    /**
+     * 意向单列表（带冲突预检）：
+     * - conflictWith：与已录取课程 / 其他意向课程的时间冲突名单
+     * - overLimitCount：若全部转正将超出本学期门数上限的门数（0 = 未超）
+     * 转正前只是提醒，不拦截——三轮制下第 1、2 轮允许超报竞价，由结算统一裁决。
+     */
     public List<Map<String, Object>> list(Long studentId) {
         List<Map<String, Object>> out = new ArrayList<>();
-        for (CourseIntent it : intentRepo.findByStudentIdOrderByCreatedAtDesc(studentId)) out.add(row(it));
+        List<CourseIntent> intents = intentRepo.findByStudentIdOrderByCreatedAtDesc(studentId);
+        if (intents.isEmpty()) return out;
+
+        // 已录取课程（跨轮次按课程去重），作为冲突基准
+        Map<Long, Course> approved = new LinkedHashMap<>();
+        for (com.zhixue.entity.Enrollment e : enrollmentRepo.findByStudentId(studentId)) {
+            if (!"approved".equals(e.getStatus()) || e.getCourseId() == null) continue;
+            approved.computeIfAbsent(e.getCourseId(), cid -> courseRepo.findById(cid).orElse(null));
+        }
+        approved.values().removeIf(Objects::isNull);
+        // 门数上限口径：只统计非必修课（必修由教学计划自动安排，不占额度），与 enroll/结算/候补保持一致
+        int approvedCount = (int) approved.values().stream()
+                .filter(c -> !com.zhixue.util.CourseGroup.isRequired(c.getCategory()))
+                .count();
+        Integer maxCourses = enrollmentService.getSystemConfig().getMaxCoursesPerSemester();
+
+        List<Course> intentCourses = new ArrayList<>();
+        for (CourseIntent it : intents) {
+            Course c = courseRepo.findById(it.getCourseId()).orElse(null);
+            intentCourses.add(c);
+        }
+
+        for (int i = 0; i < intents.size(); i++) {
+            Map<String, Object> m = row(intents.get(i));
+            Course cur = intentCourses.get(i);
+            List<String> conflicts = new ArrayList<>();
+            if (cur != null) {
+                for (Course ac : approved.values()) {
+                    if (enrollmentService.hasTimeConflict(cur, ac)) conflicts.add("已选《" + ac.getName() + "》");
+                }
+                for (int j = 0; j < intentCourses.size(); j++) {
+                    if (j == i) continue;
+                    Course oc = intentCourses.get(j);
+                    if (oc != null && enrollmentService.hasTimeConflict(cur, oc)) {
+                        conflicts.add("意向《" + oc.getName() + "》");
+                    }
+                }
+            }
+            m.put("conflictWith", conflicts);
+            m.put("approvedCount", approvedCount);
+            m.put("maxCourses", maxCourses);
+            out.add(m);
+        }
         return out;
     }
 
@@ -81,7 +130,18 @@ public class IntentService {
             it.setCreatedAt(LocalDateTime.now());
         }
         // 0-69 分自由投入：0 分表示暂不投入积分（未传值时才默认 10 分）
-        it.setDesiredPoints(points != null && points >= 0 ? points : 10);
+        int desired = points != null && points >= 0 ? points : 10;
+        // 积分余额校验：全部意向的预计投入不得超过当前剩余积分（积分不可为负）
+        int remaining = enrollmentService.getRemainingPoints(studentId, enrollmentService.getSystemConfig().getCurrentRound());
+        int otherIntents = intentRepo.findByStudentIdOrderByCreatedAtDesc(studentId).stream()
+                .filter(x -> !courseId.equals(x.getCourseId()))
+                .mapToInt(CourseIntent::getDesiredPoints).sum();
+        if (desired + otherIntents > remaining) {
+            r.put("success", false);
+            r.put("msg", "积分不足：剩余 " + remaining + " 分，已有意向占用 " + otherIntents + " 分，本课最多可投 " + Math.max(0, remaining - otherIntents) + " 分");
+            return r;
+        }
+        it.setDesiredPoints(desired);
         it.setNote(note);
         intentRepo.save(it);
         r.put("success", true);

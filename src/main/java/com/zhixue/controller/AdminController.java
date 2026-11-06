@@ -6,6 +6,7 @@ import com.zhixue.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -15,10 +16,28 @@ import java.util.stream.Collectors;
 public class AdminController {
 
     @Autowired private UserRepository userRepo;
+    @Autowired private com.zhixue.util.PasswordUtil passwordEncoder;
 
+    /**
+     * 用户列表（全校账号，服务端分页）。传 page/size 时返回 {items,total,page,size}，
+     * 未传时保持旧的全量数组（旧调用方零破坏）。role 角色过滤；keyword 匹配 学号/姓名/学院/专业。
+     */
     @GetMapping("/users")
-    public ApiResponse<List<Map<String, Object>>> users() {
-        List<Map<String, Object>> list = userRepo.findAll().stream().map(u -> {
+    public ApiResponse<Object> users(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) String keyword) {
+        List<User> all = userRepo.findAll();
+        if (role != null && !role.isBlank()) {
+            all = all.stream().filter(u -> role.equals(u.getRole())).toList();
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            String k = keyword.toLowerCase();
+            all = all.stream().filter(u -> (str(u.getNo()) + " " + str(u.getName()) + " "
+                    + str(u.getCollege()) + " " + str(u.getMajor())).toLowerCase().contains(k)).toList();
+        }
+        List<Map<String, Object>> list = all.stream().map(u -> {
             Map<String, Object> m = new java.util.HashMap<>();
             m.put("id", u.getId());
             m.put("no", u.getNo());
@@ -30,8 +49,20 @@ public class AdminController {
             m.put("avatar", u.getAvatar());
             return m;
         }).collect(Collectors.toList());
-        return ApiResponse.ok(list);
+        if (page == null || size == null || page < 1 || size < 1) {
+            return ApiResponse.ok(list);   // 兼容模式
+        }
+        int from = Math.min(list.size(), (page - 1) * size);
+        int to = Math.min(list.size(), from + size);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("items", list.subList(from, to));
+        data.put("total", list.size());
+        data.put("page", page);
+        data.put("size", size);
+        return ApiResponse.ok(data);
     }
+
+    private String str(Object v) { return v == null ? "" : v.toString(); }
 
     // 管理员新增任意角色用户（教师/管理员/学生）
     @PostMapping("/users")
@@ -40,7 +71,7 @@ public class AdminController {
         if (userRepo.findByNo(no).isPresent()) return ApiResponse.fail("该账号已存在");
         User u = new User();
         u.setNo(no);
-        u.setPassword(body.getOrDefault("password", "123456"));
+        u.setPassword(passwordEncoder.encode(com.zhixue.util.RsaCipher.decryptIfEncrypted(body.getOrDefault("password", "123456"))));
         u.setName(body.get("name"));
         u.setRole(body.getOrDefault("role", "teacher"));
         u.setCollege(body.get("college"));
@@ -72,7 +103,7 @@ public class AdminController {
             }
         }
         if (body.containsKey("password") && body.get("password") != null && !body.get("password").isEmpty()) {
-            u.setPassword(body.get("password"));
+            u.setPassword(passwordEncoder.encode(com.zhixue.util.RsaCipher.decryptIfEncrypted(body.get("password"))));
         }
         return ApiResponse.ok("更新成功", userRepo.save(u));
     }
@@ -90,9 +121,9 @@ public class AdminController {
         User u = userRepo.findById(id).orElse(null);
         if (u == null) return ApiResponse.fail("用户不存在");
         String newPwd = (body != null && body.get("newPassword") != null && !body.get("newPassword").isEmpty())
-                ? body.get("newPassword")
+                ? com.zhixue.util.RsaCipher.decryptIfEncrypted(body.get("newPassword"))
                 : "123456";
-        u.setPassword(newPwd);
+        u.setPassword(passwordEncoder.encode(newPwd));
         userRepo.save(u);
         Map<String, Object> r = new java.util.HashMap<>();
         r.put("tempPassword", newPwd);

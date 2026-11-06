@@ -96,7 +96,7 @@ class EnrollmentSettlementTest {
     }
 
     @Test
-    void creditLimitCheck_includesAlreadyApprovedRequiredCourses() {
+    void creditLimitCheck_excludesRequiredCourses() {
         Course required = course(10L, "高等数学", 100, 4, "周三 08:00-09:40");
         required.setCategory("专业必修");
         Course elective = course(1L, "课程A", 10, 3, "周一 08:00-09:40");
@@ -109,9 +109,10 @@ class EnrollmentSettlementTest {
         stubRound(List.of(required, elective), List.of(requiredEnr, pending));
         Map<String, Object> result = service.settleRound(1);
 
-        assertEquals("rejected", pending.getStatus());
-        assertTrue(rejectReasons(result, 1L).keySet().stream()
-                .anyMatch(k -> k.contains("学分上限")));
+        // 新口径：必修学分由教学计划自动安排，不占选修学分上限（必修 4 分 + 选修 3 分 = 7 > 6 也不再拒绝）
+        assertEquals("approved", pending.getStatus(),
+                "必修学分不应占选修学分上限，选修应正常录取；rejectReasons="
+                        + rejectReasons(result, 1L).keySet());
     }
 
     @Test

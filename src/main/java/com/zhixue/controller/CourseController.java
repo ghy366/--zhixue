@@ -23,22 +23,79 @@ public class CourseController {
     @Autowired private WaitlistService waitlistService;
     @Autowired private IntentService intentService;
     @Autowired private ReviewService reviewService;
+    @Autowired private com.zhixue.repository.UserRepository userRepository;
 
+    /**
+     * 课程列表。支持服务端分页：传 page/size 时返回 {items,total,page,size,categories}，
+     * 未传时保持旧的全量数组（旧调用方零破坏）。electiveOnly 供学生课程浏览剔除必修；
+     * sort：competition 竞争比（guide.bidCount 退化为报名数 ÷ 容量）/ remain 剩余名额 / credit 学分。
+     */
     @GetMapping
-    public ApiResponse<List<Map<String, Object>>> list(
+    public ApiResponse<Object> list(
             @RequestParam(required = false, defaultValue = "全部") String category,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Boolean electiveOnly,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
             @RequestHeader(value = "Authorization", required = false) String token) {
         Long userId = token != null ? SessionStore.getUserId(token.replace("Bearer ", "")) : null;
         int round = enrollmentService.getSystemConfig().getCurrentRound();
         List<Course> courses = courseService.search(keyword, category);
-        Map<String, Object> ratings = reviewService.allRatings();
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Course c : courses) {
-            result.add(courseToMap(c, userId, round, ratings));
+        if (Boolean.TRUE.equals(electiveOnly)) {
+            // 必修课由教学计划自动安排，不参与选课浏览
+            courses = courses.stream()
+                    .filter(c -> c.getCategory() == null || !c.getCategory().contains("必修"))
+                    .toList();
         }
-        return ApiResponse.ok(result);
+        Map<String, Object> ratings = reviewService.allRatings();
+        List<Map<String, Object>> all = new ArrayList<>();
+        for (Course c : courses) {
+            all.add(courseToMap(c, userId, round, ratings));
+        }
+        // 排序口径与前端本地排序一致（迁移到服务端后跨页排序才正确）
+        if ("competition".equals(sort)) {
+            all.sort((a, b) -> Double.compare(heatRatioOf(b), heatRatioOf(a)));
+        } else if ("remain".equals(sort)) {
+            all.sort((a, b) -> Integer.compare(remainOf(b), remainOf(a)));
+        } else if ("credit".equals(sort)) {
+            all.sort((a, b) -> Integer.compare(numInt(b.get("credit")), numInt(a.get("credit"))));
+        }
+        // 全量类别列表：分页模式下分类下拉仍能看到所有可选类别
+        Set<String> cats = new LinkedHashSet<>();
+        for (Course c : courses) {
+            if (c.getCategory() != null && !c.getCategory().contains("必修")) cats.add(c.getCategory());
+        }
+        if (page == null || size == null || page < 1 || size < 1) {
+            return ApiResponse.ok(all);   // 兼容模式：旧调用方拿全量数组
+        }
+        int from = Math.min(all.size(), (page - 1) * size);
+        int to = Math.min(all.size(), from + size);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("items", all.subList(from, to));
+        data.put("total", all.size());
+        data.put("page", page);
+        data.put("size", size);
+        data.put("categories", cats);
+        return ApiResponse.ok(data);
     }
+
+    private double heatRatioOf(Map<String, Object> m) {
+        int cap = numInt(m.get("capacity"));
+        if (cap <= 0) return 0;
+        Object bid = m.get("guide") instanceof Map<?, ?> g ? g.get("bidCount") : null;
+        Object total = m.get("stat") instanceof Map<?, ?> s ? s.get("total") : null;
+        return (bid != null ? ((Number) bid).doubleValue()
+                : total != null ? ((Number) total).doubleValue() : 0) / cap;
+    }
+
+    private int remainOf(Map<String, Object> m) {
+        int cap = numInt(m.get("capacity"));
+        Object total = m.get("stat") instanceof Map<?, ?> s ? s.get("total") : null;
+        return Math.max(0, cap - (total == null ? 0 : ((Number) total).intValue()));
+    }
+
+    private int numInt(Object v) { return v instanceof Number n ? n.intValue() : 0; }
 
     @GetMapping("/teacher/{teacherId}")
     public ApiResponse<List<Map<String, Object>>> teacherCourses(@PathVariable Long teacherId) {
@@ -50,9 +107,53 @@ public class CourseController {
         return ApiResponse.ok(result);
     }
 
+    /** 「选了这门课的人也选了」：基于共选记录的协同过滤推荐 */
+    @GetMapping("/{id}/also-took")
+    public ApiResponse<List<Map<String, Object>>> alsoTook(@PathVariable Long id,
+                                                           @RequestParam(defaultValue = "6") int n) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> t : enrollmentService.alsoTookCounts(id, n)) {
+            Object tid = t.get("teacherId");
+            t.put("teacherName", tid == null ? "未分配" : courseService.teacherName(Long.valueOf(tid.toString())));
+            out.add(t);
+        }
+        return ApiResponse.ok(out);
+    }
+
     @PostMapping
     public ApiResponse<Course> add(@RequestBody Course c) {
+        String err = teacherLoadError(c.getTeacherId(), null);
+        if (err != null) return ApiResponse.fail(err);
         return ApiResponse.ok("添加成功", courseService.save(c));
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<Course> update(@PathVariable Long id, @RequestBody Course c) {
+        if (courseService.findById(id) == null) return ApiResponse.fail("课程不存在");
+        String err = teacherLoadError(c.getTeacherId(), id);
+        if (err != null) return ApiResponse.fail(err);
+        c.setId(id);
+        return ApiResponse.ok("更新成功", courseService.save(c));
+    }
+
+    /**
+     * 教师课时上限校验：同一教师本学期授课门数达到上限（默认 3 门）后，
+     * 不允许再新增/转入课程（真实高校教师工作量约束）。
+     */
+    private String teacherLoadError(Long teacherId, Long excludeCourseId) {
+        if (teacherId == null) return null;
+        int max = enrollmentService.getSystemConfig().getTeacherMaxCourses();
+        if (max <= 0) return null;
+        long count = courseService.findAll().stream()
+                .filter(c -> teacherId.equals(c.getTeacherId()))
+                .filter(c -> excludeCourseId == null || !excludeCourseId.equals(c.getId()))
+                .count();
+        if (count >= max) {
+            User t = userRepository != null ? userRepository.findById(teacherId).orElse(null) : null;
+            return "教师「" + (t != null ? t.getName() : teacherId) + "」本学期已授课 " + count
+                    + " 门，达到每学期上限 " + max + " 门，请更换教师或为其减课";
+        }
+        return null;
     }
 
     @DeleteMapping("/{id}")
@@ -62,8 +163,18 @@ public class CourseController {
     }
 
     @GetMapping("/teachers")
-    public ApiResponse<List<User>> teachers() {
-        return ApiResponse.ok(courseService.getAllTeachers());
+    public ApiResponse<List<Map<String, Object>>> teachers() {
+        // 脱敏：不返回 password 哈希等敏感字段
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (User t : courseService.getAllTeachers()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", t.getId());
+            m.put("no", t.getNo());
+            m.put("name", t.getName());
+            m.put("college", t.getCollege());
+            out.add(m);
+        }
+        return ApiResponse.ok(out);
     }
 
     /** 热门课程排行 */
@@ -96,9 +207,16 @@ public class CourseController {
         m.put("campus", c.getCampus());
         m.put("examTime", c.getExamTime());
         m.put("intro", c.getIntro());
+        m.put("semesterNo", c.getSemesterNo());
+        if (c.getPrereqId() != null) {
+            Course pre = courseService.findById(c.getPrereqId());
+            m.put("prereqId", c.getPrereqId());
+            m.put("prereqName", pre != null ? pre.getName() : null);
+        }
         m.put("stat", enrollmentService.courseStat(c.getId(), round));
         m.put("oversubscribed", enrollmentService.isOversubscribed(c.getId(), round));
         m.put("full", waitlistService.isFull(c.getId(), round));
+        m.put("guide", enrollmentService.pointsGuide(c.getId(), round));
         if (userId != null) {
             var enr = enrollmentService.getEnrollment(userId, c.getId(), round);
             m.put("myStatus", enr != null ? enr.getStatus() : null);

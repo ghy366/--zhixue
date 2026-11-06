@@ -28,10 +28,98 @@ public class StatsController {
 
     @GetMapping("/report")
     public ApiResponse<Map<String, Object>> report(@RequestHeader(value = "Authorization", required = false) String token) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.report());
+    }
+
+    /** 积分分析：选修课投分箱线图 + 单课投分分布 */
+    @GetMapping("/points")
+    public ApiResponse<Map<String, Object>> points(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestParam(value = "round", required = false) Integer round) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.pointsAnalysis(round));
+    }
+
+    /** 候补分析：漏斗 + 队列 + 等待时长 */
+    @GetMapping("/waitlist")
+    public ApiResponse<Map<String, Object>> waitlist(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestParam(value = "round", required = false) Integer round) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.waitlistAnalysis(round));
+    }
+
+    /** 教室/排课分析：星期 × 时段热力 + 地点排行 */
+    @GetMapping("/classroom")
+    public ApiResponse<Map<String, Object>> classroom(
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.classroomAnalysis());
+    }
+
+    /** 成绩分析：总分分布 + 课程均分对比 + 平时/期末相关性 */
+    @GetMapping("/grades")
+    public ApiResponse<Map<String, Object>> grades(
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.gradeAnalysis());
+    }
+
+    /** 意向分析：在册意向 → 报名/录取流转 + 投分偏差 */
+    @GetMapping("/intents")
+    public ApiResponse<Map<String, Object>> intents(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestParam(value = "round", required = false) Integer round) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.intentAnalysis(round));
+    }
+
+    /** 实时监控：操作节奏 + 报名赛跑 + 最新动态（前端轮询） */
+    @GetMapping("/live")
+    public ApiResponse<Map<String, Object>> live(
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.liveAnalysis());
+    }
+
+    /** 评价分析：星级分布 + 评分 vs 热度 + 评论词云 */
+    @GetMapping("/reviews")
+    public ApiResponse<Map<String, Object>> reviews(
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.reviewAnalysis());
+    }
+
+    /** 公平性分析：录取率、同分抽签、学生录取分布基尼、年级均衡 */
+    @GetMapping("/fairness")
+    public ApiResponse<Map<String, Object>> fairness(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestParam(value = "round", required = false) Integer round) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.fairnessAnalysis(round));
+    }
+
+    /** 性能风控：QPS 节奏、失败率、异常高频账号、拥挤课程与告警 */
+    @GetMapping("/risk")
+    public ApiResponse<Map<String, Object>> risk(
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.riskAnalysis());
+    }
+
+    /** 运营分析：供需缺口、名额余量热力、退课统计、毕业预警 */
+    @GetMapping("/operation")
+    public ApiResponse<Map<String, Object>> operation(
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        return ApiResponse.ok(statsService.operationAnalysis());
+    }
+
+    private boolean isAdmin(String token) {
         Long userId = token == null ? null : SessionStore.getUserId(token.replace("Bearer ", ""));
         User u = userId == null ? null : userRepo.findById(userId).orElse(null);
-        if (u == null || !"admin".equals(u.getRole())) return ApiResponse.fail("仅管理员可查看统计报表");
-        return ApiResponse.ok(statsService.report());
+        return u != null && "admin".equals(u.getRole());
     }
 
     @GetMapping("/export/xlsx")

@@ -18,7 +18,7 @@ function draw() {
   ctx.clearRect(0, 0, cv.width, cv.height)
   ctx.fillStyle = 'rgba(15,23,42,0.85)'
   ctx.fillRect(0, 0, cv.width, cv.height)
-  const palette = ['#4ade80', '#22d3ee', '#a78bfa', '#fbbf24']
+  const palette = ['#4ade80', '#22d3ee', '#7dd3fc', '#fbbf24']
   for (let i = 0; i < 4; i++) {
     ctx.strokeStyle = `rgba(74,222,128,${0.12 + Math.random() * 0.18})`
     ctx.beginPath()

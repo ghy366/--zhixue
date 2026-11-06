@@ -28,7 +28,6 @@ const routes = [
 
       // 教师
       { path: 'teach-courses', name: 'TeachCourses', component: () => import('@/views/TeachCourses.vue') },
-      { path: 'approve', name: 'Approve', component: () => import('@/views/ApproveList.vue') },
       { path: 'student-list', name: 'StudentList', component: () => import('@/views/StudentList.vue') },
       { path: 'grade-mgr', name: 'GradeMgr', component: () => import('@/views/GradeMgr.vue') },
       { path: 'reviews', name: 'Reviews', component: () => import('@/views/Reviews.vue') },
@@ -44,9 +43,13 @@ const routes = [
       { path: 'stats', name: 'Stats', component: () => import('@/views/Stats.vue') },
       { path: 'advise-mgr', name: 'AdviseMgr', component: () => import('@/views/AdviseMgr.vue') },
       { path: 'logs', name: 'Logs', component: () => import('@/views/Logs.vue') },
+      { path: 'graduation-audit', name: 'GraduationAudit', component: () => import('@/views/GraduationAudit.vue') },
+      { path: 'training-plans', name: 'TrainingPlans', component: () => import('@/views/TrainingPlans.vue') },
 
       // 通用
       { path: 'profile', name: 'Profile', component: () => import('@/views/Profile.vue') },
+      { path: 'announcements', name: 'Announcements', component: () => import('@/views/Announcements.vue') },
+      { path: 'suggestions', name: 'Suggestions', component: () => import('@/views/Suggestions.vue') },
     ]
   },
   {

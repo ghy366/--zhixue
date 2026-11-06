@@ -20,9 +20,10 @@
 
 <script setup lang="ts">
 import { ref, defineExpose } from 'vue'
+import { t } from '@/i18n'
 
 const props = withDefaults(defineProps<{ text?: string; disabled?: boolean }>(), {
-  text: '登 录',
+  text: t('登 录'),
   disabled: false
 })
 defineEmits<{ (e: 'click'): void }>()

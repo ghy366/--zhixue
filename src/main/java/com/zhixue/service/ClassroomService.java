@@ -24,6 +24,10 @@ public class ClassroomService {
         classroomRepo.deleteById(id);
     }
 
+    public Classroom findById(Long id) {
+        return id == null ? null : classroomRepo.findById(id).orElse(null);
+    }
+
     public Classroom findByRoomNo(String roomNo) {
         return classroomRepo.findByRoomNo(roomNo).orElse(null);
     }

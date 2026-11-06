@@ -1,25 +1,25 @@
 <template>
   <div v-if="visible" class="login-round-banner lrb-left" style="display:block">
     <div class="lrb-head">
-      <span class="lrb-badge">第 {{ config.currentRound || 1 }} 轮</span>
+      <span class="lrb-badge">{{ t('第 {n} 轮', { n: config.currentRound || 1 }) }}</span>
       <span class="lrb-pulse" />
-      <span class="lrb-status">{{ statusText }}</span>
-      <span class="lrb-label">{{ labelText }}</span>
+      <span class="lrb-status">{{ t(statusText) }}</span>
+      <span class="lrb-label">{{ t(labelText) }}</span>
     </div>
     <div class="lrb-count">
-      <div class="lrb-cell"><b data-num="00">{{ num(diff.d) }}</b><span>天</span></div>
+      <div class="lrb-cell"><b data-num="00">{{ num(diff.d) }}</b><span>{{ t('天') }}</span></div>
       <i>:</i>
-      <div class="lrb-cell"><b data-num="00">{{ num(diff.h) }}</b><span>时</span></div>
+      <div class="lrb-cell"><b data-num="00">{{ num(diff.h) }}</b><span>{{ t('时') }}</span></div>
       <i>:</i>
-      <div class="lrb-cell"><b data-num="00">{{ num(diff.m) }}</b><span>分</span></div>
+      <div class="lrb-cell"><b data-num="00">{{ num(diff.m) }}</b><span>{{ t('分') }}</span></div>
       <i>:</i>
-      <div class="lrb-cell"><b data-num="00">{{ num(diff.s) }}</b><span>秒</span></div>
+      <div class="lrb-cell"><b data-num="00">{{ num(diff.s) }}</b><span>{{ t('秒') }}</span></div>
     </div>
     <div class="lrb-progress">
       <div class="lrb-progress-track">
         <div class="lrb-progress-fill" :style="{ width: progress + '%' }" />
       </div>
-      <span class="lrb-progress-label">进度 {{ progress }}%</span>
+      <span class="lrb-progress-label">{{ t('进度 {n}%', { n: progress }) }}</span>
     </div>
   </div>
 </template>
@@ -27,6 +27,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import http from '@/api'
+import { t } from '@/i18n'
 
 const visible = ref(false)
 const config = reactive<Record<string, any>>({})

@@ -16,10 +16,44 @@ public class LogController {
 
     @Autowired private LogService logService;
 
+    /**
+     * 操作日志列表（无限增长表，服务端分页）。传 page/size 时返回 {items,total,page,size}，
+     * 未传时保持旧的全量数组（CSV 导出等旧调用方零破坏）。type/status/keyword 服务端过滤，
+     * keyword 匹配 用户名/操作内容/IP（与前端原本地筛选口径一致）。
+     */
     @GetMapping
-    public ApiResponse<List<OperationLog>> list() {
-        return ApiResponse.ok(logService.findAll());
+    public ApiResponse<Object> list(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword) {
+        List<OperationLog> all = logService.findAll();
+        if (type != null && !type.isBlank()) {
+            all = all.stream().filter(l -> type.equals(l.getType())).toList();
+        }
+        if (status != null && !status.isBlank()) {
+            all = all.stream().filter(l -> status.equals(l.getStatus())).toList();
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            String k = keyword.toLowerCase();
+            all = all.stream().filter(l -> (str(l.getUserName()) + " " + str(l.getOperation()) + " " + str(l.getIp()))
+                    .toLowerCase().contains(k)).toList();
+        }
+        if (page == null || size == null || page < 1 || size < 1) {
+            return ApiResponse.ok(all);   // 兼容模式
+        }
+        int from = Math.min(all.size(), (page - 1) * size);
+        int to = Math.min(all.size(), from + size);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("items", all.subList(from, to));
+        data.put("total", all.size());
+        data.put("page", page);
+        data.put("size", size);
+        return ApiResponse.ok(data);
     }
+
+    private String str(Object v) { return v == null ? "" : v.toString(); }
 
     @GetMapping("/stats")
     public ApiResponse<Map<String, Object>> stats() {
@@ -53,5 +87,11 @@ public class LogController {
         result.put("byUser", userList);
 
         return ApiResponse.ok(result);
+    }
+
+    /** 操作时间热力：星期 × 24 小时 */
+    @GetMapping("/heatmap")
+    public ApiResponse<Map<String, Object>> heatmap() {
+        return ApiResponse.ok(logService.heatmap());
     }
 }

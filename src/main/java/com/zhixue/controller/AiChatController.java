@@ -1,12 +1,12 @@
 package com.zhixue.controller;
 
 import com.zhixue.dto.ApiResponse;
-import com.zhixue.entity.Course;
-import com.zhixue.entity.SystemConfig;
-import com.zhixue.repository.CourseRepository;
-import com.zhixue.repository.SystemConfigRepository;
+import com.zhixue.entity.User;
+import com.zhixue.repository.UserRepository;
+import com.zhixue.service.AiContextService;
 import com.zhixue.service.AiService;
-import com.zhixue.service.CourseService;
+import com.zhixue.service.WebSearchService;
+import com.zhixue.util.SessionStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,115 +15,183 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** AI 智能体对话：免登录公开功能，代理转发到大模型（API Key 只存在后端）。
- *  后端在调用模型前动态注入「业务数据上下文」（选课状态 + 课程目录），
- *  使 AI 能基于真实数据解答课程与选课规则问题，无需接入新 API。 */
+/**
+ * AI 智能体对话：免登录公开功能，代理转发到大模型（API Key 只存在后端）。
+ *
+ * 识别链路：问题 → AiContextService.recognize()（意图 + 课程实体）
+ *          → 按意图装配权威数据块 → system 提示词 → 大模型 → 流式返回。
+ * 带 token 时自动注入该用户的个人数据（选课/意向/候补/毕业进度）。
+ */
 @RestController
 @RequestMapping("/api/ai")
 public class AiChatController {
 
     @Autowired private AiService aiService;
-    @Autowired private CourseRepository courseRepo;
-    @Autowired private SystemConfigRepository configRepo;
-    @Autowired private CourseService courseService;
+    @Autowired private AiContextService contextService;
+    @Autowired private WebSearchService webSearch;
+    @Autowired private UserRepository userRepo;
 
-    private static final String BASE_PROMPT = ""
-            + "你是「智学选课」大学生选课平台的内置 AI 助手。请用简体中文、友好简洁的口吻回答。"
-            + "你可以帮助用户：解答选课流程与规则、介绍平台课程、推荐学习计划、解释课程难点、"
-            + "提供期末复习与时间管理建议、解答毕业进度相关问题。"
-            + "注意：平台内的具体个人数据（如某学生已选课程、成绩、选课结果）请引导用户到对应功能页面查看，"
-            + "你本身无法直接查询个人账号数据；但平台公开的课程目录与选课规则以下方【业务数据】为准。";
+    // ============ 非流式 ============
 
-    // AI 助手为免费公开功能，无需登录即可使用
     @PostMapping("/chat")
-    public ApiResponse<Map<String, Object>> chat(@RequestBody Map<String, Object> body) {
+    public ApiResponse<Map<String, Object>> chat(@RequestBody Map<String, Object> body,
+                                                 @RequestHeader(value = "Authorization", required = false) String authHeader) {
         String message = body.get("message") == null ? "" : body.get("message").toString().trim();
         if (message.isEmpty()) return ApiResponse.fail("消息不能为空");
         if (message.length() > 2000) return ApiResponse.fail("消息过长，请分条发送");
 
-        List<Map<String, String>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", buildSystemPrompt()));
+        Long userId = userIdOf(authHeader);
+        String role = roleOf(userId);
+        AiContextService.Recognition rec = contextService.recognize(message, userId, role);
+        // 时效性问题（最新/今天/报名/放假等）触发联网搜索，结果块注入 system 提示词
+        String webBlock = webSearch.shouldSearch(message) ? webSearch.webBlock(message) : null;
+        String sys = contextService.buildSystemPrompt(rec, message, userId, role);
+        if (webBlock != null) sys = sys + "\n" + webBlock;
 
-        // 前端带来的历史对话（最多保留最近 16 条，控制 token 消耗）
-        Object historyObj = body.get("history");
-        if (historyObj instanceof List) {
-            for (Object o : (List<?>) historyObj) {
-                if (!(o instanceof Map)) continue;
-                String role = String.valueOf(((Map<?, ?>) o).get("role"));
-                String content = String.valueOf(((Map<?, ?>) o).get("content"));
-                if (("user".equals(role) || "assistant".equals(role))
-                        && content != null && !content.isBlank() && !"null".equals(content)) {
-                    messages.add(Map.of(role, content));
-                }
-            }
-            while (messages.size() > 17) { // system + 16 条历史
-                messages.remove(1);
-            }
-        }
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", sys));
+        appendHistory(messages, body.get("history"));
         messages.add(Map.of("role", "user", "content", message));
 
         try {
             String reply = aiService.chat(messages);
             Map<String, Object> data = new HashMap<>();
             data.put("reply", reply);
+            data.put("intent", rec.intent.name());
+            data.put("intentCn", rec.intentCn());
+            data.put("sources", rec.sources);
+            data.put("webSearch", webBlock != null);
             return ApiResponse.ok(data);
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
     }
 
-    /** 动态拼接「业务数据上下文」：选课状态 + 课程目录，让 AI 能基于真实数据答疑 */
-    private String buildSystemPrompt() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(BASE_PROMPT);
+    // ============ 流式（SSE）============
 
-        SystemConfig cfg = configRepo.findById(1L).orElse(null);
-        if (cfg != null) {
-            sb.append("\n\n【当前选课状态】\n");
-            sb.append("- 当前第 ").append(cfg.getCurrentRound()).append(" 轮，")
-              .append(Boolean.TRUE.equals(cfg.getRoundOpen()) ? "选课进行中" : "本轮暂未开放")
-              .append("；阶段：").append(phaseName(cfg.getCurrentPhase())).append("。\n");
-            sb.append("- 每学期学分上限 ").append(nullTo(cfg.getMaxCreditPerSemester(), "未限制")).append(" 分。\n");
-            sb.append("- 毕业学分要求：必修≥").append(cfg.getGradReqRequired())
-              .append("、选修≥").append(cfg.getGradReqElective())
-              .append("、公共≥").append(cfg.getGradReqGeneral())
-              .append("、实践≥").append(cfg.getGradReqPractice()).append("。\n");
-            if (Boolean.TRUE.equals(cfg.getAutoSchedule())) {
-                sb.append("- 已开启按时间自动开放 / 结束选课。\n");
-            }
-        }
+    @PostMapping("/chat/stream")
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter chatStream(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter =
+                new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(120_000L);
 
-        List<Course> courses = courseRepo.findAll();
-        if (!courses.isEmpty()) {
-            sb.append("\n【课程目录（共 ").append(courses.size()).append(" 门，列示前 40 门）】\n");
-            int n = 0;
-            for (Course c : courses) {
-                if (n >= 40) { sb.append("…（更多课程请在「选课」页面查看）\n"); break; }
-                n++;
-                sb.append(n).append(". ").append(nullTo(c.getName(), "未命名"))
-                  .append(" ｜ ").append(nullTo(c.getCategory(), "未分类"))
-                  .append(" ｜ ").append(nullTo(c.getCredit(), "0")).append("学分")
-                  .append(" ｜ 教师：").append(courseService.teacherName(c.getTeacherId()))
-                  .append(" ｜ 时间：").append(nullTo(c.getTime(), "待定"))
-                  .append(" ｜ 校区：").append(nullTo(c.getCampus(), "主校区")).append("\n");
-            }
+        String message = body.get("message") == null ? "" : body.get("message").toString().trim();
+        if (message.isEmpty()) {
+            sendEvent(emitter, "error", "消息不能为空");
+            emitter.complete();
+            return emitter;
         }
-        sb.append("\n请优先基于以上【业务数据】回答学生关于课程、选课规则、轮次与毕业要求的问题；")
-          .append("若涉及某学生个人已选 / 成绩等隐私数据，请引导其到对应页面查看。")
-          .append("回答控制在 300 字以内，多用列表。");
-        return sb.toString();
+        if (message.length() > 2000) message = message.substring(0, 2000);
+
+        Long userId = userIdOf(authHeader);
+        String role = roleOf(userId);
+        AiContextService.Recognition rec = contextService.recognize(message, userId, role);
+        // 时效性问题触发联网搜索（与 /chat 同一套触发词与数据块）
+        String webBlock = webSearch.shouldSearch(message) ? webSearch.webBlock(message) : null;
+        String sys = contextService.buildSystemPrompt(rec, message, userId, role);
+        if (webBlock != null) sys = sys + "\n" + webBlock;
+
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", sys));
+        appendHistory(messages, body.get("history"));
+        messages.add(Map.of("role", "user", "content", message));
+
+        // 先装配完数据块再发 meta（sources 在装配过程中填充）
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("intent", rec.intent.name());
+        meta.put("intentCn", rec.intentCn());
+        meta.put("sources", rec.sources);
+        meta.put("webSearch", webBlock != null);
+        List<String> courseNames = new ArrayList<>();
+        rec.courses.forEach(c -> courseNames.add(c.getName()));
+        meta.put("courses", courseNames);
+        sendEvent(emitter, "meta", toJson(meta));
+
+        new Thread(() -> {
+            try {
+                aiService.chatStream(messages, new AiService.DeltaListener() {
+                    @Override public void onDelta(String chunk) { sendEvent(emitter, "delta", chunk); }
+                    @Override public void onReasoning(String chunk) { sendEvent(emitter, "reasoning", chunk); }
+                });
+                sendEvent(emitter, "done", "ok");
+                emitter.complete();
+            } catch (Exception e) {
+                sendEvent(emitter, "error", String.valueOf(e.getMessage()));
+                emitter.complete();
+            }
+        }, "ai-chat-stream").start();
+        return emitter;
     }
 
-    private static String phaseName(String p) {
-        if (p == null) return "正常选课阶段";
-        return switch (p) {
-            case "batch" -> "补选阶段";
-            case "reselect" -> "退改选阶段";
-            default -> "正常选课阶段";
-        };
+    /**
+     * 识别探针：不调用大模型，只回显「这句话被理解成什么、注入了哪些数据」。
+     * 用于自测识别覆盖率，也方便前端做「本次参考」提示。
+     */
+    @PostMapping("/probe")
+    public ApiResponse<Map<String, Object>> probe(@RequestBody Map<String, Object> body,
+                                                  @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        String message = body.get("message") == null ? "" : body.get("message").toString().trim();
+        Long userId = userIdOf(authHeader);
+        String role = roleOf(userId);
+        AiContextService.Recognition rec = contextService.recognize(message, userId, role);
+        String prompt = contextService.buildSystemPrompt(rec, message, userId, role);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("intent", rec.intent.name());
+        data.put("intentCn", rec.intentCn());
+        data.put("sources", rec.sources);
+        data.put("note", rec.note);
+        List<String> courseNames = new ArrayList<>();
+        rec.courses.forEach(c -> courseNames.add(c.getName()));
+        data.put("courses", courseNames);
+        data.put("promptLength", prompt.length());
+        data.put("prompt", body.get("withPrompt") != null ? prompt : null);
+        return ApiResponse.ok(data);
     }
 
-    private static String nullTo(Object v, String dft) {
-        return v == null ? dft : String.valueOf(v);
+    // ============ 内部工具 ============
+
+    private void appendHistory(List<Map<String, String>> messages, Object historyObj) {
+        if (!(historyObj instanceof List)) return;
+        for (Object o : (List<?>) historyObj) {
+            if (!(o instanceof Map)) continue;
+            String role = String.valueOf(((Map<?, ?>) o).get("role"));
+            String content = String.valueOf(((Map<?, ?>) o).get("content"));
+            if (("user".equals(role) || "assistant".equals(role))
+                    && content != null && !content.isBlank() && !"null".equals(content)) {
+                messages.add(Map.of(role, content));
+            }
+        }
+        while (messages.size() > 17) messages.remove(1);   // system + 16 条历史
+    }
+
+    private void sendEvent(org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter,
+                           String name, String data) {
+        try {
+            emitter.send(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.event()
+                    .name(name).data(data == null ? "" : data));
+        } catch (Exception ignored) {}
+    }
+
+    private String toJson(Object o) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(o);
+        } catch (Exception e) {
+            return "{\"intent\":\"GENERAL\",\"sources\":[]}";
+        }
+    }
+
+    /** 从 Authorization header 解出登录用户 id（无 token / 无效 token 返回 null，保持匿名可用） */
+    private Long userIdOf(String authHeader) {
+        if (authHeader == null || authHeader.isBlank()) return null;
+        String token = authHeader.replaceFirst("(?i)^Bearer\\s+", "").trim();
+        return SessionStore.getUserId(token);
+    }
+
+    private String roleOf(Long userId) {
+        if (userId == null) return null;
+        User u = userRepo.findById(userId).orElse(null);
+        return u == null ? null : u.getRole();
     }
 }

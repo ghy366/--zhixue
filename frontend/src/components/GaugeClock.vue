@@ -50,6 +50,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { t } from '@/i18n'
 
 const time = ref('--:--:--')
 const date = ref('----.--.-- - ---')
@@ -58,10 +59,10 @@ let timer: number | null = null
 function pad(n: number) { return String(n).padStart(2, '0') }
 
 function tick() {
-  const WEEK = ['SUN','MON','TUE','WED','THU','FRI','SAT']
+  const WEEK = ['周日','周一','周二','周三','周四','周五','周六']
   const now = new Date()
   time.value = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-  date.value = `${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())} - ${WEEK[now.getDay()]}`
+  date.value = `${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())} - ${t(WEEK[now.getDay()])}`
   // 更新刻度：按当天秒数比例染红/灰
   const totalSec = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()
   const greenCount = Math.min(36, Math.round(36 * totalSec / 86400))
@@ -98,7 +99,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
   color: #e2e8f0; line-height: 1.1; font-variant-numeric: tabular-nums;
 }
 .gauge-date {
-  margin-top: 8px; font-size: 11px; letter-spacing: 1.5px;
+  margin-top: 8px; font-size: 12px; letter-spacing: 1.5px;
   color: rgba(148,163,184,0.85); text-transform: uppercase;
   font-family: "JetBrains Mono", "Consolas", monospace;
 }

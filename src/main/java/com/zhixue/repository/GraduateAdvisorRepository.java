@@ -14,4 +14,5 @@ public interface GraduateAdvisorRepository extends JpaRepository<GraduateAdvisor
     long countByTeacherIdAndStatus(Long teacherId, String status);
     long countByTeacherId(Long teacherId);
     long countByStatus(String status);
+    List<GraduateAdvisor> findByStatus(String status);
 }

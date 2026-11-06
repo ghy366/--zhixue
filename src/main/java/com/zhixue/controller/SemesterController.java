@@ -34,6 +34,16 @@ public class SemesterController {
         return ApiResponse.ok("保存成功", semesterService.save(s));
     }
 
+    /** 编辑学期（此前缺失该接口，管理端「学期管理 → 编辑」一直保存失败） */
+    @PutMapping("/{id}")
+    public ApiResponse<Semester> update(@PathVariable Long id, @RequestBody Semester s) {
+        if (!semesterService.findAll().stream().anyMatch(x -> x.getId().equals(id))) {
+            return ApiResponse.fail("学期不存在");
+        }
+        s.setId(id);
+        return ApiResponse.ok("更新成功", semesterService.save(s));
+    }
+
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable Long id) {
         semesterService.delete(id);

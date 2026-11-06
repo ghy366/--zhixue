@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.*;
 
 /** 课程评价与评分业务：多维度（教学/内容/作业）+ 匿名开关 */
@@ -154,8 +155,29 @@ public class ReviewService {
 
     public List<Map<String, Object>> mine(Long studentId) {
         List<Map<String, Object>> out = new ArrayList<>();
-        for (CourseReview rev : reviewRepo.findByStudentIdOrderByCreatedAtDesc(studentId)) out.add(row(rev, true));
+        for (CourseReview rev : reviewRepo.findByStudentIdOrderByCreatedAtDesc(studentId)) {
+            Map<String, Object> m = row(rev, true);
+            m.putAll(semOf(studentId, rev.getCourseId()));
+            out.add(m);
+        }
         return out;
+    }
+
+    /** 课程在学生修读记录中的学期序与学年学期名（评教按学期展示用） */
+    private Map<String, Object> semOf(Long studentId, Long courseId) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        Integer sem = enrollmentRepo.findByStudentId(studentId).stream()
+                .filter(e -> courseId.equals(e.getCourseId()) && "approved".equals(e.getStatus()) && e.getSemesterNo() != null)
+                .map(Enrollment::getSemesterNo)
+                .findFirst().orElse(null);
+        m.put("semesterNo", sem);
+        if (sem != null) {
+            Integer grade = userRepo.findById(studentId).map(User::getGrade).orElse(null);
+            m.put("semesterLabel", com.zhixue.service.GraduationService.semesterLabel(grade, sem));
+        } else {
+            m.put("semesterLabel", null);
+        }
+        return m;
     }
 
     /** 已录取但还没评价的课程 */
@@ -176,6 +198,7 @@ public class ReviewService {
             m.put("category", c.getCategory());
             m.put("credit", c.getCredit());
             m.put("teacherName", courseService.teacherName(c.getTeacherId()));
+            m.putAll(semOf(studentId, c.getId()));
             out.add(m);
         }
         return out;
@@ -185,12 +208,15 @@ public class ReviewService {
     public Map<String, Object> teacherSummary(Long teacherId) {
         List<Map<String, Object>> rows = new ArrayList<>();
         int totalCount = 0, totalSum = 0;
+        int[] totalDist = new int[6];
         for (Course c : courseService.findByTeacher(teacherId)) {
             List<CourseReview> list = reviewRepo.findByCourseIdOrderByCreatedAtDesc(c.getId());
             int sum = 0, tSum = 0, cSum = 0, hSum = 0;
             for (CourseReview rev : list) {
                 sum += nz(rev.getRating());
                 tSum += tOf(rev); cSum += cOf(rev); hSum += hOf(rev);
+                int r = Math.max(1, Math.min(5, nz(rev.getRating())));
+                totalDist[r]++;
             }
             int n = list.size();
             totalCount += n;
@@ -206,10 +232,39 @@ public class ReviewService {
             m.put("latest", list.isEmpty() ? null : row(list.get(0), false));
             rows.add(m);
         }
+        // 全校维度均分（含其他教师的课），用于雷达对比
+        List<CourseReview> all = reviewRepo.findAll();
+        double sT = 0, sC = 0, sH = 0;
+        for (CourseReview rev : all) { sT += tOf(rev); sC += cOf(rev); sH += hOf(rev); }
+        int sN = all.size();
+        Map<String, Object> schoolAvg = new LinkedHashMap<>();
+        schoolAvg.put("teaching", sN == 0 ? 0.0 : round1(sT / sN));
+        schoolAvg.put("content", sN == 0 ? 0.0 : round1(sC / sN));
+        schoolAvg.put("homework", sN == 0 ? 0.0 : round1(sH / sN));
+
+        List<Map<String, Object>> dist = new ArrayList<>();
+        for (int s = 5; s >= 1; s--) {
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("star", s);
+            d.put("count", totalDist[s]);
+            d.put("rate", totalCount == 0 ? 0.0 : Math.round(totalDist[s] * 1000.0 / totalCount) / 10.0);
+            dist.add(d);
+        }
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("courses", rows);
         out.put("totalCount", totalCount);
         out.put("totalAvg", totalCount == 0 ? 0.0 : round1((double) totalSum / totalCount));
+        out.put("dist", dist);
+        out.put("goodRate", totalCount == 0 ? 0.0
+                : Math.round((totalDist[4] + totalDist[5]) * 1000.0 / totalCount) / 10.0);
+        out.put("myTeaching", totalCount == 0 ? 0.0
+                : round1(rows.stream().mapToDouble(c -> (Double) c.get("teachingAvg") * (int) c.get("count")).sum() / totalCount));
+        out.put("myContent", totalCount == 0 ? 0.0
+                : round1(rows.stream().mapToDouble(c -> (Double) c.get("contentAvg") * (int) c.get("count")).sum() / totalCount));
+        out.put("myHomework", totalCount == 0 ? 0.0
+                : round1(rows.stream().mapToDouble(c -> (Double) c.get("homeworkAvg") * (int) c.get("count")).sum() / totalCount));
+        out.put("schoolAvg", schoolAvg);
         return out;
     }
 }

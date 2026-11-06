@@ -21,4 +21,12 @@ public final class CourseGroup {
         if (category.contains("实践")) return "实践";
         return "选修";
     }
+
+    /**
+     * 必修类判断（公共必修 / 专业必修）。
+     * 门数上限（maxCoursesPerSemester）只统计非必修课，所有入口统一走这里，勿另写判断。
+     */
+    public static boolean isRequired(String category) {
+        return "必修".equals(groupOf(category));
+    }
 }

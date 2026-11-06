@@ -10,6 +10,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     @Autowired private LogInterceptor logInterceptor;
+    @Autowired private RoleInterceptor roleInterceptor;
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
@@ -21,6 +22,9 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // 统一鉴权：先于操作日志执行（未授权请求不产生业务日志）
+        registry.addInterceptor(roleInterceptor)
+                .addPathPatterns("/api/**");
         registry.addInterceptor(logInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/logs/**");
@@ -46,7 +50,6 @@ public class WebConfig implements WebMvcConfigurer {
                 "/workspace", "/workspace/**",
                 "/chat", "/chat/**",
                 "/teach-courses", "/teach-courses/**",
-                "/approve", "/approve/**",
                 "/student-list", "/student-list/**",
                 "/grade-mgr", "/grade-mgr/**",
                 "/reviews", "/reviews/**",
@@ -57,10 +60,14 @@ public class WebConfig implements WebMvcConfigurer {
                 "/course-mgr", "/course-mgr/**",
                 "/user-mgr", "/user-mgr/**",
                 "/announce", "/announce/**",
+                "/announcements", "/announcements/**",
                 "/stats", "/stats/**",
                 "/advise-mgr", "/advise-mgr/**",
                 "/logs", "/logs/**",
                 "/profile", "/profile/**",
+                "/suggestions", "/suggestions/**",
+                "/graduation-audit", "/graduation-audit/**",
+                "/training-plans", "/training-plans/**",
         };
         for (String p : spaPaths) {
             registry.addViewController(p).setViewName("forward:/index.html");

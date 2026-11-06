@@ -22,6 +22,7 @@ public class DataService {
     @Autowired private CourseRepository courseRepo;
     @Autowired private GradeRepository gradeRepo;
     @Autowired private EnrollmentRepository enrollmentRepo;
+    @Autowired private com.zhixue.util.PasswordUtil passwordUtil;
 
     // ================= CSV 工具 =================
     private static String esc(String s) {
@@ -77,7 +78,8 @@ public class DataService {
         users.sort(Comparator.comparing(u -> u.getNo() == null ? "" : u.getNo()));
         for (User u : users) {
             if (!"student".equals(u.getRole())) continue;
-            sb.append(esc(u.getNo())).append(',').append(esc(u.getName())).append(',').append(esc(u.getPassword())).append(',')
+            sb.append(esc(u.getNo())).append(',').append(esc(u.getName())).append(',').append("") // 密码已哈希，导出置空保护
+              .append(',')
               .append(esc(u.getCollege())).append(',').append(esc(u.getMajor())).append(',')
               .append(u.getGrade() == null ? "" : u.getGrade()).append(',')
               .append(esc(u.getClassNo())).append(',').append(esc(u.getPhone())).append('\n');
@@ -154,7 +156,7 @@ public class DataService {
         users.sort(Comparator.comparing(u -> u.getNo() == null ? "" : u.getNo()));
         for (User u : users) {
             if (!"student".equals(u.getRole())) continue;
-            rows.add(Arrays.asList(esc(u.getNo()), esc(u.getName()), esc(u.getPassword()), esc(u.getCollege()),
+            rows.add(Arrays.asList(esc(u.getNo()), esc(u.getName()), "", esc(u.getCollege()), // 密码已哈希，导出置空保护
                     esc(u.getMajor()), u.getGrade() == null ? "" : str(u.getGrade()), esc(u.getClassNo()), esc(u.getPhone())));
         }
         return rows;
@@ -219,7 +221,7 @@ public class DataService {
 
     public String courseTemplateCsv() {
         return "课程代码,课程名称,教师工号,学分,学时,容量,类别,上课时间,上课地点\n" +
-               "CS501,分布式系统,T002,3,48,60,专业选修,周三 08:00-09:40,信息楼-701\n";
+               "CS501,分布式系统,T002,3,48,60,专业选修,周三 08:00-09:40,明志楼-403\n";
     }
 
     // ================= 导入 =================
@@ -244,7 +246,7 @@ public class DataService {
                 u = new User();
                 u.setNo(no);
                 u.setRole("student");
-                u.setPassword(pwd);
+                u.setPassword(passwordUtil.encode(pwd));
                 u.setAvatar("🎓");
                 created++;
             } else {
