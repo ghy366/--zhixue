@@ -7,6 +7,7 @@ import com.zhixue.entity.StaggerWindow;
 import com.zhixue.entity.SystemConfig;
 import com.zhixue.entity.User;
 import com.zhixue.repository.UserRepository;
+import com.zhixue.service.CapacityService;
 import com.zhixue.service.RoundScheduleService;
 import com.zhixue.service.StaggerService;
 import com.zhixue.service.SystemService;
@@ -27,6 +28,7 @@ public class SystemController {
     @Autowired private SystemService systemService;
     @Autowired private RoundScheduleService roundScheduleService;
     @Autowired private StaggerService staggerService;
+    @Autowired private CapacityService capacityService;
     @Autowired private UserRepository userRepository;
 
     /** 轮次时间设置请求体 */
@@ -130,10 +132,40 @@ public class SystemController {
 
     @PostMapping("/round-open")
     public ApiResponse<SystemConfig> setRoundOpen(@RequestBody SystemConfig body) {
-        systemService.setRoundOpen(body.getRoundOpen());
+        boolean open = Boolean.TRUE.equals(body.getRoundOpen());
+        SystemConfig before = systemService.getConfig();
+        boolean wasOpen = Boolean.TRUE.equals(before.getRoundOpen());
+        int round = before.getCurrentRound() == null ? 1 : before.getCurrentRound();
+
+        // 第 1 轮开启 = 新选课周期开始：先把上一周期残留的报名/候补占位清空，
+        // 让全部课程容量重新满额（成绩 grades 不动，学分/GPA 不受影响）
+        Map<String, Object> released = null;
+        if (open && !wasOpen && round == 1) {
+            try { released = capacityService.releaseAll(); } catch (Exception ignored) {}
+        }
+
+        systemService.setRoundOpen(open);
         // 手动切换后补齐本轮时间窗，保证登录页/侧边栏倒计时能拿到目标时间
         SystemConfig c = roundScheduleService.fillCurrentWindow();
-        return ApiResponse.ok(body.getRoundOpen() ? "本轮选课已开放" : "本轮选课已关闭", c);
+
+        String msg = open ? "本轮选课已开放" : "本轮选课已关闭";
+        if (released != null) {
+            msg += "，并释放本学期容量（清理 " + released.get("enrollments") + " 条本学期报名，让出 "
+                    + released.get("freedSeats") + " 个已占座位；历史学期 " + released.get("keptHistory") + " 条报名记录已保留）";
+        }
+        return ApiResponse.ok(msg, c);
+    }
+
+    /**
+     * 手动释放本学期容量：清空本学期报名 / 候补 / 待处理退课申请，
+     * 历史学期的报名记录与成绩 grades 保持不变。用于新学期开轮前重置。
+     */
+    @PostMapping("/release-capacity")
+    public ApiResponse<Map<String, Object>> releaseCapacity() {
+        Map<String, Object> r = capacityService.releaseAll();
+        return ApiResponse.ok("已释放本学期容量：清理 " + r.get("enrollments") + " 条本学期报名、"
+                + r.get("waitlists") + " 条候补、" + r.get("dropRequests") + " 条待处理退课申请，让出 "
+                + r.get("freedSeats") + " 个已占座位；历史学期 " + r.get("keptHistory") + " 条报名记录已保留", r);
     }
 
     @PostMapping("/confirm-minutes")

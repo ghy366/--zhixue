@@ -62,7 +62,7 @@
         <div v-else class="an-empty">
           <div class="an-empty-icon" v-html="svgIcon('inbox')" />
           <p>暂无选课操作记录</p>
-          <small>学生开始选课后，这里会实时滚动最新动态</small>
+          <small>学生开启选课探索后，这里会实时滚动最新动态</small>
         </div>
       </section>
     </div>

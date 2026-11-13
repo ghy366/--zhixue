@@ -1,16 +1,36 @@
 package com.zhixue.config;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import java.nio.file.Paths;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
     @Autowired private LogInterceptor logInterceptor;
     @Autowired private RoleInterceptor roleInterceptor;
+
+    @Value("${zhixue.chat.image-path:E:/ai文件 图片缓存/chat-images}")
+    private String chatImageDir;
+
+    @Value("${zhixue.chat.file-path:E:/ai文件 图片缓存/chat-files}")
+    private String chatFileDir;
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // 聊天图片/附件直链：文件名含时间戳+UUID 不可猜测，且 <img>/<a> 标签无法携带
+        // Authorization 头，故放行到 /api 之外免鉴权访问（RoleInterceptor 只拦 /api/**）
+        registry.addResourceHandler("/files/chat/**")
+                .addResourceLocations(
+                        "file:" + Paths.get(chatImageDir).toAbsolutePath().normalize() + "/",
+                        "file:" + Paths.get(chatFileDir).toAbsolutePath().normalize() + "/");
+    }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
@@ -51,6 +71,7 @@ public class WebConfig implements WebMvcConfigurer {
                 "/chat", "/chat/**",
                 "/teach-courses", "/teach-courses/**",
                 "/student-list", "/student-list/**",
+                "/drop-requests", "/drop-requests/**",
                 "/grade-mgr", "/grade-mgr/**",
                 "/reviews", "/reviews/**",
                 "/advise", "/advise/**",
@@ -68,6 +89,7 @@ public class WebConfig implements WebMvcConfigurer {
                 "/suggestions", "/suggestions/**",
                 "/graduation-audit", "/graduation-audit/**",
                 "/training-plans", "/training-plans/**",
+                "/ai-channels", "/ai-channels/**",
         };
         for (String p : spaPaths) {
             registry.addViewController(p).setViewName("forward:/index.html");

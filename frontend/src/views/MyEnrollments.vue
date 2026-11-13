@@ -173,7 +173,10 @@
           </el-table-column>
           <el-table-column :label="t('操作')" width="140" align="right">
             <template #default="{ row }">
-              <el-tooltip :disabled="!isRequired(row)" :content="t('必修课由教学计划自动安排，不能退课')" placement="top">
+              <el-tooltip v-if="pendingDropIds.has(row.courseId)" :content="t('已提交任课老师审批，再次点击可撤回申请')" placement="top">
+                <el-button type="warning" effect="plain" size="small" :disabled="batchMode" @click="withdrawDropRequest(pendingDropReq.get(row.courseId))">{{ t('退课申请中') }}</el-button>
+              </el-tooltip>
+              <el-tooltip v-else :disabled="!isRequired(row)" :content="t('必修课由教学计划自动安排，不能退课')" placement="top">
                 <span>
                   <el-button v-if="row.semesterNo === null || row.semesterNo === currentSemesterNo" size="small" text class="row-drop" :disabled="batchMode || isRequired(row)" @click="drop(row.id)">{{ t('退课') }}</el-button>
                 </span>
@@ -303,6 +306,30 @@ interface Enrollment { id: number; courseId: number; courseName: string; teacher
 interface Waitlist { waitlistId: number; courseId: number; courseName: string; teacherName: string; position: number; status: string; swapFromName?: string }
 
 const loading = ref(false)
+
+// 轮次结束后提交的退课申请：待处理课程不再显示退课按钮；再次点击可撤回（教师端同步消失）
+const dropRequests = ref<any[]>([])
+const pendingDropIds = computed(() => new Set<number>(
+  dropRequests.value.filter(r => r.status === 'pending').map(r => Number(r.courseId))
+))
+const pendingDropReq = computed(() => new Map<number, number>(
+  dropRequests.value.filter(r => r.status === 'pending').map(r => [Number(r.courseId), Number(r.id)])
+))
+async function withdrawDropRequest(id?: number) {
+  if (!id) return
+  try {
+    await ElMessageBox.confirm(
+      t('撤回后该课程恢复正常选课状态，教师端将不再显示此申请。确定撤回？'),
+      t('撤回退课申请'), {
+        type: 'warning', confirmButtonText: t('确定撤回'), cancelButtonText: t('再想想')
+      })
+  } catch { return }
+  try {
+    const r = await http.post('/drop-requests/withdraw', { id })
+    ElMessage.success(r?.message || t('已撤回'))
+    load()
+  } catch (e: any) { ElMessage.error(e?.message || t('撤回失败')) }
+}
 const tab = ref('approved')
 const auth = useAuthStore()
 const enrollments = ref<Enrollment[]>([])
@@ -442,12 +469,14 @@ function toggleOne(id: number, v: boolean) {
 async function load() {
   loading.value = true
   try {
-    const [e, w, c, s] = await Promise.all([
+    const [e, w, c, s, q] = await Promise.all([
       http.get('/enrollments/mine' + (viewSem.value != null ? '?semester=' + viewSem.value : '')),
       http.get('/waitlist/mine'),
       http.get('/system/config'),
       http.get('/enrollments/swaps').catch(() => null),
+      http.get('/drop-requests/mine').catch(() => null),
     ])    // 后端字段：enrollmentId / teacherName / credit / category，统一成前端短名
+    dropRequests.value = q?.data || []
     swaps.value = s?.data || []
     enrollments.value = (e?.data || []).map((x: any) => ({
       id: x.enrollmentId,
@@ -514,7 +543,15 @@ async function drop(id: number) {
     ElMessage.success(r?.message || t('已退选'))
     load()
   } catch (e: any) {
-    ElMessage.error(e?.message || t('退课失败'))
+    const msg = e?.message || t('退课失败')
+    if (msg.includes('请联系本课程的老师')) {
+      try {
+        await ElMessageBox.alert(msg + t('（已提交退课申请，等待任课老师处理）'), t('退课需教师处理'), {
+          type: 'warning', confirmButtonText: t('知道了')
+        })
+      } catch {}
+      load()
+    } else ElMessage.error(msg)
   }
 }
 async function batchDrop() {
@@ -527,7 +564,15 @@ async function batchDrop() {
     checkedApproved.value = []
     load()
   } catch (e: any) {
-    ElMessage.error(e?.message || t('批量退课失败'))
+    const msg = e?.message || t('批量退课失败')
+    if (msg.includes('请联系本课程的老师') || msg.includes('轮次已结束')) {
+      try {
+        await ElMessageBox.alert(msg, t('退课需教师处理'), {
+          type: 'warning', confirmButtonText: t('知道了')
+        })
+      } catch {}
+      load()
+    } else ElMessage.error(msg)
   }
 }
 // 待审核 → 撤销报名：后端没有 DELETE /enrollments/{id}，统一走 /enrollments/drop（pending 会退积分）

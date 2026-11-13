@@ -9,7 +9,7 @@
     >
       <div class="sidebar-logo">
         <div class="logo-icon">智</div>
-        <span class="logo-text">学选课</span>
+        <span class="logo-text">智学选课<span class="logo-sub">ZHIXUE · COURSE ATLAS</span></span>
         <div
           class="sidebar-toggle" role="button" tabindex="0"
           :title="expanded ? t('取消固定，收起侧边栏') : t('固定展开侧边栏')"
@@ -17,20 +17,24 @@
           @click="togglePinned" @keydown.enter.prevent="togglePinned"
         >‹</div>
       </div>
+      <div class="ark-hazard" aria-hidden="true" />
       <nav class="sidebar-nav">
-        <template v-for="(item, ni) in navItems" :key="item.page">
-          <!-- 分组边界：细分隔线（无标题/箭头/计数），随展开收起自适应 -->
-          <div v-if="ni > 0 && item.group !== navItems[ni - 1].group" class="nav-divider" aria-hidden="true" />
+        <template v-for="item in navItems" :key="item.page">
+          <!-- 学域分组：分组边界上的编号 + 名称，收起态只留一个星点 -->
+          <div v-if="item.groupStart" class="ark-group" aria-hidden="true">
+            <i /><span>学域 {{ item.groupNo }} · {{ t(item.group) }}</span>
+          </div>
           <a
             class="nav-item"
             :class="{ active: $route.path === '/' + item.page, 'nav-item-ai': item.page === 'chat' }"
-            :title="!expanded ? t(item.label) : undefined"
+            :title="t(item.label) + ' · ' + t(item.hint)"
             tabindex="0"
             @click="go(item.page)"
             @keydown.enter.prevent="go(item.page)"
           >
             <span class="nav-icon" v-html="svgIcon(item.icon)" />
             <span>{{ t(item.label) }}</span>
+            <span class="nav-code">{{ item.code }}</span>
           </a>
         </template>
       </nav>
@@ -47,18 +51,18 @@
           </button>
           <div v-if="showUserMenu" class="user-menu">
             <button class="um-item" @click="openProfile">
-              <span class="icon" v-html="svgIcon('user')" /><span>{{ t('个人中心') }}</span>
+              <span class="icon" v-html="svgIcon('user')" /><span>{{ t('个人档案') }}</span>
             </button>
             <button class="um-item" @click="onMenuToggleTheme">
               <span class="icon" v-html="svgIcon(theme === 'dark' ? 'sun' : 'moon')" />
-              <span>{{ t(theme === 'dark' ? '浅色模式' : '深色模式') }}</span>
+              <span>{{ t(theme === 'dark' ? '日间模式' : '夜间模式') }}</span>
             </button>
             <button class="um-item" @click="onMenuToggleLang">
               <span class="icon" v-html="svgIcon('globe')" />
               <span>{{ getLocale() === 'zh' ? 'English' : '中文' }}</span>
             </button>
             <button class="um-item notif-trigger" @click="openNotifPanel">
-              <span class="icon" v-html="svgIcon('bell')" /><span>{{ t('通知中心') }}</span>
+              <span class="icon" v-html="svgIcon('bell')" /><span>{{ t('消息通知') }}</span>
               <em v-if="unreadTotal" class="um-badge">{{ unreadTotal > 99 ? '99+' : unreadTotal }}</em>
             </button>
             <div class="um-divider" />
@@ -68,7 +72,7 @@
           </div>
           <div v-if="showNotif" class="notif-panel" ref="notifPanelEl">
             <div class="notif-header">
-              <span>{{ t('通知中心') }}<em v-if="unreadTotal" class="notif-unread">{{ t('（{n} 条未读）', { n: unreadTotal }) }}</em></span>
+              <span>{{ t('消息通知') }}<em v-if="unreadTotal" class="notif-unread">{{ t('（{n} 条未读）', { n: unreadTotal }) }}</em></span>
               <span v-if="notifList.length" class="notif-clear" @click="markAllRead">{{ t('全部已读') }}</span>
             </div>
             <div class="notif-tabs">
@@ -108,7 +112,15 @@
           <button class="topbar-icon-btn mobile-menu-btn" :title="t('菜单')" @click="mobileOpen = !mobileOpen">
             <span class="icon" v-html="svgIcon('menu')" />
           </button>
-          <div class="page-title">{{ currentTitle }}</div>
+          <div class="page-title"><span class="pt-no">{{ currentNo }}</span>{{ currentTitle }}</div>
+        </div>
+        <div class="topbar-right ark-top-reading">
+          <span class="ark-led" aria-hidden="true" />
+          <span>ATLAS <b>ONLINE</b></span>
+          <span class="ark-top-sep" aria-hidden="true" />
+          <span>{{ t(ROLES[auth.user?.role] || '用户') }} <b>/ {{ roleCode }}</b></span>
+          <span class="ark-top-sep" aria-hidden="true" />
+          <span class="ab-clock">{{ clockText }}</span>
         </div>
       </header>
 
@@ -125,21 +137,68 @@
     <!-- 个人中心抽屉：点右上角用户区打开，不再单独占侧边栏 -->
     <el-drawer
       v-model="showProfile"
-      title="个人中心"
+      :title="t('个人档案')"
       direction="rtl"
       size="460px"
       class="profile-drawer"
     >
       <ProfilePanel @logout="logoutFromPanel" />
     </el-drawer>
+
+    <!-- 公告弹窗：点通知横幅直接查看，不再跳转任何页面 -->
+    <el-dialog
+      v-model="annDialog"
+      class="ann-dialog"
+      :title="t('公告通知')"
+      width="min(560px, calc(100vw - 32px))"
+      :close-on-click-modal="true"
+    >
+      <template #header>
+        <div class="ann-head">
+          <span class="ann-head-title">📣 {{ t('公告通知') }}</span>
+          <span class="ann-head-sub">{{ t('共 {n} 条公告，{m} 条未读', { n: annItems.length, m: annUnreadCount }) }}</span>
+        </div>
+      </template>
+
+      <div v-if="annLoading" class="ann-state">{{ t('加载中…') }}</div>
+      <div v-else-if="!annItems.length" class="ann-state">{{ t('暂无公告') }}</div>
+      <div v-else class="ann-list">
+        <div v-for="a in annItems" :key="a.id" class="ann-card" :class="{ unread: !a.read }">
+          <div class="ann-card-head">
+            <span v-if="!a.read" class="ann-dot" />
+            <span v-if="a.pinned" class="ann-chip pin">📌 {{ t('置顶') }}</span>
+            <span v-if="a.type" class="ann-chip">{{ a.type }}</span>
+            <span class="ann-card-title">{{ a.title }}</span>
+          </div>
+          <div class="ann-card-content">{{ a.content || t('（无正文）') }}</div>
+          <div class="ann-card-foot">
+            <span class="ann-meta">{{ a.publisherName || t('管理员') }} · {{ formatAnnTime(a.createdAt) }}</span>
+            <button v-if="!a.read" class="ann-read-btn" :disabled="annBusy !== null" @click="markAnnRead(a)">
+              {{ annBusy === a.id ? t('处理中…') : t('标为已读') }}
+            </button>
+            <span v-else class="ann-read-done">✓ {{ t('已读') }}</span>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="ann-foot">
+          <button class="ann-all-btn" :disabled="!annUnreadCount || annBusy !== null" @click="markAnnAllRead">
+            {{ annBusy === -1 ? t('处理中…') : t('全部标为已读') }}
+          </button>
+          <button class="ann-close-btn" @click="annDialog = false">{{ t('关闭') }}</button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { homePath } from '@/utils/home'
 import ProfilePanel from '@/components/ProfilePanel.vue'
 import http from '@/api'
 import { t, getLocale, toggleLocale } from '@/i18n'
@@ -148,53 +207,97 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const ROLES: Record<string, string> = { student: '学生', teacher: '老师', admin: '管理员' }
+const ROLES: Record<string, string> = { student: '学生', teacher: '教师', admin: '管理员' }
+const ROLE_CODE: Record<string, string> = { student: 'STUDENT', teacher: 'TEACHER', admin: 'ADMIN' }
+const roleCode = computed(() => ROLE_CODE[auth.user?.role || 'student'] || 'OPERATOR')
 
-// ======== 菜单（扁平化单列表 + 分组分隔线：group 仅用于在边界画横线，不渲染标题）========
+// ======== 菜单：学域星图术语（label 显示 / hint 保留原功能名 / code 为英文代号）========
 const NAV: Record<string, any[]> = {
   student: [
-    { page: 'dashboard', icon: 'home', label: '首页', group: '' },
-    { page: 'courses', icon: 'grid', label: '课程浏览', group: '选课' },
-    { page: 'intents', icon: 'cart', label: '我的意向', group: '选课' },
-    { page: 'my-enrollments', icon: 'clipboard', label: '我的课程', group: '选课' },
-    { page: 'waitlist', icon: 'hourglass', label: '候补队列', group: '选课' },
-    { page: 'schedule', icon: 'calendar', label: '我的课表', group: '学业' },
-    { page: 'grades', icon: 'award', label: '成绩查询', group: '学业' },
-    { page: 'reviews', icon: 'message-square', label: '课程评价', group: '学业' },
-    { page: 'graduation', icon: 'target', label: '毕业进度', group: '学业' },
-    { page: 'suggestions', icon: 'inbox', label: '建议箱', group: '学业' },
-    { page: 'advisor-apply', icon: 'graduation-cap', label: '毕业设计导师', group: '毕业设计' },
-    { page: 'workspace', icon: 'folder', label: '毕业设计工作台', group: '毕业设计' },
-    { page: 'chat', icon: 'sparkles', label: 'AI 助手', group: '' },
+    { page: 'dashboard', icon: 'home', label: '学习总览', hint: '首页', code: 'HOME', group: '概览' },
+    { page: 'courses', icon: 'grid', label: '课程目录', hint: '课程浏览', code: 'CRS', group: '选课中心' },
+    { page: 'intents', icon: 'cart', label: '选课意向', hint: '我的意向', code: 'INT', group: '选课中心' },
+    { page: 'my-enrollments', icon: 'clipboard', label: '我的课程', hint: '我的课程', code: 'MY', group: '选课中心' },
+    { page: 'waitlist', icon: 'hourglass', label: '候补队列', hint: '候补队列', code: 'W/L', group: '选课中心' },
+    { page: 'schedule', icon: 'calendar', label: '课表日程', hint: '我的课表', code: 'SCH', group: '学业记录' },
+    { page: 'grades', icon: 'award', label: '成绩档案', hint: '成绩查询', code: 'REC', group: '学业记录' },
+    { page: 'reviews', icon: 'message-square', label: '课程评价', hint: '课程评价', code: 'EVL', group: '学业记录' },
+    { page: 'graduation', icon: 'target', label: '毕业进度', hint: '毕业进度', code: 'PRO', group: '学业记录' },
+    { page: 'suggestions', icon: 'inbox', label: '意见反馈', hint: '建议箱', code: 'MSG', group: '学业记录' },
+    { page: 'advisor-apply', icon: 'graduation-cap', label: '导师匹配', hint: '毕业设计导师', code: 'ADV', group: '课题与毕业' },
+    { page: 'workspace', icon: 'folder', label: '课题工作台', hint: '毕业设计工作台', code: 'OPS', group: '课题与毕业' },
+    { page: 'chat', icon: 'sparkles', label: 'AI 学业助手', hint: '智能导航 / AI 助手', code: 'AI', group: '智能助手' },
   ],
   teacher: [
-    { page: 'dashboard', icon: 'home', label: '首页', group: '' },
-    { page: 'teach-courses', icon: 'book-open', label: '我的课程', group: '教学' },
-    { page: 'student-list', icon: 'users', label: '选课学生', group: '教学' },
-    { page: 'grade-mgr', icon: 'edit', label: '成绩管理', group: '教学' },
-    { page: 'reviews', icon: 'message-square', label: '课程评价', group: '教学' },
-    { page: 'advise', icon: 'users', label: '毕业设计指导', group: '毕业设计' },
-    { page: 'advisor-apply', icon: 'book-open', label: '课题库', group: '毕业设计' },
-    { page: 'workspace', icon: 'folder', label: '毕业设计工作台', group: '毕业设计' },
-    { page: 'chat', icon: 'sparkles', label: 'AI 助手', group: '' },
+    { page: 'dashboard', icon: 'home', label: '学习总览', hint: '首页', code: 'HOME', group: '概览' },
+    { page: 'teach-courses', icon: 'book-open', label: '授课课程', hint: '我的课程', code: 'CRS', group: '教学管理' },
+    { page: 'student-list', icon: 'users', label: '学生名册', hint: '选课学生', code: 'RSTR', group: '教学管理' },
+    { page: 'drop-requests', icon: 'inbox', label: '退课申请', hint: '退课审批', code: 'DRP', group: '教学管理' },
+    { page: 'grade-mgr', icon: 'edit', label: '成绩录入', hint: '成绩管理', code: 'REC', group: '教学管理' },
+    { page: 'reviews', icon: 'message-square', label: '课程评价', hint: '课程评价', code: 'EVL', group: '教学管理' },
+    { page: 'advise', icon: 'users', label: '课题指导', hint: '毕业设计指导', code: 'ADV', group: '课题与毕业' },
+    { page: 'advisor-apply', icon: 'book-open', label: '课题档案', hint: '课题库', code: 'ARCV', group: '课题与毕业' },
+    { page: 'workspace', icon: 'folder', label: '课题工作台', hint: '毕业设计工作台', code: 'OPS', group: '课题与毕业' },
+    { page: 'chat', icon: 'sparkles', label: 'AI 学业助手', hint: '智能导航 / AI 助手', code: 'AI', group: '智能助手' },
   ],
   admin: [
-    { page: 'dashboard', icon: 'home', label: '首页', group: '' },
-    { page: 'rounds', icon: 'refresh', label: '选课轮次', group: '选课运营' },
-    { page: 'semesters', icon: 'calendar', label: '学期管理', group: '选课运营' },
-    { page: 'classrooms', icon: 'building', label: '教室管理', group: '选课运营' },
-    { page: 'course-mgr', icon: 'book', label: '课程管理', group: '基础数据' },
-    { page: 'user-mgr', icon: 'users', label: '用户管理', group: '基础数据' },
-    { page: 'announce', icon: 'megaphone', label: '公告管理', group: '基础数据' },
-    { page: 'suggestions', icon: 'inbox', label: '建议箱', group: '基础数据' },
-    { page: 'stats', icon: 'bar-chart', label: '统计报表', group: '分析与审计' },
-    { page: 'graduation-audit', icon: 'graduation-cap', label: '毕业审核', group: '分析与审计' },
-    { page: 'advise-mgr', icon: 'graduation-cap', label: '导师管理', group: '分析与审计' },
-    { page: 'logs', icon: 'file-text', label: '系统日志', group: '分析与审计' },
-    { page: 'chat', icon: 'sparkles', label: 'AI 助手', group: '' },
+    { page: 'dashboard', icon: 'home', label: '学习总览', hint: '首页', code: 'HOME', group: '概览' },
+    { page: 'rounds', icon: 'refresh', label: '选课轮次', hint: '选课轮次', code: 'RND', group: '教务管理' },
+    { page: 'semesters', icon: 'calendar', label: '学期设置', hint: '学期管理', code: 'TERM', group: '教务管理' },
+    { page: 'classrooms', icon: 'building', label: '教室管理', hint: '教室管理', code: 'FAC', group: '教务管理' },
+    { page: 'course-mgr', icon: 'book', label: '课程总库', hint: '课程管理', code: 'DB', group: '基础数据' },
+    { page: 'user-mgr', icon: 'users', label: '用户权限', hint: '用户管理', code: 'ID', group: '基础数据' },
+    { page: 'announce', icon: 'megaphone', label: '公告管理', hint: '公告管理', code: 'BC', group: '基础数据' },
+    { page: 'ai-channels', icon: 'sparkles', label: 'AI 通道', hint: 'AI 通道配置', code: 'CHN', group: '基础数据' },
+    { page: 'suggestions', icon: 'inbox', label: '意见反馈', hint: '建议箱', code: 'MSG', group: '基础数据' },
+    { page: 'stats', icon: 'bar-chart', label: '统计报表', hint: '统计报表', code: 'ANL', group: '数据审计' },
+    { page: 'graduation-audit', icon: 'graduation-cap', label: '毕业审核', hint: '毕业审核', code: 'AUD', group: '数据审计' },
+    { page: 'advise-mgr', icon: 'graduation-cap', label: '导师管理', hint: '导师管理', code: 'ADV', group: '数据审计' },
+    { page: 'logs', icon: 'file-text', label: '操作日志', hint: '系统日志', code: 'LOG', group: '数据审计' },
+    { page: 'chat', icon: 'sparkles', label: 'AI 学业助手', hint: '智能导航 / AI 助手', code: 'AI', group: '智能助手' },
   ],
 }
-const navItems = computed(() => NAV[auth.user?.role || 'student'] || NAV.student)
+/** 给每项补上分组起始标记与两位小节号，收起态只保留星点 */
+const navItems = computed(() => {
+  const list = NAV[auth.user?.role || 'student'] || NAV.student
+  let idx = -1
+  let last = ''
+  return list.map(item => {
+    let groupStart = false
+    if (item.group !== last) { idx++; groupStart = true; last = item.group }
+    return { ...item, groupStart, groupNo: String(idx + 1).padStart(2, '0') }
+  })
+})
+
+// ======== 顶栏星图读数：实时时钟 + 当前页小节号 ========
+const clockText = ref('')
+let clockTimer: number | null = null
+function tickClock() {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  clockText.value = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+/** 跨角色兜底标题：管理员偶尔会打开学生专属页、公告板等不在本角色菜单里的路由 */
+const PAGE_TITLES: Record<string, string> = {
+  dashboard: '学习总览', courses: '课程目录', intents: '选课意向', 'my-enrollments': '我的课程',
+  waitlist: '候补队列', schedule: '课表日程', grades: '成绩档案', reviews: '课程评价',
+  graduation: '毕业进度', suggestions: '意见反馈', 'advisor-apply': '导师匹配', workspace: '课题工作台',
+  chat: 'AI 学业助手', 'teach-courses': '授课课程', 'student-list': '学生名册', 'grade-mgr': '成绩录入',
+  advise: '课题指导', 'drop-requests': '退课申请', rounds: '选课轮次', semesters: '学期设置', classrooms: '教室管理',
+  'course-mgr': '课程总库', 'user-mgr': '用户权限', announce: '公告管理', stats: '统计报表',
+  'advise-mgr': '导师管理', logs: '操作日志', 'graduation-audit': '毕业审核',
+  'training-plans': '培养方案', profile: '个人档案', announcements: '公告列表',
+  'ai-channels': 'AI 通道配置',
+}
+/** /student/dashboard → dashboard（否则第一段是角色名，匹配不到菜单） */
+const currentPage = computed(() => {
+  const seg = route.path.replace(/^\//, '').split('/')
+  return ['student', 'teacher', 'admin'].includes(seg[0]) ? (seg[1] || 'dashboard') : seg[0]
+})
+const currentNo = computed(() => {
+  const item = [...navItems.value].reverse().find(n => n.page === currentPage.value)
+  return item?.groupNo ? `学域 ${item.groupNo} · ` : ''
+})
 
 // ======== 原版工具 ========
 const svgIcon = (name: string) => `<svg class="icon"><use href="#i-${name}"/></svg>`
@@ -293,6 +396,9 @@ const TYPE_ROUTE: Record<string, string> = {
   enroll: '/my-enrollments',
   waitlist_confirm: '/waitlist',
   waitlist_timeout: '/waitlist',
+  drop_request: '/drop-requests',
+  drop_approved: '/my-enrollments',
+  drop_rejected: '/my-enrollments',
 }
 async function openItem(n: any) {
   await readOne(n)
@@ -301,10 +407,68 @@ async function openItem(n: any) {
   if (target) router.push(target)
 }
 
+// ======== 公告弹窗：点通知横幅直接查看，不做任何路由跳转 ========
+const annDialog = ref(false)
+const annItems = ref<any[]>([])
+const annLoading = ref(false)
+const annBusy = ref<number | null>(null)   // 正在标记的公告 id；-1 = 全部已读
+const annUnreadCount = computed(() => annItems.value.filter(a => !a.read).length)
+
+function formatAnnTime(v: any) {
+  if (!v) return ''
+  const d = new Date(v), p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}-${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+async function openAnnDialog() {
+  annDialog.value = true
+  annLoading.value = true
+  try {
+    const r: any = await http.get('/announcements')
+    const list = (r?.data || []) as any[]
+    // 未读在前，其次置顶、发布时间倒序
+    annItems.value = list.sort((a, b) =>
+      (Number(!!a.read) - Number(!!b.read)) ||
+      (Number(!!b.pinned) - Number(!!a.pinned)) ||
+      ((b.createdAt || 0) - (a.createdAt || 0)))
+  } catch (e: any) {
+    annItems.value = []
+    ElMessage.error(e?.message || t('公告加载失败'))
+  }
+  annLoading.value = false
+}
+
+async function markAnnRead(a: any) {
+  if (a.read || annBusy.value !== null) return
+  annBusy.value = a.id
+  try {
+    await http.post(`/announcements/${a.id}/read`)
+    a.read = true
+    annUnread.value = Math.max(0, annUnread.value - 1)
+    await loadNotifications(true)   // 未读数以服务端为准
+  } catch (e: any) {
+    ElMessage.error(e?.message || t('标记失败'))
+  }
+  annBusy.value = null
+}
+
+async function markAnnAllRead() {
+  if (!annUnreadCount.value || annBusy.value !== null) return
+  annBusy.value = -1
+  try {
+    await http.post('/announcements/read-all')
+    annItems.value.forEach(a => { a.read = true })
+    annUnread.value = 0
+    await loadNotifications(true)
+  } catch (e: any) {
+    ElMessage.error(e?.message || t('标记失败'))
+  }
+  annBusy.value = null
+}
+
 function goAnnounce() {
   closeNotif()
-  // 跳公告板（/announcements 全角色可读）；/announce 是管理员专属的公告管理页
-  router.push('/announcements')
+  openAnnDialog()   // 不再跳 /announcements，也不跳管理员端 /announce
 }
 
 /** 全部已读：站内消息 + 公告一起清（服务端为准，静默刷新） */
@@ -353,10 +517,14 @@ function onEscKey(e: KeyboardEvent) {
 }
 
 // ======== 状态 ========
-const pinned = ref(false)          // 手动固定展开（点击折叠按钮切换；固定后鼠标移出不收起）
+// 默认展开：主题化后的菜单名需要可见；用户点箭头收起后记住选择
+const pinned = ref(localStorage.getItem('zhixue_sidebar_pinned') !== '0')
 const hovering = ref(false)        // 悬停/键盘焦点临时展开
 const mobileOpen = ref(false)      // 移动端抽屉
-const expanded = computed(() => pinned.value || hovering.value || mobileOpen.value)
+// AI 助手页自带一层导航：外层侧栏收成 72px 窄轨，避免双层侧栏把内容挤窄
+// （窄轨上图标仍可点击，导航不丢失）
+const chatMode = computed(() => route.path.replace(/\/+$/, '') === '/chat')
+const expanded = computed(() => !chatMode.value && (pinned.value || hovering.value || mobileOpen.value))
 
 // ======== 左下角个人菜单（头像点击弹出：个人中心/主题切换/通知中心）========
 const showUserMenu = ref(false)
@@ -395,7 +563,10 @@ function sideLeave() {
   if (collapseTimer) clearTimeout(collapseTimer)
   collapseTimer = window.setTimeout(() => { hovering.value = false; collapseTimer = null }, 120)
 }
-function togglePinned() { pinned.value = !pinned.value }
+function togglePinned() {
+  pinned.value = !pinned.value
+  localStorage.setItem('zhixue_sidebar_pinned', pinned.value ? '1' : '0')
+}
 
 const theme = ref<'light' | 'dark'>((localStorage.getItem('zhixue_theme') as any) || 'dark')
 const showProfile = ref(false)
@@ -415,12 +586,12 @@ function onContentScroll() {
 
 // ======== 路由跳转 ========
 function go(page: string) {
+  if (page === 'dashboard') { router.push(homePath(auth.user?.role)); return }
   router.push('/' + page)
 }
 const currentTitle = computed(() => {
-  const path = route.path.replace(/^\//, '').split('/')[0]
-  const item = [...navItems.value].reverse().find(n => n.page === path)
-  return t(item?.label || '首页')
+  const item = [...navItems.value].reverse().find(n => n.page === currentPage.value)
+  return t(item?.label || PAGE_TITLES[currentPage.value] || '学习总览')
 })
 
 // 切换页面时主内容区回到顶部
@@ -498,6 +669,8 @@ function logoutFromPanel() {
 onMounted(() => {
   document.documentElement.setAttribute('data-theme', theme.value)
   auth.loadFromStorage()
+  tickClock()
+  clockTimer = window.setInterval(tickClock, 1000)
   connectNotify()
   window.addEventListener('scroll', onWindowScroll, { passive: true })
   contentEl.value?.addEventListener('scroll', onContentScroll, { passive: true })
@@ -506,6 +679,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   disconnectNotify()
+  if (clockTimer) { clearInterval(clockTimer); clockTimer = null }
   if (collapseTimer) { clearTimeout(collapseTimer); collapseTimer = null }
   window.removeEventListener('scroll', onWindowScroll)
   contentEl.value?.removeEventListener('scroll', onContentScroll)
@@ -516,6 +690,22 @@ onBeforeUnmount(() => {
 .app { display: flex; min-height: 100vh; }
 .icon { display: inline-block; width: 18px; height: 18px; }
 .icon svg { width: 100%; height: 100%; }
+
+/* ===== 学域星图：侧栏标识 / 顶栏读数 ===== */
+.sidebar-logo .logo-text { display: flex; flex-direction: column; gap: 3px; }
+.logo-sub {
+  font-family: var(--ark-mono); font-size: 8.5px; font-weight: 500;
+  letter-spacing: .12em; color: var(--text-light); white-space: nowrap;
+}
+.ark-hazard { flex: 0 0 auto; }
+.pt-no {
+  display: inline-block; margin-right: 10px;
+  font-family: var(--ark-mono); font-size: 10px; letter-spacing: .1em;
+  color: var(--ark-y, #74e4c4); opacity: .85; vertical-align: 2px;
+}
+.ark-top-reading { margin-left: auto; }
+@media (max-width: 900px) { .ark-top-reading .ark-top-sep, .ark-top-reading > span:nth-child(4) { display: none; } }
+@media (max-width: 640px) { .ark-top-reading { display: none; } }
 
 /* 顶栏左侧：移动端汉堡 + 页面标题 */
 .topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -698,5 +888,74 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .page-fade-enter-active, .page-fade-leave-active { transition: none; }
   .page-fade-enter-from, .page-fade-leave-to { transform: none; }
+}
+</style>
+
+<!-- el-dialog 挂到 body 下，scoped 样式不覆盖，故单独写全局样式 -->
+<style>
+.ann-dialog.el-dialog,
+.ann-dialog .el-dialog {
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(6, 24, 18, .22);
+  overflow: hidden;
+}
+.ann-dialog .el-dialog__header {
+  margin: 0; padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.ann-dialog .el-dialog__body {
+  padding: 14px 20px; max-height: min(60vh, 520px); overflow-y: auto;
+}
+.ann-dialog .el-dialog__footer {
+  padding: 12px 20px 16px; border-top: 1px solid var(--border, #e2e8f0);
+}
+.ann-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-right: 26px;
+}
+.ann-head-title { font-size: 15px; font-weight: 700; color: var(--text, #1e293b); }
+.ann-head-sub { font-size: 12px; color: var(--text-light, #64748b); }
+.ann-state { padding: 36px 0; text-align: center; font-size: 13px; color: var(--text-light, #64748b); }
+.ann-list { display: flex; flex-direction: column; gap: 10px; }
+.ann-card {
+  padding: 12px 14px; border-radius: 12px;
+  background: var(--card-bg, rgba(255,255,255,.5));
+  border: 1px solid var(--border, #e2e8f0);
+}
+.ann-card.unread { background: rgba(43,177,135,.07); border-color: rgba(43,177,135,.38); }
+.ann-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ann-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #ef4444; }
+.ann-chip {
+  padding: 1px 8px; border-radius: 99px; font-size: 11px; line-height: 1.6;
+  color: var(--primary, #15803d); background: rgba(43,177,135,.12);
+  border: 1px solid rgba(43,177,135,.30);
+}
+.ann-chip.pin { color: #b45309; background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.30); }
+.ann-card-title { font-size: 13.5px; font-weight: 700; color: var(--text, #1e293b); }
+.ann-card-content {
+  margin-top: 7px; font-size: 12.5px; line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word; color: var(--text-light, #475569);
+}
+.ann-card-foot { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.ann-meta { font-size: 11.5px; color: var(--text-light, #64748b); }
+.ann-read-btn, .ann-all-btn, .ann-close-btn {
+  padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; transition: all .15s;
+}
+.ann-read-btn { margin-left: auto; color: #fff; background: var(--primary, #2bb187); border: 1px solid var(--primary, #2bb187); }
+.ann-all-btn { color: #fff; background: var(--primary, #2bb187); border: 1px solid var(--primary, #2bb187); }
+.ann-read-btn:hover, .ann-all-btn:hover { filter: brightness(1.08); }
+.ann-read-btn:disabled, .ann-all-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ann-read-done { margin-left: auto; font-size: 12px; color: var(--primary, #2bb187); }
+.ann-foot { display: flex; align-items: center; gap: 10px; }
+.ann-close-btn {
+  color: var(--text, #1e293b); background: transparent; border: 1px solid var(--border, #e2e8f0);
+}
+.ann-close-btn:hover { border-color: var(--primary, #2bb187); color: var(--primary, #2bb187); }
+[data-theme="dark"] .ann-dialog .el-dialog__headerbtn .el-dialog__close { color: var(--text-light, #94a3b8); }
+@media (max-width: 480px) {
+  .ann-dialog .el-dialog__body { padding: 12px 14px; }
+  .ann-dialog .el-dialog__header, .ann-dialog .el-dialog__footer { padding-left: 14px; padding-right: 14px; }
 }
 </style>

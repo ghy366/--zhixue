@@ -59,7 +59,7 @@
           <div v-else class="wl-meta" v-html="svgIcon('clock') + ' ' + t('预计递补：') + (w.estimatedWait ? fmtWait(w.estimatedWait) : t('暂无历史数据，待定'))" />
           <div class="wl-acts">
             <button v-if="w.status === 'confirming'" class="btn btn-success btn-sm" @click="confirm(w)">
-              {{ w.swapFromName ? t('确认换课') : t('确认录取') }}
+              {{ w.swapFromName ? t('确认换课') : t('锁定课程坐标') }}
             </button>
             <button v-if="w.status === 'confirming'" class="btn btn-ghost btn-sm" @click="cancel(w)">{{ t('放弃名额') }}</button>
             <button v-else class="btn btn-danger btn-sm" @click="cancel(w)">{{ t('退出候补') }}</button>

@@ -223,9 +223,16 @@ textarea.form-input { resize: vertical; line-height: 1.65; min-height: 84px; }
   gap: 4px;
   /* 窗口矮时菜单可滚动，避免底部项被 footer 顶出可视区只剩半个图标 */
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   min-height: 0;
 }
+/* 菜单项与分组标签都不允许被 flex 压缩：否则内容超出时先被压扁，滚动条永远不出现 */
+.sidebar-nav > .nav-item { flex: 0 0 auto; }
+.sidebar-nav::-webkit-scrollbar { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(43,177,135,.30); border-radius: 3px; }
+.sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgba(43,177,135,.55); }
 .nav-item {
   display: flex;
   align-items: center;
@@ -618,6 +625,8 @@ html[data-theme="dark"] .cat-tab { color: #c5cdd9; }
   padding: 0;
   max-width: 420px;
   overflow: hidden;
+  /* 玻璃拟态主题下 --el-bg-color 被改成半透明 → 背后内容会透出，这里固定不透明底色 */
+  background: var(--card, #fff) !important;
 }
 .el-message-box__header { padding: 22px 22px 0; }
 .el-message-box__title { font-size: 16px; font-weight: 700; color: #1e293b; }
@@ -4384,13 +4393,13 @@ body::before {
 }
 
 /* --- 按钮规范 --- */
-/* 主操作：绿色渐变实心 */
-.btn-primary, .el-button--primary:not(.is-text):not(.is-link) {
+/* 主操作：绿色渐变实心（plain 描边款不在此列，走 Element Plus 默认浅底样式） */
+.btn-primary, .el-button--primary:not(.is-text):not(.is-link):not(.is-plain) {
   background: var(--green-grad);
   border: none;
   color: #fff;
 }
-.btn-primary:hover, .el-button--primary:not(.is-text):not(.is-link):hover {
+.btn-primary:hover, .el-button--primary:not(.is-text):not(.is-link):not(.is-plain):hover {
   background: linear-gradient(135deg, #2bb187, #158f66);
   color: #fff;
 }

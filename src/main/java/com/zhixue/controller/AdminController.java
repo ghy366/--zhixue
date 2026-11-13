@@ -20,17 +20,30 @@ public class AdminController {
 
     /**
      * 用户列表（全校账号，服务端分页）。传 page/size 时返回 {items,total,page,size}，
-     * 未传时保持旧的全量数组（旧调用方零破坏）。role 角色过滤；keyword 匹配 学号/姓名/学院/专业。
+     * 未传时保持旧的全量数组（旧调用方零破坏）。
+     * 过滤：role 角色；keyword 模糊匹配 学号/姓名/学院/专业；college/major/grade 精确匹配。
      */
     @GetMapping("/users")
     public ApiResponse<Object> users(
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
             @RequestParam(required = false) String role,
-            @RequestParam(required = false) String keyword) {
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String college,
+            @RequestParam(required = false) String major,
+            @RequestParam(required = false) Integer grade) {
         List<User> all = userRepo.findAll();
         if (role != null && !role.isBlank()) {
             all = all.stream().filter(u -> role.equals(u.getRole())).toList();
+        }
+        if (college != null && !college.isBlank()) {
+            all = all.stream().filter(u -> college.equals(u.getCollege())).toList();
+        }
+        if (major != null && !major.isBlank()) {
+            all = all.stream().filter(u -> major.equals(u.getMajor())).toList();
+        }
+        if (grade != null) {
+            all = all.stream().filter(u -> grade.equals(u.getGrade())).toList();
         }
         if (keyword != null && !keyword.isBlank()) {
             String k = keyword.toLowerCase();

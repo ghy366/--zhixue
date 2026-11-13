@@ -5,7 +5,7 @@
       <div class="nf-code">404</div>
       <div class="nf-title">{{ t('页面走丢了') }}</div>
       <p class="nf-desc">{{ t('你访问的页面不存在，或已被移动。检查一下地址，或返回首页继续。') }}</p>
-      <button class="nf-btn" @click="$router.push('/dashboard')">
+      <button class="nf-btn" @click="$router.push(homePath(storedRole()))">
         <span class="icon" v-html="svgIcon('home')" /> {{ t('回到首页') }}
       </button>
     </div>
@@ -14,6 +14,7 @@
 
 <script setup lang="ts">
 import { t } from '@/i18n'
+import { homePath, storedRole } from '@/utils/home'
 
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
 </script>

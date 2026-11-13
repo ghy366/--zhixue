@@ -35,6 +35,11 @@ http.interceptors.response.use(
     return data
   },
   (err) => {
+    // 后端未启动 / Vite 代理连不上时，给可操作的提示，而不是笼统的 Network Error / 登录失败
+    const st = err.response?.status
+    if (!err.response || st === 502 || st === 503 || st === 504) {
+      return Promise.reject(new Error('后端服务不可用，请先启动 Spring Boot（端口 8080）'))
+    }
     if (err.response?.status === 401) {
       const auth = useAuthStore()
       auth.logout()

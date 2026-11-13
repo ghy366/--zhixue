@@ -9,6 +9,7 @@ import { dict as teacher } from './teacher'
 import { dict as studentC } from './student_c'
 import { dict as studentB } from './student_b'
 import { dict as studentA } from './student_a'
+import { dict as ark } from './ark'
 
 /** 全部英文字典合并（key = 中文原文） */
 export const en: Record<string, string> = {
@@ -23,4 +24,5 @@ export const en: Record<string, string> = {
   ...studentC,
   ...studentB,
   ...studentA,
+  ...ark,
 }

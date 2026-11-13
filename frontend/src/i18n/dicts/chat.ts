@@ -13,6 +13,13 @@ export const dict: Record<string, string> = {
   '收起导航': 'Collapse sidebar',
   '在线': 'Online',
   '清空当前会话': 'Clear Chat',
+  '选择通道与模型': 'Choose channel & model',
+  '自动 · 智能级联': 'Auto · fallback chain',
+  '添加图片': 'Add image',
+  '移除图片': 'Remove image',
+  '当前模型不支持识图，请切换带 🖼 的模型': 'This model cannot read images; pick one marked 🖼',
+  '图片读取失败': 'Failed to read image',
+  '最多上传 3 张图片': 'Up to 3 images',
 
   // ===== 欢迎首页 =====
   '你好，{name}，欢迎使用': 'Hi {name}, welcome to',
@@ -107,7 +114,13 @@ export const dict: Record<string, string> = {
 
   // ===== 输入区 =====
   '输入你的问题... Enter 发送，Shift+Enter 换行': 'Type your question... Enter to send, Shift+Enter for a new line',
+  '输入你的问题... Enter 发送，Shift+Enter 换行，可粘贴截图或文件': 'Type your question... Enter to send, Shift+Enter for a new line, paste screenshots or files',
   '停止生成': 'Stop',
+  '图片上传失败': 'Image upload failed',
+  '文件上传失败': 'File upload failed',
+  '添加文件': 'Add files',
+  '移除文件': 'Remove file',
+  '最多上传 3 个文件': 'Up to 3 files per message',
 
   // ===== 角色标签 =====
   '学生模式': 'Student Mode',

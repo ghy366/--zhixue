@@ -129,3 +129,28 @@ UNION ALL
 SELECT '报名数', COUNT(*) FROM enrollments
 UNION ALL
 SELECT '系统配置', COUNT(*) FROM system_config;
+
+-- ============================================================
+-- 轮次结束后的退课申请（老师审批闭环）
+-- 正常情况下由 JPA ddl-auto=update 自动建表；此 DDL 供手工初始化/导库时兜底
+-- ============================================================
+CREATE TABLE IF NOT EXISTS drop_requests (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  student_id BIGINT NOT NULL,
+  course_id BIGINT NOT NULL,
+  enrollment_id BIGINT NULL,
+  teacher_id BIGINT NULL,
+  round_no INT NULL,
+  student_no VARCHAR(50) NULL,
+  student_name VARCHAR(50) NULL,
+  course_name VARCHAR(200) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  reason VARCHAR(500) NULL,
+  remark VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL,
+  handled_at DATETIME NULL,
+  handled_by BIGINT NULL,
+  INDEX idx_dr_student (student_id),
+  INDEX idx_dr_teacher (teacher_id),
+  INDEX idx_dr_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

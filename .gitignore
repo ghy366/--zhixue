@@ -34,3 +34,7 @@ tmp_extract/
 
 # ===== ZCode 工具会话数据 =====
 .zcode/
+
+# 本地压测会话产物
+*_token.txt
+*.log.e2e

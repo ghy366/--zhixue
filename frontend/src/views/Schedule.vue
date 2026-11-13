@@ -124,7 +124,7 @@
     <!-- ===== 冲突检测 ===== -->
     <div v-if="conflicts.length" class="section conflict-section">
       <div class="section-header">
-        <div class="section-title">{{ t('⚠️ 冲突检测（{n} 处）', { n: conflicts.length }) }}</div>
+        <div class="section-title">{{ t('⚠️ 时空坐标冲突（{n} 处）', { n: conflicts.length }) }}</div>
         <span class="section-sub">{{ t('🔴 教室/时间冲突 · 🟠 同一教师同一时间 · 悬停课表卡片可高亮冲突对方') }}</span>
       </div>
       <div class="conf-list">
@@ -186,7 +186,7 @@
       <!-- 标题栏：左 标题+说明 / 右 实时统计（全部来自当前勾选状态的真实计算） -->
       <div class="gen-head">
         <div class="gen-head-l">
-          <div class="section-title">{{ t('🧠 智能选课推荐') }}</div>
+          <div class="section-title">{{ t('🧠 时空推演') }}</div>
           <span class="section-sub">{{ t('结合上课时间、学分与竞争度，在浏览器本地实时计算互不冲突的选课组合；🔒 锁定课程优先入选') }}</span>
         </div>
         <div class="gen-head-r">

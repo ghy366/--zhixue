@@ -64,6 +64,10 @@ public class GraduateWorkspaceController {
 
     @Autowired private AuthService auth;
 
+    /** 公告附件落盘目录（原 user.home/zhixue-uploads，统一迁到 E:/ai文件 图片缓存） */
+    @org.springframework.beans.factory.annotation.Value("${zhixue.upload.anno-path:E:/ai文件 图片缓存/announcements}")
+    private String annoDir;
+
 
 
     @Autowired private com.zhixue.repository.UserRepository userRepo;
@@ -465,7 +469,7 @@ public class GraduateWorkspaceController {
             String orig = file.getOriginalFilename();
             String ext = orig != null && orig.contains(".") ? orig.substring(orig.lastIndexOf(".")) : "";
             String safeName = "anno_" + System.currentTimeMillis() + "_" + java.util.UUID.randomUUID().toString().substring(0,6) + ext;
-            java.io.File dir = new java.io.File(System.getProperty("user.home") + "/zhixue-uploads/announcements");
+            java.io.File dir = new java.io.File(annoDir);
             if (!dir.exists()) dir.mkdirs();
             java.io.File dest = new java.io.File(dir, safeName);
             file.transferTo(dest);

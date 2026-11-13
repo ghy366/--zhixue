@@ -8,6 +8,7 @@ import com.zhixue.entity.User;
 import com.zhixue.repository.EnrollmentRepository;
 import com.zhixue.repository.UserRepository;
 import com.zhixue.service.CourseService;
+import com.zhixue.service.DropRequestService;
 import com.zhixue.service.EnrollmentService;
 import com.zhixue.service.GradeService;
 import com.zhixue.util.SessionStore;
@@ -21,6 +22,7 @@ import java.util.*;
 public class EnrollmentController {
 
     @Autowired private EnrollmentService enrollmentService;
+    @Autowired private DropRequestService dropRequestService;
     @Autowired private CourseService courseService;
     @Autowired private EnrollmentRepository enrollmentRepo;
     @Autowired private UserRepository userRepo;
@@ -71,6 +73,10 @@ public class EnrollmentController {
         Long courseId = Long.valueOf(body.get("courseId").toString());
         Map<String, Object> r = enrollmentService.drop(userId, courseId);
         if ((Boolean) r.get("success")) return ApiResponse.ok((String) r.get("msg"), null);
+        // 轮次结束后已录取课程：自动向任课老师发起退课申请，学生端显示「请联系本课程的老师进行退课」
+        if (Boolean.TRUE.equals(r.get("needTeacher"))) {
+            dropRequestService.open(userId, courseId, enrollmentService.getSystemConfig().getCurrentRound());
+        }
         return ApiResponse.fail((String) r.get("msg"));
     }
 
@@ -366,6 +372,18 @@ public class EnrollmentController {
         List<?> raw = (List<?>) body.get("courseIds");
         List<Long> ids = new java.util.ArrayList<>();
         if (raw != null) { for (Object o : raw) ids.add(Long.valueOf(o.toString())); }
-        return ApiResponse.ok(enrollmentService.dropBatch(uid, ids));
+        Map<String, Object> r = enrollmentService.dropBatch(uid, ids);
+        // 批量退课里被「需老师处理」拦下的课程，同样逐条生成申请
+        if (r.get("data") instanceof List<?> details) {
+            for (Object o : details) {
+                if (o instanceof Map<?, ?> item && Boolean.TRUE.equals(item.get("needTeacher"))) {
+                    Object cid = item.get("courseId");
+                    if (cid != null) dropRequestService.open(uid, Long.valueOf(cid.toString()),
+                            enrollmentService.getSystemConfig().getCurrentRound());
+                }
+            }
+        }
+        if (!Boolean.TRUE.equals(r.get("success"))) return ApiResponse.fail((String) r.get("msg"));
+        return ApiResponse.ok(r);
     }
 }

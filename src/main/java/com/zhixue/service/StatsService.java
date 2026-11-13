@@ -959,9 +959,9 @@ public class StatsService {
         SystemConfig cfg = sysRepo.findById(1L).orElse(null);
         List<OperationLog> recent = logRepo.findByCreatedAtBetweenOrderByCreatedAtAsc(now.minusMinutes(60), now.plusSeconds(1));
 
-        // 最近 30 分钟逐分钟桶：[总操作, 报名类]
+        // 最近 30 分钟逐分钟桶：[总操作, 报名类, 失败数]
         Map<Integer, int[]> buckets = new LinkedHashMap<>();
-        for (int i = 29; i >= 0; i--) buckets.put(i, new int[2]);
+        for (int i = 29; i >= 0; i--) buckets.put(i, new int[3]);
         int enrollLastHour = 0, todayEnrolls = 0;
         LocalDateTime dayStart = now.toLocalDate().atStartOfDay();
         for (OperationLog l : recent) {
@@ -976,6 +976,7 @@ public class StatsService {
                 int[] b = buckets.get((int) ago);
                 b[0]++;
                 if (enroll) b[1]++;
+                if (!"成功".equals(l.getStatus())) b[2]++;
             }
         }
         List<Map<String, Object>> timeline = new ArrayList<>();
@@ -986,6 +987,7 @@ public class StatsService {
             t.put("minute", now.minusMinutes(en.getKey()).format(HOUR_MIN));
             t.put("ops", en.getValue()[0]);
             t.put("enrolls", en.getValue()[1]);
+            t.put("fails", en.getValue()[2]);
             timeline.add(t);
             if (en.getValue()[0] > peakOps) {
                 peakOps = en.getValue()[0];

@@ -36,6 +36,8 @@ public class RoleInterceptor implements HandlerInterceptor {
     private static final Set<String> STUDENT_TEACHER = Set.of("student", "teacher");
     /** 课题库浏览：学生选课题 / 教师管本院 / 管理员总览 */
     private static final Set<String> TOPIC_VIEW = Set.of("student", "teacher", "admin");
+    /** 与角色无关的个人操作（如公告标记已读）：任意已登录角色 */
+    private static final Set<String> ALL_ROLES = Set.of("student", "teacher", "admin");
 
     /** 一条鉴权规则：HTTP 方法（* 任意）+ API 前缀 + 允许的角色（null = 公开） */
     private record Rule(String method, String prefix, Set<String> roles) {}
@@ -44,6 +46,7 @@ public class RoleInterceptor implements HandlerInterceptor {
         // ===== 公开接口：登录/注册、登录页倒计时、公开课程目录与公告 =====
         new Rule("*",    "/api/auth/login", null),
         new Rule("*",    "/api/auth/register", null),
+        new Rule("GET",  "/api/auth/register-options", null),   // 注册表单下拉(学院/专业/班级,未登录可拉)
         new Rule("GET",  "/api/system/config", null),
         new Rule("GET",  "/api/system/round-schedule", null),   // 登录页轮次横幅（未登录也要拉三轮排期）
         new Rule("GET",  "/api/courses/hot", null),
@@ -53,6 +56,10 @@ public class RoleInterceptor implements HandlerInterceptor {
         new Rule("GET",  "/api/enrollments/recent", null),   // 登录页报考动态滚动条（脱敏，未登录可拉）
 
         // ===== 管理员专属 =====
+        // 公告「标记已读 / 全部已读」是个人阅读状态，所有登录角色都可调用。
+        // 必须排在下面 POST /api/announcements（管理员发布公告）之前：前缀匹配会把
+        // /api/announcements/{id}/read、/api/announcements/read-all 一并判成管理员专属 → 学生 403。
+        new Rule("POST", "/api/announcements/", ALL_ROLES),
         new Rule("*",    "/api/admin", ADMIN),
         new Rule("*",    "/api/logs", ADMIN),
         new Rule("*",    "/api/data", ADMIN),
@@ -73,6 +80,7 @@ public class RoleInterceptor implements HandlerInterceptor {
         // 系统配置写操作：轮次/开关/上限/毕业要求/阶段/错峰
         new Rule("POST", "/api/system/round", ADMIN),
         new Rule("POST", "/api/system/round-open", ADMIN),
+        new Rule("POST", "/api/system/release-capacity", ADMIN),
         new Rule("POST", "/api/system/round-schedule", ADMIN),
         new Rule("POST", "/api/system/confirm-minutes", ADMIN),
         new Rule("POST", "/api/system/max-credit", ADMIN),
@@ -80,6 +88,8 @@ public class RoleInterceptor implements HandlerInterceptor {
         new Rule("POST", "/api/system/graduation-reqs", ADMIN),
         new Rule("POST", "/api/system/grade-reqs", ADMIN),
         new Rule("DELETE", "/api/system/grade-reqs", ADMIN),
+        // AI 通道动态配置（含密钥，仅管理员可读写）
+        new Rule("*",    "/api/ai/channels", ADMIN),
         new Rule("POST", "/api/system/phase", ADMIN),
         new Rule("POST", "/api/system/stagger", ADMIN),
         new Rule("GET",  "/api/system/grade-stats", ADMIN),
@@ -106,6 +116,11 @@ public class RoleInterceptor implements HandlerInterceptor {
         new Rule("POST", "/api/advisor/topics", TEACHER_ADMIN),
         new Rule("PUT",  "/api/advisor/topics", TEACHER_ADMIN),
         new Rule("DELETE", "/api/advisor/topics", TEACHER_ADMIN),
+        // 轮次结束后的退课申请：学生查自己的/撤回自己的 / 教师管理员审批（具体规则必须排在通配之前）
+        new Rule("GET",  "/api/drop-requests/mine", STUDENT),
+        new Rule("POST", "/api/drop-requests/withdraw", STUDENT),
+        new Rule("*",    "/api/drop-requests", TEACHER_ADMIN),
+
         // ===== 教师 + 管理员 =====
         new Rule("POST", "/api/grades", TEACHER_ADMIN),
         new Rule("GET",  "/api/grades/course/", TEACHER_ADMIN),
@@ -177,6 +192,7 @@ public class RoleInterceptor implements HandlerInterceptor {
     private String roleLabel(Set<String> roles) {
         if (roles.equals(ADMIN)) return "管理员";
         if (roles.equals(TEACHER_ADMIN)) return "教师";
+        if (roles.equals(ALL_ROLES)) return "登录用户";
         if (roles.equals(STUDENT_TEACHER)) return "登录";
         return "学生";
     }

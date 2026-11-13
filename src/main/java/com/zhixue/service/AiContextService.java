@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -179,7 +180,8 @@ public class AiContextService {
                 "毕业", "学位", "还差", "差多少", "缺多少", "学分要求", "毕业要求", "凑学分",
                 "够不够学分", "能不能毕业", "修满", "毕业进度", "四类", "大类"});
         KEYWORDS.put(Intent.GRADES, new String[]{
-                "成绩", "分数", "绩点", "gpa", "GPA", "总评", "平时分", "期末分", "考得", "考了", "多少分", "挂了", "及格"});
+                "成绩", "分数", "绩点", "gpa", "GPA", "总评", "平时分", "期末分", "考得", "考了", "多少分", "挂了", "及格",
+                "第几次", "考了几次", "考试类型", "examtype", "attempt", "重修次数", "补考", "成绩明细"});
         KEYWORDS.put(Intent.MY_ENROLL, new String[]{
                 "我的选课", "我选了", "已选", "我的课表", "课表", "我上的", "已修", "我的课程", "选了哪些", "学分用了", "选了几门"});
         KEYWORDS.put(Intent.MY_INTENT, new String[]{
@@ -187,11 +189,14 @@ public class AiContextService {
         KEYWORDS.put(Intent.WAITLIST, new String[]{
                 "候补", "补选", "递补", "排队", "排第几", "等名额", "候补位次", "顺延"});
         KEYWORDS.put(Intent.CONFLICT, new String[]{
-                "冲突", "撞课", "时间重叠", "撞时间", "能不能一起", "同时上", "时间冲"});
+                "冲突", "撞课", "时间重叠", "撞时间", "能不能一起", "同时上", "时间冲",
+                "排除", "排掉", "避开", "冲突的课", "哪些课冲突"});
         KEYWORDS.put(Intent.ROUND_RULE, new String[]{
                 "规则", "怎么选", "怎么投分", "怎么投", "怎么报名", "轮次", "几轮", "什么时候结束", "抽签", "先到先得",
                 "怎么算", "流程", "学分上限", "怎么操作", "怎么用", "积分规则", "多少分合适", "怎么拿分",
-                "同分", "怎么录取", "录取规则", "优先级", "怎么排序", "怎么定"});
+                "同分", "怎么录取", "录取规则", "优先级", "怎么排序", "怎么定",
+                "确认时限", "确认分钟", "多少分钟", "分钟内确认", "阶段", "phase", "semesteroffset",
+                "学期偏移", "confirmminutes", "上限是多少", "系统配置值"});
         KEYWORDS.put(Intent.RECOMMEND, new String[]{
                 "推荐", "选什么", "该选", "帮我选", "补什么", "适合", "值得选", "选哪门", "怎么搭配", "帮我凑", "安排",
                 "缺什么", "还缺", "补上", "补哪", "凑够", "帮我补", "选哪些", "还差什么", "可以补", "怎么补"});
@@ -329,6 +334,12 @@ public class AiContextService {
         }
         if (q.contains("我") && (q.contains("选了") || q.contains("课表") || q.contains("已修"))) {
             score.merge(Intent.MY_ENROLL, 3, Integer::sum);
+        }
+        // 推荐类强信号：即便问题里带「课表 / 我的选课」，只要是让我挑课，就必须走推荐块
+        // （推荐块会排除时间冲突课；误判成「我的选课」时 AI 会凭列表瞎推，实测推到冲突课）
+        if (q.contains("推荐") || q.contains("帮我选") || q.contains("选哪门") || q.contains("该选")
+                || q.contains("选什么") || q.contains("选几门") || q.contains("能选什么")) {
+            score.merge(Intent.RECOMMEND, 4, Integer::sum);
         }
         // 冲突是强意图信号：与个人数据类意图同分时优先判为冲突
         if (score.getOrDefault(Intent.CONFLICT, 0) > 0
@@ -511,12 +522,21 @@ public class AiContextService {
           .append("   被问到「你能联网搜索吗 / 能不能上网查 / 支持联网吗」时，如实回答「可以」，")
           .append("说明触发方式（系统按问题类型自动检索，也可以说「帮我联网查一下…」），")
           .append("严禁回答「我无法联网」「我是离线模型」「无法实时搜索」；")
-          .append("若本轮没有【联网搜索结果】数据块，说明本次问题未触发检索即可，不要虚构搜索结果或声称刚搜过。\n\n");
+          .append("若本轮没有【联网搜索结果】数据块，说明本次问题未触发检索即可，不要虚构搜索结果或声称刚搜过。\n");
+        sb.append("8. 推荐或列举课程时必须核对时间冲突：数据块里带「⚠与…时间冲突」标记的课程，")
+          .append("一律不能推荐成「可以选/建议选」，要说明「与《某课》上课时间重叠，需先退课或另选时段」；")
+          .append("推荐清单优先给时间不冲突的课，并说明已自动排除了哪些冲突课程；")
+          .append("学生问「哪些课和我冲突/帮我避开冲突」时，按【时间冲突核对】数据块逐门回答，不要凭记忆推测时段。\n\n");
 
         sb.append("【权威数据】\n");
         appendSystemState(sb);
         // 学生维度事实：任何问题都可能问到导师，无条件注入，避免被意图识别漏掉
-        if ("student".equals(role)) appendMyAdvisor(sb, rec, userId);
+        if ("student".equals(role)) {
+            appendMyAdvisor(sb, rec, userId);
+            // 课表时段是无条件事实：即使意图被误判成「我的选课」等，
+            // 推荐/建议时也必须有时间基准，否则 AI 会推荐与已选课冲突的课
+            appendMyTimetable(sb, rec, userId);
+        }
         appendIntentData(sb, rec, question, userId, role);
         sb.append("\n请基于以上【权威数据】回答用户问题。\n");
         return sb.toString();
@@ -544,15 +564,15 @@ public class AiContextService {
             case MY_ENROLL -> { appendMyEnroll(sb, rec, userId); appendMyIntent(sb, rec, userId); }
             case MY_INTENT -> { appendMyIntent(sb, rec, userId); appendMyEnroll(sb, rec, userId); }
             case WAITLIST -> appendWaitlist(sb, rec, userId);
-            case COURSE_INFO -> { appendCourseInfo(sb, rec); appendRelatedCourses(sb, rec); }
+            case COURSE_INFO -> { appendCourseInfo(sb, rec, userId); appendRelatedCourses(sb, rec, userId); }
             case CONFLICT -> appendConflict(sb, rec, userId);
             case RECOMMEND -> { appendRecommend(sb, rec, userId); appendMyEnroll(sb, rec, userId); }
-            case ROUND_RULE -> { appendRoundWindow(sb, rec); appendCourseOverview(sb, rec); }
+            case ROUND_RULE -> { appendRoundWindow(sb, rec); appendCourseOverview(sb, rec, userId); }
             case TEACHER -> appendTeacher(sb, rec, userId);
             case ADMIN -> appendAdmin(sb, rec);
             // 导师块已在 buildSystemPrompt 无条件注入，这里补上毕设课程明细即可
             case ADVISOR -> appendMyEnroll(sb, rec, userId);
-            default -> { appendCourseOverview(sb, rec); appendMyEnroll(sb, rec, userId); }
+            default -> { appendCourseOverview(sb, rec, userId); appendMyEnroll(sb, rec, userId); }
         }
     }
 
@@ -595,30 +615,152 @@ public class AiContextService {
                 sb.append("· 《").append(c.get("name")).append("》").append(c.get("credit")).append("学分｜")
                   .append(c.get("category")).append("｜教师：").append(c.get("teacherName"))
                   .append("｜时间：").append(c.get("time")).append("｜地点：").append(c.get("location"))
-                  .append("｜简介：").append(c.get("intro")).append("\n");
+                  .append("｜全字段:").append(dumpAllFields(c)).append("\n");
             }
         }
         rec.sources.add("我的毕业进度");
     }
 
+    /**
+     * 缺口推荐课程 —— 必须排除与「我的已录取课程」时间冲突的课。
+     * 冲突的课不再作为推荐项，单独列在「已排除」里说明原因；
+     * 缺口推荐被冲突挡光时，再从全库补几门时间不冲突的选修，保证推荐不是空的。
+     */
     private void appendRecommend(StringBuilder sb, Recognition rec, Long userId) {
         if (userId == null) return;
         Map<String, Object> g = graduationService.summary(userId);
         if (g == null) return;
+        List<Course> mine = myApprovedCourses(userId);
+
+        List<Map<?, ?>> free = new ArrayList<>();
+        List<String> blocked = new ArrayList<>();
         Object rec2 = g.get("recommend");
-        if (rec2 instanceof List<?> rl && !rl.isEmpty()) {
-            sb.append("\n-- 【按我的缺口推荐课程】--\n");
-            int i = 0;
+        if (rec2 instanceof List<?> rl) {
             for (Object o : rl) {
                 if (!(o instanceof Map<?, ?> c)) continue;
-                if (++i > 10) break;
-                sb.append("· 《").append(c.get("name")).append("》").append(c.get("credit")).append("学分｜")
-                  .append(c.get("category")).append("｜缺口类别：").append(c.get("group"))
-                  .append("（差 ").append(c.get("groupGap")).append(" 分）｜教师：").append(c.get("teacherName"))
-                  .append("｜时间：").append(c.get("time")).append("｜地点：").append(c.get("location")).append("\n");
+                Course course = courseOf(c);
+                if (course == null) continue;
+                List<String> hits = conflictWith(course, mine);
+                if (hits.isEmpty()) free.add(c);
+                else blocked.add("《" + course.getName() + "》（与" + String.join("、", hits) + " 冲突）");
             }
-            rec.sources.add("缺口推荐课程");
         }
+
+        sb.append("\n-- 【按我的缺口推荐课程（已排除与课表时间冲突的课）】--\n");
+        int i = 0;
+        for (Map<?, ?> c : free) {
+            if (++i > 10) break;
+            sb.append("· 《").append(c.get("name")).append("》").append(c.get("credit")).append("学分｜")
+              .append(c.get("category")).append("｜缺口类别：").append(c.get("group"))
+              .append("（差 ").append(c.get("groupGap")).append(" 分）｜教师：").append(c.get("teacherName"))
+              .append("｜时间：").append(c.get("time")).append("｜地点：").append(c.get("location"))
+              .append("｜全字段:").append(dumpAllFields(c))
+              .append("｜时间不冲突，可直接报名\n");
+        }
+        if (i == 0) sb.append("（缺口推荐课程全部与课表冲突，见下方「已排除」）\n");
+
+        // 推荐量不足时补「时间不冲突的可选课」，避免只剩一句"都冲突"
+        if (free.size() < 3) {
+            List<Course> extra = freeElectives(mine, 6 - free.size());
+            if (!extra.isEmpty()) {
+                sb.append("\n-- 【时间不冲突、仍可报名的选修课（补充候选）】--\n");
+                for (Course c : extra) {
+                    sb.append("· 《").append(c.getName()).append("》").append(nz(c.getCredit(), "?")).append("学分｜")
+                      .append(nz(c.getCategory(), "未分类")).append("｜教师：").append(nz(courseService.teacherName(c.getTeacherId()), "未指定"))
+                      .append("｜时间：").append(nz(c.getTime(), "待定")).append("｜地点：").append(nz(c.getLocation(), "待定"))
+                      .append("｜容量：").append(nz(c.getCapacity(), "?")).append(" 人")
+                      .append("｜全字段:").append(dumpAllFields(c)).append("\n");
+                }
+                rec.sources.add("可报选修课程");
+            }
+        }
+
+        if (!blocked.isEmpty()) {
+            sb.append("\n已自动排除 ").append(blocked.size()).append(" 门与课表时间冲突的课（不要再推荐它们）：\n");
+            for (String b : blocked) sb.append("· ").append(b).append("\n");
+        }
+        if (!mine.isEmpty()) {
+            sb.append("\n我的已录取课程时间（排课基准，推荐必须避开这些时段）：\n");
+            for (Course m : mine) {
+                sb.append("· 《").append(m.getName()).append("》").append(nz(m.getTime(), "待定")).append("\n");
+            }
+        }
+        rec.sources.add("缺口推荐课程（已排除冲突）");
+    }
+
+    /** 从推荐条目里取回课程实体（推荐 Map 里带 courseId） */
+    private Course courseOf(Map<?, ?> m) {
+        Object cid = m.get("courseId");
+        if (cid instanceof Number n) return courseRepo.findById(n.longValue()).orElse(null);
+        return null;
+    }
+
+    /** 我的本学期已录取课程（跨轮去重；历史学期的课已结课，不占本学期课表，不能当冲突基准） */
+    private List<Course> myApprovedCourses(Long userId) {
+        if (userId == null) return List.of();
+        Integer curSem = currentSemesterNoOf(userId);
+        List<Course> out = new ArrayList<>();
+        Set<Long> seen = new LinkedHashSet<>();
+        for (Enrollment e : enrollmentRepo.findByStudentId(userId)) {
+            if (!"approved".equals(e.getStatus())) continue;
+            if (curSem != null && e.getSemesterNo() != null && !e.getSemesterNo().equals(curSem)) continue;
+            Course c = courseRepo.findById(e.getCourseId()).orElse(null);
+            if (c == null) continue;
+            if (seen.add(c.getId())) out.add(c);
+        }
+        return out;
+    }
+
+    /** 本学期课表基准：无条件注入，保证任何意图下推荐课程都有时间参照 */
+    private void appendMyTimetable(StringBuilder sb, Recognition rec, Long userId) {
+        List<Course> mine = myApprovedCourses(userId);
+        if (mine.isEmpty()) return;
+        sb.append("\n-- 【我的本学期课表（时间基准，推荐/建议课程必须避开）】--\n");
+        for (Course c : mine) {
+            sb.append("· 《").append(c.getName()).append("》").append(nz(c.getTime(), "待定"))
+              .append("｜").append(nz(c.getLocation(), "地点待定")).append("\n");
+        }
+        sb.append("说明：以上为本学期已录取课程的固定时段；推荐或列举课程时若与其中任一时段重叠，")
+          .append("必须标注「与《某课》时间冲突」并说明需先退课或换时段，不能直接推荐为可选。\n");
+        rec.sources.add("我的课表");
+    }
+
+    /** 该学生当前学期序（拿不到年级时返回 null = 不做学期过滤） */
+    private Integer currentSemesterNoOf(Long userId) {
+        if (userId == null) return null;
+        User u = userRepo.findById(userId).orElse(null);
+        if (u == null || u.getGrade() == null) return null;
+        SystemConfig cfg = configRepo.findById(1L).orElse(null);
+        int offset = cfg == null || cfg.getSemesterOffset() == null ? 0 : cfg.getSemesterOffset();
+        return GraduationService.currentSemesterNo(u.getGrade(), java.time.LocalDate.now(), offset);
+    }
+
+    /** 目标课程与我已录取课程的时间冲突明细（同 id 不算冲突） */
+    private List<String> conflictWith(Course target, List<Course> mine) {
+        List<String> hits = new ArrayList<>();
+        if (target == null) return hits;
+        for (Course m : mine) {
+            if (m.getId().equals(target.getId())) continue;
+            if (conflict(m, target)) hits.add("《" + m.getName() + "》");
+        }
+        return hits;
+    }
+
+    /** 全库筛「时间不冲突、未录取、非必修、有名额」的选修课 */
+    private List<Course> freeElectives(List<Course> mine, int limit) {
+        if (limit <= 0) return List.of();
+        Set<Long> taken = new LinkedHashSet<>();
+        for (Course c : mine) taken.add(c.getId());
+        List<Course> out = new ArrayList<>();
+        for (Course c : courseRepo.findAll()) {
+            if (out.size() >= limit) break;
+            if (c.getCategory() != null && c.getCategory().contains("必修")) continue;
+            if (taken.contains(c.getId())) continue;
+            if (c.getCapacity() == null || c.getCapacity() <= 0) continue;
+            if (!conflictWith(c, mine).isEmpty()) continue;
+            out.add(c);
+        }
+        return out;
     }
 
     /** 当前学生双选已确认的毕业设计导师（graduate_advisors.status=approved） */
@@ -654,7 +796,8 @@ public class AiContextService {
             if (t != null && t.getNo() != null) sb.append("工号：").append(t.getNo()).append("；");
             if (t != null && t.getCollege() != null) sb.append("学院：").append(t.getCollege()).append("；");
             if (ga.getTopic() != null && !ga.getTopic().isBlank()) sb.append("毕业设计课题：").append(ga.getTopic()).append("；");
-            sb.append("双选状态：已确认（学生本人选定并经教师通过）。\n");
+            sb.append("双选状态：已确认（学生本人选定并经教师通过）。")
+              .append("全字段:").append(dumpAllFields(ga)).append("\n");
             sb.append("说明：这是学生本人的导师双选结果；《毕业设计(上)》《毕业设计(下)》课程表上的「授课教师」")
               .append("只是课程名义任课教师，与「毕业设计导师」不是同一概念。")
               .append("回答「我的导师 / 谁指导我」必须以本数据块为准。\n");
@@ -668,9 +811,23 @@ public class AiContextService {
             return;
         }
         String advisor = myAdvisorName(userId);
-        List<Enrollment> list = enrollmentRepo.findByStudentId(userId);
-        sb.append("\n-- 【我的选课】--\n");
-        if (list.isEmpty()) { sb.append("尚未选中任何课程。\n"); rec.sources.add("我的选课"); return; }
+        Integer curSem = currentSemesterNoOf(userId);
+        List<Enrollment> all = enrollmentRepo.findByStudentId(userId);
+        // 只列本学期：历史学期已结课，混在一起会让 AI 误当成「本周课表」参与冲突判断
+        List<Enrollment> list = all.stream()
+                .filter(e -> curSem == null || e.getSemesterNo() == null || curSem.equals(e.getSemesterNo()))
+                .toList();
+        long historyCourses = all.stream()
+                .filter(e -> curSem != null && e.getSemesterNo() != null && !curSem.equals(e.getSemesterNo()))
+                .filter(e -> "approved".equals(e.getStatus()))
+                .map(Enrollment::getCourseId).distinct().count();
+        sb.append("\n-- 【我的选课（本学期）】--\n");
+        if (list.isEmpty()) {
+            sb.append("本学期尚未选中任何课程。\n");
+            if (historyCourses > 0) sb.append("历史学期另已修 ").append(historyCourses).append(" 门课程（成绩见【我的成绩】）。\n");
+            rec.sources.add("我的选课");
+            return;
+        }
         // 同一课程可能跨轮次有多条记录（改选/补报），按课程去重，保留最新一轮
         Map<Long, Enrollment> latest = new LinkedHashMap<>();
         for (Enrollment e : list) {
@@ -683,6 +840,7 @@ public class AiContextService {
         int credit = 0;
         int count = 0;
         sb.append("已选 ").append(latest.size()).append(" 门：\n");
+        List<Course> approvedBase = myApprovedCourses(userId);
         for (Enrollment e : latest.values()) {
             Course c = courseRepo.findById(e.getCourseId()).orElse(null);
             if (c == null) continue;
@@ -695,13 +853,23 @@ public class AiContextService {
               .append(e.getPoints() != null ? "｜投入 " + e.getPoints() + " 分" : "")
               // 毕设课：同时给出学生本人双选确认的导师，避免把课程授课教师误当成导师
               .append(c.getName() != null && c.getName().contains("毕业设计")
-                      ? "｜毕业设计导师：" + nz(advisor, "未确认") : "")
-              .append("\n");
+                      ? "｜毕业设计导师：" + nz(advisor, "未确认") : "");
+            // 非「已录取」条目（待结算 / 已退课 / 落选）若与课表时段重叠，标注出来，
+            // 避免 AI 把一条已退课的记录当成「可选且不冲突」的课推荐给学生
+            if (!"approved".equals(e.getStatus())) {
+                List<String> hits = conflictWith(c, approvedBase);
+                if (!hits.isEmpty()) sb.append("｜⚠与").append(String.join("、", hits)).append(" 时间冲突");
+            }
+            sb.append("｜全字段:").append(dumpAllFields(e));
+            sb.append("\n");
         }
         SystemConfig cfg = configRepo.findById(1L).orElse(null);
         int limit = cfg != null && cfg.getMaxCreditPerSemester() != null ? cfg.getMaxCreditPerSemester() : 24;
-        sb.append("已录取课程学分合计 ").append(credit).append(" 分（跨轮次累计；本学期单轮新增请以「我的课表」为准，单学期上限 ")
+        sb.append("本学期已录取课程学分合计 ").append(credit).append(" 分（跨轮次累计；单学期上限 ")
           .append(limit).append(" 分）\n");
+        if (historyCourses > 0) {
+            sb.append("历史学期另已修 ").append(historyCourses).append(" 门课程（不占本学期课表，不参与时间冲突判断；成绩见【我的成绩】）。\n");
+        }
         rec.sources.add("我的选课");
     }
 
@@ -720,7 +888,8 @@ public class AiContextService {
             sb.append("· 《").append(it.get("courseName")).append("》投入 ").append(p).append(" 分｜")
               .append(it.get("category")).append("｜").append(it.get("credit")).append("学分｜")
               .append("容量 ").append(it.get("capacity")).append("｜教师：").append(it.get("teacherName"))
-              .append("｜时间：").append(it.get("time")).append("\n");
+              .append("｜时间：").append(it.get("time"))
+              .append("｜全字段:").append(dumpAllFields(it)).append("\n");
         }
         sb.append("合计投入 ").append(total).append(" / 50 分，剩余 ").append(50 - total).append(" 分。\n");
         rec.sources.add("我的意向单");
@@ -744,7 +913,8 @@ public class AiContextService {
             int ahead = Math.max(0, pos - 1);
             sb.append("· 《").append(c == null ? "（课程已删除）" : c.getName()).append("》｜第")
               .append(w.getRound()).append("轮｜状态：").append(waitStatusCn(w.getStatus()))
-              .append("｜排位：第 ").append(pos).append(" 位｜前方还有 ").append(ahead).append(" 人\n");
+              .append("｜排位：第 ").append(pos).append(" 位｜前方还有 ").append(ahead).append(" 人")
+              .append("｜全字段:").append(dumpAllFields(w)).append("\n");
         }
         sb.append("提示：候补递补时会短信/站内提醒，需在确认时限内确认，逾期顺延给下一位。\n");
         rec.sources.add("我的候补");
@@ -758,30 +928,62 @@ public class AiContextService {
         sb.append("\n-- 【我的成绩】--\n");
         List<com.zhixue.entity.Grade> grades = gradeService.findByStudent(userId);
         if (grades.isEmpty()) { sb.append("暂无已发布成绩。\n"); rec.sources.add("我的成绩"); return; }
+        // 学期归属:成绩行自带 semester_no,按「学年-学期」分组输出,支持「某学期成绩」类提问
+        Integer entryYear = userRepo.findById(userId).map(User::getGrade).orElse(null);
+        Map<Integer, List<String>> rowsBySem = new TreeMap<>();
+        Map<Integer, double[]> sumBySem = new TreeMap<>();   // [总分和, 门数, 学分和, 学分加权总分]
         double totalScore = 0; int cnt = 0; double creditSum = 0, creditWeighted = 0;
         for (com.zhixue.entity.Grade g : grades) {
             Course c = courseRepo.findById(g.getCourseId()).orElse(null);
             if (c == null) continue;
-            sb.append("· 《").append(c.getName()).append("》｜学分 ").append(nz(c.getCredit(), "?"))
-              .append("｜平时分 ").append(fmt(g.getRegularScore()))
-              .append("｜期末分 ").append(fmt(g.getFinalScore()))
-              .append("｜总评 ").append(fmt(g.getTotalScore()))
-              .append("｜GPA ").append(String.format(Locale.ROOT, "%.1f", GradeService.scoreToGpa(
-                      g.getTotalScore() == null ? 0 : g.getTotalScore())))
-              .append("\n");
+            String line = "· 《" + c.getName() + "》｜学分 " + nz(c.getCredit(), "?")
+              + "｜平时分 " + fmt(g.getRegularScore())
+              + "｜期末分 " + fmt(g.getFinalScore())
+              + "｜总评 " + fmt(g.getTotalScore())
+              + "｜GPA " + String.format(Locale.ROOT, "%.1f", GradeService.scoreToGpa(
+                      g.getTotalScore() == null ? 0 : g.getTotalScore()))
+              + "｜全字段:" + dumpAllFields(g);
+            int sem = g.getSemesterNo() == null ? -1 : g.getSemesterNo();
+            rowsBySem.computeIfAbsent(sem, k -> new ArrayList<>()).add(line);
             if (g.getTotalScore() != null) {
                 totalScore += g.getTotalScore(); cnt++;
                 int cr = c.getCredit() == null ? 0 : c.getCredit();
                 creditSum += cr; creditWeighted += g.getTotalScore() * cr;
+                double[] s = sumBySem.computeIfAbsent(sem, k -> new double[4]);
+                s[0] += g.getTotalScore(); s[1]++; s[2] += cr; s[3] += g.getTotalScore() * cr;
             }
+        }
+        for (Map.Entry<Integer, List<String>> en : rowsBySem.entrySet()) {
+            sb.append("\n[").append(semLabel(en.getKey(), entryYear)).append("] 共 ")
+              .append(en.getValue().size()).append(" 门");
+            double[] s = sumBySem.get(en.getKey());
+            if (s != null && s[1] > 0) {
+                sb.append("｜平均总评 ").append(String.format(Locale.ROOT, "%.1f", s[0] / s[1]));
+                if (s[2] > 0) sb.append("｜学分加权均分 ").append(String.format(Locale.ROOT, "%.1f", s[3] / s[2]));
+            }
+            sb.append("\n");
+            for (String line : en.getValue()) sb.append(line).append("\n");
         }
         if (cnt > 0) {
-            sb.append("平均总评：").append(String.format(Locale.ROOT, "%.1f", totalScore / cnt)).append(" 分\n");
+            sb.append("\n全部学期合计：").append(cnt).append(" 门｜平均总评 ")
+              .append(String.format(Locale.ROOT, "%.1f", totalScore / cnt)).append(" 分");
             if (creditSum > 0) {
-                sb.append("学分加权均分：").append(String.format(Locale.ROOT, "%.1f", creditWeighted / creditSum)).append(" 分\n");
+                sb.append("｜学分加权均分：").append(String.format(Locale.ROOT, "%.1f", creditWeighted / creditSum)).append(" 分");
             }
+            sb.append("\n");
         }
+        sb.append("学期标注格式：「学年-学期序」，如 2025-2026-2 即 2025-2026 学年第二学期；")
+          .append("回答「某学期成绩」时引用对应分组的课程与汇总。\n");
         rec.sources.add("我的成绩");
+    }
+
+    /** 修读学期序 → 「学年-学期」标注（如 2023 级第 6 学期 = 2025-2026-2）；未知返回占位 */
+    private String semLabel(int sem, Integer entryYear) {
+        if (sem < 0) return "学期未知";
+        if (entryYear == null || entryYear <= 0) return "第" + sem + "学期";
+        int ay = entryYear + (sem - 1) / 2;
+        int st = (sem - 1) % 2 + 1;
+        return ay + "-" + (ay + 1) + "-" + st;
     }
 
     private String fmt(Double d) {
@@ -793,12 +995,47 @@ public class AiContextService {
         return v == null ? dft : String.valueOf(v);
     }
 
-    private void appendCourseInfo(StringBuilder sb, Recognition rec) {
+    /** 不进提示词的字段：敏感 / 超长 / 无检索价值 */
+    private static final Set<String> DENY_FIELDS = Set.of(
+            "password", "token", "avatar", "images", "base64", "attachments", "files",
+            "intro", "description", "content", "remark", "reason", "note");
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper FIELD_OM =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /**
+     * 实体 / Map → 全字段紧凑串（k=v | k=v）。
+     * 数据块的可读行只挑了关键字段，这里把实体全部字段原样给出 —— 自动跟随字段演进，
+     * 保证「每次查询都有迹可循」：AI 引用的任何事实都能落到一个具体字段上。
+     */
+    private String dumpAllFields(Object entity) {
+        try {
+            Map<?, ?> m = FIELD_OM.convertValue(entity, Map.class);
+            StringBuilder s = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                String k = String.valueOf(e.getKey()).toLowerCase();
+                Object v = e.getValue();
+                if (DENY_FIELDS.contains(k) || v == null || (v instanceof String s2 && s2.isBlank())) continue;
+                String vs = String.valueOf(v);
+                if (vs.length() > 60) vs = vs.substring(0, 60) + "…";
+                if (!first) s.append(", ");
+                s.append(e.getKey()).append("=").append(vs);
+                first = false;
+            }
+            return s.append("}").toString();
+        } catch (Exception ex) {
+            return "{}";
+        }
+    }
+
+    private void appendCourseInfo(StringBuilder sb, Recognition rec, Long userId) {
         if (rec.courses.isEmpty()) {
             sb.append("\n-- 【课程详情】--\n未识别到具体课程。\n");
-            appendCourseOverview(sb, rec);
+            appendCourseOverview(sb, rec, userId);
             return;
         }
+        List<Course> mine = myApprovedCourses(userId);
         sb.append("\n-- 【课程详情】--\n");
         for (Course c : rec.courses) {
             int applied = enrollmentRepo.findByCourseIdAndRound(c.getId(), currentRound()).size();
@@ -810,16 +1047,25 @@ public class AiContextService {
               .append("｜地点：").append(nz(c.getLocation(), "待定"))
               .append("｜校区：").append(nz(c.getCampus(), "主校区")).append("\n")
               .append("  容量：").append(nz(c.getCapacity(), "?")).append(" 人｜本轮已报：").append(applied).append(" 人\n")
-              .append("  课程简介：").append(c.getIntro() == null ? "（暂无）" : c.getIntro()).append("\n");
+              .append("  课程简介：").append(c.getIntro() == null ? "（暂无）" : c.getIntro()).append("\n")
+              .append("  全字段:").append(dumpAllFields(c)).append("\n");
+            // 选课可行性：直接给出与「我的课表」的冲突结论，避免 AI 只能罗列时间让学生自己对
+            List<String> hits = conflictWith(c, mine);
+            if (!hits.isEmpty()) {
+                sb.append("  ⚠ 时间冲突：与本学期已录取的 ").append(String.join("、", hits)).append(" 上课时间重叠，当前无法报名。\n");
+            } else if (!mine.isEmpty()) {
+                sb.append("  ✅ 与本学期已录取课程无时间冲突，可以报名。\n");
+            }
         }
         rec.sources.add("课程详情");
     }
 
     /** 同学期同类别课程：给"还有什么类似的课"用 */
-    private void appendRelatedCourses(StringBuilder sb, Recognition rec) {
+    private void appendRelatedCourses(StringBuilder sb, Recognition rec, Long userId) {
         if (rec.courses.isEmpty()) return;
         Course c0 = rec.courses.get(0);
         List<Course> same = courseRepo.findByCategory(c0.getCategory());
+        List<Course> mine = myApprovedCourses(userId);
         sb.append("\n-- 【同类别其他课程】--\n");
         int i = 0;
         for (Course c : same) {
@@ -827,7 +1073,11 @@ public class AiContextService {
             if (++i > 8) break;
             sb.append("· 《").append(c.getName()).append("》").append(nz(c.getCredit(), "?")).append("学分｜教师：")
               .append(nz(courseService.teacherName(c.getTeacherId()), "未指定")).append("｜时间：").append(nz(c.getTime(), "待定"))
-              .append("｜地点：").append(nz(c.getLocation(), "待定")).append("\n");
+              .append("｜地点：").append(nz(c.getLocation(), "待定"));
+            List<String> hits = conflictWith(c, mine);
+            if (!hits.isEmpty()) sb.append("｜⚠与").append(String.join("、", hits)).append(" 时间冲突");
+            sb.append("｜全字段:").append(dumpAllFields(c));
+            sb.append("\n");
         }
         rec.sources.add("同类别课程");
     }
@@ -835,62 +1085,75 @@ public class AiContextService {
     /** 冲突判定：后端真实计算，AI 只负责表述 */
     private void appendConflict(StringBuilder sb, Recognition rec, Long userId) {
         sb.append("\n-- 【时间冲突核对】--\n");
-        List<Course> targets = rec.courses;
-        boolean fromIntent = false;
-        if (targets.isEmpty() && userId != null) {
-            // 用户没点名课程：改用「我的意向单」课程作为核对对象（真实业务数据，不做推测）
-            List<Map<String, Object>> intents = intentService.list(userId);
-            List<Course> fromIntentList = new ArrayList<>();
-            for (Map<String, Object> it : intents) {
-                Object cid = it.get("courseId");
-                if (cid instanceof Number n) {
-                    Course c = courseRepo.findById(n.longValue()).orElse(null);
-                    if (c != null) fromIntentList.add(c);
+        List<Course> mineApproved = myApprovedCourses(userId);
+
+        // A. 点名了课程 → 逐门核对
+        if (!rec.courses.isEmpty()) {
+            for (Course t : rec.courses) {
+                List<String> hits = conflictWith(t, mineApproved);
+                rec.facts.put("conflict:" + t.getId(), hits);
+                sb.append("《").append(t.getName()).append("》（").append(nz(t.getTime(), "待定")).append("）：");
+                if (hits.isEmpty()) {
+                    sb.append("与我的已录取课程").append(mineApproved.isEmpty() ? "（我还没有已录取课程）" : "").append("无时间冲突。\n");
+                } else {
+                    sb.append("与 ").append(String.join("、", hits)).append(" 存在时间冲突。\n");
                 }
             }
-            if (!fromIntentList.isEmpty()) {
-                targets = fromIntentList;
-                fromIntent = true;
-                rec.sources.add("我的意向单");
-            }
-        }
-        if (targets.isEmpty()) {
-            sb.append("未识别到要比对的课程（意向单也为空），无法自动核对冲突。\n");
-            appendCourseOverview(sb, rec);
+            appendMineTime(sb, mineApproved);
+            rec.sources.add("时间冲突核对");
             return;
         }
-        if (fromIntent) {
-            sb.append("（未点名具体课程，以下按我的意向单课程逐门核对）\n");
+
+        // B. 没点名课程 → 全库反向扫描「哪些课和我冲突」，再补意向单逐门核对
+        if (mineApproved.isEmpty()) {
+            sb.append("我还没有已录取课程，不存在时间冲突；任何课程都可以报。\n");
+            rec.sources.add("时间冲突核对");
+            return;
         }
-        List<Enrollment> mine = userId == null ? List.of() : enrollmentRepo.findByStudentId(userId);
-        List<Course> mineApproved = new ArrayList<>();
-        Set<Long> seen = new LinkedHashSet<>();
-        for (Enrollment e : mine) {
-            if (!"approved".equals(e.getStatus())) continue;
-            Course c = courseRepo.findById(e.getCourseId()).orElse(null);
-            if (c == null) continue;
-            if (seen.add(c.getId())) mineApproved.add(c);   // 同一课程跨轮去重
-        }
-        for (Course t : targets) {
-            List<String> hits = new ArrayList<>();
-            for (Course m : mineApproved) {
-                if (m.getId().equals(t.getId())) continue;
-                if (conflict(m, t)) hits.add("《" + m.getName() + "》(" + m.getTime() + ")");
-            }
-            rec.facts.put("conflict:" + t.getId(), hits);
-            sb.append("《").append(t.getName()).append("》（").append(t.getTime()).append("）：");
-            if (hits.isEmpty()) {
-                sb.append("与我的已录取课程").append(mineApproved.isEmpty() ? "（我还没有已录取课程）" : "").append("无时间冲突。\n");
-            } else {
-                sb.append("与 ").append(String.join("、", hits)).append(" 存在时间冲突。\n");
+        List<String> clash = new ArrayList<>();
+        int total = 0;
+        for (Course c : courseRepo.findAll()) {
+            if (c.getCategory() != null && c.getCategory().contains("必修")) continue;
+            if (mineApproved.stream().anyMatch(m -> m.getId().equals(c.getId()))) continue;
+            List<String> hits = conflictWith(c, mineApproved);
+            if (hits.isEmpty()) continue;
+            total++;
+            if (clash.size() < 20) {
+                clash.add("《" + c.getName() + "》" + nz(c.getTime(), "") + " → 与" + String.join("、", hits) + " 冲突");
             }
         }
-        sb.append("我的已录取课程时间：\n");
-        for (Course m : mineApproved) {
-            sb.append("· 《").append(m.getName()).append("》").append(m.getTime())
-              .append("｜").append(m.getLocation()).append("\n");
+        sb.append("与我已录取课程时间冲突的选修课共 ").append(total).append(" 门")
+          .append(total > 20 ? "（列出前 20 门）：\n" : "：\n");
+        for (String s : clash) sb.append("· ").append(s).append("\n");
+        if (total == 0) sb.append("（当前没有任何冲突课程，可以自由选课）\n");
+
+        // 意向单课程逐门核对（意向课若冲突，提示换课/换时段）
+        List<Map<String, Object>> intents = userId == null ? List.of() : intentService.list(userId);
+        if (!intents.isEmpty()) {
+            sb.append("\n我的意向单课程核对：\n");
+            for (Map<String, Object> it : intents) {
+                Object cid = it.get("courseId");
+                if (!(cid instanceof Number n)) continue;
+                Course c = courseRepo.findById(n.longValue()).orElse(null);
+                if (c == null) continue;
+                List<String> hits = conflictWith(c, mineApproved);
+                sb.append("· 《").append(c.getName()).append("》（").append(nz(c.getTime(), "待定")).append("）：")
+                  .append(hits.isEmpty() ? "无冲突" : "与 " + String.join("、", hits) + " 冲突").append("\n");
+            }
+            rec.sources.add("我的意向单");
         }
+        appendMineTime(sb, mineApproved);
         rec.sources.add("时间冲突核对");
+    }
+
+    /** 「我的已录取课程时间」基准块 */
+    private void appendMineTime(StringBuilder sb, List<Course> mine) {
+        if (mine.isEmpty()) return;
+        sb.append("我的已录取课程时间：\n");
+        for (Course m : mine) {
+            sb.append("· 《").append(m.getName()).append("》").append(nz(m.getTime(), "待定"))
+              .append("｜").append(nz(m.getLocation(), "地点待定")).append("\n");
+        }
     }
 
     private void appendRoundWindow(StringBuilder sb, Recognition rec) {
@@ -902,12 +1165,14 @@ public class AiContextService {
           .append("，阶段：").append(phaseName(cfg.getCurrentPhase())).append("。\n");
         sb.append("第 1、2 轮为积分竞价（每轮 50 分池，0-50 分/门，截止后按分降序录取，同分抽签）；")
           .append("第 3 轮先到先得不消耗积分。\n");
+        sb.append("系统配置全字段:").append(dumpAllFields(cfg)).append("\n");
         rec.sources.add("选课规则");
     }
 
     /** 课程概览：按类别分组列出全部课程（保证任何课程都能被问到） */
-    private void appendCourseOverview(StringBuilder sb, Recognition rec) {
+    private void appendCourseOverview(StringBuilder sb, Recognition rec, Long userId) {
         List<Course> all = courseRepo.findAll();
+        List<Course> mine = myApprovedCourses(userId);
         sb.append("\n-- 【课程目录概览（共 ").append(all.size()).append(" 门）】--\n");
         Map<String, List<Course>> byCat = new LinkedHashMap<>();
         for (Course c : all) byCat.computeIfAbsent(c.getCategory() == null ? "其他" : c.getCategory(), k -> new ArrayList<>()).add(c);
@@ -927,7 +1192,19 @@ public class AiContextService {
             sb.append("· 《").append(c.getName()).append("》").append(nz(c.getCredit(), "?")).append("学分｜教师：")
               .append(nz(courseService.teacherName(c.getTeacherId()), "未指定")).append("｜时间：").append(nz(c.getTime(), "待定"))
               .append("｜地点：").append(nz(c.getLocation(), "待定")).append("｜容量：").append(nz(c.getCapacity(), "?"))
-              .append("｜简介：").append(c.getIntro() == null ? "（暂无）" : c.getIntro()).append("\n");
+              .append("｜简介：").append(c.getIntro() == null ? "（暂无）" : c.getIntro());
+            List<String> hits = conflictWith(c, mine);
+            if (!hits.isEmpty()) sb.append("｜⚠与").append(String.join("、", hits)).append(" 时间冲突");
+            sb.append("｜全字段:").append(dumpAllFields(c));
+            sb.append("\n");
+        }
+        if (!mine.isEmpty()) {
+            sb.append("我的已录取课程（时间基准）：");
+            for (int i = 0; i < mine.size(); i++) {
+                Course m = mine.get(i);
+                sb.append(i > 0 ? "；" : "").append("《").append(m.getName()).append("》").append(nz(m.getTime(), "待定"));
+            }
+            sb.append("\n");
         }
         sb.append("（如需其它课程的详情，可直接询问）\n");
         rec.sources.add("课程目录概览");
@@ -944,7 +1221,8 @@ public class AiContextService {
             int applied = enrollmentRepo.findByCourseIdAndRound(c.getId(), currentRound()).size();
             sb.append("· 《").append(c.getName()).append("》").append(nz(c.getCredit(), "?")).append("学分｜时间：")
               .append(nz(c.getTime(), "待定")).append("｜地点：").append(nz(c.getLocation(), "待定"))
-              .append("｜容量：").append(nz(c.getCapacity(), "?")).append("｜本轮报名：").append(applied).append(" 人\n");
+              .append("｜容量：").append(nz(c.getCapacity(), "?")).append("｜本轮报名：").append(applied).append(" 人")
+              .append("｜全字段:").append(dumpAllFields(c)).append("\n");
         }
         rec.sources.add("我讲授的课程");
     }
@@ -963,6 +1241,7 @@ public class AiContextService {
               .append(" / 选修 ").append(cfg.getGradReqElective())
               .append(" / 通识 ").append(cfg.getGradReqGeneral())
               .append(" / 实践 ").append(cfg.getGradReqPractice()).append("\n");
+            sb.append("系统配置全字段:").append(dumpAllFields(cfg)).append("\n");
         }
         rec.sources.add("系统概览");
     }

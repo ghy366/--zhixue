@@ -55,6 +55,13 @@
               <button class="btn btn-primary" @click="switchRound">{{ t('切换') }}</button>
             </div>
           </div>
+          <div class="rd-manual-row">
+            <div class="rd-manual-info">
+              <b>{{ t('释放本学期容量') }}</b>
+              <span>{{ t('清空本学期报名 / 候补 / 待处理退课申请，让每门课名额回到满额；历史学期的报名记录与成绩学分全部保留。开启第 1 轮时会自动执行一次。') }}</span>
+            </div>
+            <button class="btn btn-danger" :disabled="releasing" @click="releaseCapacity">{{ releasing ? t('释放中…') : t('释放容量') }}</button>
+          </div>
         </div>
       </div>
 
@@ -562,22 +569,45 @@ async function settleNow() {
   settling.value = true
   try {
     const r: any = await http.post('/enrollments/settle', {})
-    ElMessage.success(r?.message || t('结算完成'))
+    ElMessage.success((r?.message || t('结算完成')) + ' · 学习轨迹已生成')
     load()
   } catch (e: any) { ElMessage.error(e?.message || t('结算失败')) }
   finally { settling.value = false }
 }
 async function setRoundOpen(open: boolean) {
+  const willRelease = open && !config.value.roundOpen && (config.value.currentRound ?? 1) === 1
   try {
     await ElMessageBox.confirm(
-      open ? t('开启第 {n} 轮选课？学生将立即可以选课。', { n: config.value.currentRound }) : t('关闭第 {n} 轮选课？学生将无法继续选课。', { n: config.value.currentRound }),
+      open
+        ? t('开启第 {n} 轮选课？学生将立即可以选课。', { n: config.value.currentRound })
+          + (willRelease ? t(' 注意：第 1 轮开启会先释放本学期容量——清空本学期报名 / 候补 / 待处理退课申请，所有课程名额回到满额；历史学期的报名记录与成绩学分全部保留。') : '')
+        : t('关闭第 {n} 轮选课？学生将无法继续选课。', { n: config.value.currentRound }),
       open ? t('开启选课') : t('关闭选课'),
       { type: 'warning', confirmButtonText: open ? t('开启') : t('关闭'), cancelButtonText: t('取消') }
     )
-    await http.post('/system/round-open', { roundOpen: open })
-    ElMessage.success(open ? t('本轮选课已开启') : t('本轮选课已关闭'))
+    const r: any = await http.post('/system/round-open', { roundOpen: open })
+    ElMessage.success(r?.message || (open ? t('本轮选课已开启') : t('本轮选课已关闭')))
     load()
   } catch (e: any) { if (e !== 'cancel') ElMessage.error(e?.message || t('操作失败')) }
+}
+
+/* ---------- 释放容量 ---------- */
+const releasing = ref(false)
+async function releaseCapacity() {
+  try {
+    await ElMessageBox.confirm(
+      t('释放本学期容量？将清空本学期的报名、候补与待处理退课申请，每门课名额回到满额；历史学期的报名记录与成绩（学分/GPA）全部保留，本学期清理不可撤销。'),
+      t('释放本学期容量'),
+      { type: 'warning', confirmButtonText: t('确认释放'), cancelButtonText: t('取消') }
+    )
+  } catch { return }
+  releasing.value = true
+  try {
+    const r: any = await http.post('/system/release-capacity', {})
+    ElMessage.success(r?.message || t('容量已释放'))
+    load()
+  } catch (e: any) { ElMessage.error(e?.message || t('释放失败')) }
+  finally { releasing.value = false }
 }
 async function switchRound() {
   if (manualRound.value === config.value.currentRound) { ElMessage.info(t('已经是第 {n} 轮了', { n: manualRound.value })); return }

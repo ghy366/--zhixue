@@ -45,7 +45,7 @@ public class GraduateWorkspaceService {
     @Autowired private EnrollmentRepository enrollmentRepo;
     private final ObjectMapper om = new ObjectMapper();
 
-    @Value("${zhixue.upload.path:${user.home}/zhixue-uploads/papers}")
+    @Value("${zhixue.upload.path:E:/ai文件 图片缓存/papers}")
     private String uploadRoot;
 
     /** 列出某学生所有已确认的 advisorId */

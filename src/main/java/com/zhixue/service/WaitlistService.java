@@ -62,20 +62,41 @@ public class WaitlistService {
                 .count() + 1;
     }
 
-    // 已占用名额 = 已录取 + 待确认（名额已预留给递补者）
-    private int reserved(Long courseId, int round) {
-        int approved = (int) enrollmentRepo.findByCourseIdAndRound(courseId, round).stream()
+    // 已占用名额（按学期池）= 该学期跨轮已录取 + 本轮待确认中同学期的人数。
+    // 与 enroll 第 3 轮 / 结算同口径：轮次只是同一学期的批次，往轮录取同样占座。
+    // semesterNo 为 null（未知年级）时退化为旧的按轮口径。
+    private int reserved(Long courseId, Integer semesterNo, int round) {
+        if (semesterNo == null) {
+            int approved = (int) enrollmentRepo.findByCourseIdAndRound(courseId, round).stream()
+                    .filter(e -> "approved".equals(e.getStatus())).count();
+            long confirming = activeForCourse(courseId, round).stream()
+                    .filter(w -> "confirming".equals(w.getStatus())).count();
+            return approved + (int) confirming;
+        }
+        int approved = (int) enrollmentRepo.findByCourseIdAndSemesterNo(courseId, semesterNo).stream()
                 .filter(e -> "approved".equals(e.getStatus())).count();
         long confirming = activeForCourse(courseId, round).stream()
-                .filter(w -> "confirming".equals(w.getStatus())).count();
+                .filter(w -> "confirming".equals(w.getStatus()))
+                .filter(w -> Objects.equals(currentSemesterNo(w.getStudentId()), semesterNo))
+                .count();
         return approved + (int) confirming;
     }
 
-    // 课程是否满员（无可直接选课的空位）
-    public boolean isFull(Long courseId, int round) {
+    /** 学生的当前学期序（修读学期按年级推算；学生未知/年级未知返回 null，调用方退化为按轮口径） */
+    private Integer currentSemesterNo(Long studentId) {
+        if (studentId == null) return null;   // 匿名访问（如登录页课程列表）没有学生身份
+        User u = userRepo.findById(studentId).orElse(null);
+        if (u == null || u.getGrade() == null) return null;
+        SystemConfig sys = getConfig();
+        return GraduationService.currentSemesterNo(u.getGrade(), java.time.LocalDate.now(),
+                sys.getSemesterOffset() == null ? 0 : sys.getSemesterOffset());
+    }
+
+    // 课程对该学生所在学期池是否满员（无可直接选课的空位）
+    public boolean isFull(Long courseId, int round, Long studentId) {
         Course c = courseRepo.findById(courseId).orElse(null);
         if (c == null || c.getCapacity() == null) return false;
-        return reserved(courseId, round) >= c.getCapacity();
+        return reserved(courseId, currentSemesterNo(studentId), round) >= c.getCapacity();
     }
 
     // 加入候补队列（swapFromCourseId 非空 = 换课保底候补：递补确认时自动退掉该课完成换课）
@@ -98,7 +119,7 @@ public class WaitlistService {
         if (findActive(studentId, courseId, round).isPresent()) {
             result.put("success", false); result.put("msg", "你已在候补队列中"); return result;
         }
-        if (!isFull(courseId, round)) {
+        if (!isFull(courseId, round, studentId)) {
             result.put("success", false); result.put("msg", "课程未满员，可直接报名选课"); return result;
         }
         // 换课保底校验：必须是本人在修的进行中课程（必修课由系统安排，不可作为保底）
@@ -250,14 +271,19 @@ public class WaitlistService {
             enrollmentRepo.save(swapSrc);
             if (srcApproved) promoteIfNeeded(swapFromId, w.getRound());
         }
-        enrollmentRepo.findByStudentIdAndCourseIdAndRound(studentId, w.getCourseId(), w.getRound())
-                .ifPresent(enrollmentRepo::delete);
-        Enrollment enr = new Enrollment();
-        enr.setStudentId(studentId);
-        enr.setCourseId(w.getCourseId());
-        enr.setRound(w.getRound());
+        // 复用本轮回退/落选的旧行而不是 delete+insert：同事务里 insert 先于 delete 执行，
+        // 会撞唯一键 uk_enrollment_student_course_round（与 enroll 的复用同口径，修复确认 500）
+        Enrollment enr = enrollmentRepo.findByStudentIdAndCourseIdAndRound(studentId, w.getCourseId(), w.getRound())
+                .orElseGet(() -> {
+                    Enrollment n = new Enrollment();
+                    n.setStudentId(studentId);
+                    n.setCourseId(w.getCourseId());
+                    n.setRound(w.getRound());
+                    return n;
+                });
         enr.setPoints(1);
         enr.setStatus("approved");
+        enr.setSemesterNo(currentSemesterNo(studentId));
         enrollmentRepo.save(enr);
         w.setStatus("confirmed");
         waitlistRepo.save(w);
@@ -287,17 +313,16 @@ public class WaitlistService {
         Course course = courseRepo.findByIdForUpdate(courseId).orElse(null);
         if (course == null || course.getCapacity() == null) return;
         int capacity = course.getCapacity();
-        int reserved = reserved(courseId, round);
         List<Waitlist> waiting = activeForCourse(courseId, round).stream()
                 .filter(w -> "waiting".equals(w.getStatus())).toList();
         for (Waitlist w : waiting) {
-            if (reserved >= capacity) break;
+            // 按递补者自己的学期池判断容量（与 enroll/结算同口径），已满则跳过看下一位
+            if (reserved(courseId, currentSemesterNo(w.getStudentId()), round) >= capacity) continue;
             w.setStatus("confirming");
             w.setPromoteTime(LocalDateTime.now());
             w.setDeadline(LocalDateTime.now().plusMinutes(confirmMinutes()));
             waitlistRepo.save(w);
             notifyWaitConfirm(w, course);
-            reserved++;
         }
     }
 

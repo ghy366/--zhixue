@@ -28,8 +28,11 @@ public class EnrollmentService {
     @Autowired private StaggerService staggerService;
 
     public SystemConfig getSystemConfig() {
-        // 每次读取都按预设时间窗口校准一次：到点自动开放 / 自动结束
-        SystemConfig c = roundScheduleService.sync();
+        // 直读配置行,不再经过 RoundScheduleService 的 synchronized sync():
+        // 该监视器是全局串行点 —— 300 并发读配置时线程带着数据库连接排队,
+        // 曾与 10 连接的连接池互相等待,造成全站冻结(2026-11-13 压测实录)。
+        // 时间窗的自动开/关校准由 tick(每 30 秒)与管理端显式操作负责,读路径无需逐次校准。
+        SystemConfig c = sysRepo.findById(1L).orElseGet(() -> sysRepo.save(new SystemConfig()));
         if (c.getConfirmMinutes() == null) { c.setConfirmMinutes(30); c = sysRepo.save(c); }
         // 旧库行新增的门数上限列默认为 NULL（Hibernate 加列不回填 Java 默认值），归一化为默认 2
         if (c.getMaxCoursesPerSemester() == null) { c.setMaxCoursesPerSemester(2); c = sysRepo.save(c); }
@@ -128,7 +131,21 @@ public class EnrollmentService {
 
     // 课程报名统计
     public Map<String, Integer> courseStat(Long courseId, int round) {
+        return courseStat(courseId, round, null);
+    }
+
+    /**
+     * 课程报名统计。semesterNo 非空时只统计「该学期」的记录：
+     * 历史学期的报名会保留在库里可查，但不再计入新学期的报名人数与名额占用
+     * （轮次只是同一学期内的批次，跨学期必须隔开）。
+     */
+    public Map<String, Integer> courseStat(Long courseId, int round, Integer semesterNo) {
         List<Enrollment> list = enrollmentRepo.findByCourseIdAndRound(courseId, round);
+        if (semesterNo != null) {
+            list = list.stream()
+                    .filter(e -> e.getSemesterNo() == null || semesterNo.equals(e.getSemesterNo()))
+                    .toList();
+        }
         int total = (int) list.stream().filter(e -> !"dropped".equals(e.getStatus())).count();
         int pending = (int) list.stream().filter(e -> "pending".equals(e.getStatus())).count();
         int approved = (int) list.stream().filter(e -> "approved".equals(e.getStatus())).count();
@@ -139,11 +156,57 @@ public class EnrollmentService {
         return m;
     }
 
+    /** 学期过滤：sem 为 null 时原样返回；否则只保留「该学期」或未标注学期的老数据 */
+    private List<Enrollment> filterSemester(List<Enrollment> src, Integer sem) {
+        if (sem == null) return src;
+        return src.stream()
+                .filter(e -> e.getSemesterNo() == null || sem.equals(e.getSemesterNo()))
+                .toList();
+    }
+
     public boolean isOversubscribed(Long courseId, int round) {
+        return isOversubscribed(courseId, round, null);
+    }
+
+    public boolean isOversubscribed(Long courseId, int round, Integer semesterNo) {
         Course c = courseRepo.findById(courseId).orElse(null);
         if (c == null) return false;
-        Map<String, Integer> stat = courseStat(courseId, round);
+        Map<String, Integer> stat = courseStat(courseId, round, semesterNo);
         return stat.get("total") > c.getCapacity();
+    }
+
+    /** 学生当前学期序；管理员/教师/未登录按全校众数学期统计（保证后台看到的报名人数也是本学期口径） */
+    public Integer currentSemesterOf(Long userId) {
+        if (userId != null) {
+            User u = userRepo.findById(userId).orElse(null);
+            if (u != null && "student".equals(u.getRole())) {
+                SystemConfig sys = getSystemConfig();
+                return GraduationService.currentSemesterNo(u.getGrade(), java.time.LocalDate.now(),
+                        sys.getSemesterOffset() == null ? 0 : sys.getSemesterOffset());
+            }
+        }
+        return institutionalSemester();
+    }
+
+    /** 全校「当前学期」：取所有学生当前学期序的众数，30 秒缓存 */
+    private volatile Integer cachedSem;
+    private volatile long cachedSemAt;
+
+    private Integer institutionalSemester() {
+        long now = System.currentTimeMillis();
+        if (cachedSem != null && now - cachedSemAt < 30_000) return cachedSem;
+        SystemConfig sys = getSystemConfig();
+        int offset = sys.getSemesterOffset() == null ? 0 : sys.getSemesterOffset();
+        Map<Integer, Integer> cnt = new HashMap<>();
+        for (User u : userRepo.findByRole("student")) {
+            cnt.merge(GraduationService.currentSemesterNo(u.getGrade(), java.time.LocalDate.now(), offset), 1, Integer::sum);
+        }
+        Integer best = cnt.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey).orElse(null);
+        cachedSem = best;
+        cachedSemAt = now;
+        return best;
     }
 
     /**
@@ -155,10 +218,15 @@ public class EnrollmentService {
      *   （录取最低分，需该轮同时存在落选者；全部录取则 cutline 为 null）。
      */
     public Map<String, Object> pointsGuide(Long courseId, int round) {
+        return pointsGuide(courseId, round, null);
+    }
+
+    /** 竞争线参考；semesterNo 非空时只取本学期的投分（历史学期记录保留但不参与新学期的竞争线） */
+    public Map<String, Object> pointsGuide(Long courseId, int round, Integer semesterNo) {
         Course c = courseRepo.findById(courseId).orElse(null);
         int capacity = c == null || c.getCapacity() == null ? 0 : c.getCapacity();
         List<Integer> bids = new ArrayList<>();
-        for (Enrollment e : enrollmentRepo.findByCourseIdAndRound(courseId, round)) {
+        for (Enrollment e : filterSemester(enrollmentRepo.findByCourseIdAndRound(courseId, round), semesterNo)) {
             if ("dropped".equals(e.getStatus()) || e.getPoints() == null) continue;
             bids.add(e.getPoints());
         }
@@ -176,7 +244,7 @@ public class EnrollmentService {
         List<Map<String, Object>> trend = new ArrayList<>();
         Map<String, Object> history = null;
         for (int r = 1; r <= round - 1; r++) {
-            List<Enrollment> prev = enrollmentRepo.findByCourseIdAndRound(courseId, r);
+            List<Enrollment> prev = filterSemester(enrollmentRepo.findByCourseIdAndRound(courseId, r), semesterNo);
             if (prev.isEmpty()) continue;
             List<Integer> approvedPts = new ArrayList<>();
             int rejected = 0, applied = 0;
@@ -374,6 +442,15 @@ public class EnrollmentService {
         int mySem = GraduationService.currentSemesterNo(
                 userRepo.findById(studentId).map(User::getGrade).orElse(null), java.time.LocalDate.now(),
                 sys.getSemesterOffset() == null ? 0 : sys.getSemesterOffset());
+        // 跨轮已录取检查：本学期该课已在更早轮次录取（如第 1 轮录取、第 2 轮再报），
+        // 上面的「已报名检查」按轮次查不到，会漏到时间冲突校验里产生「自己与自己冲突」的误导提示
+        for (Enrollment e : enrollmentRepo.findByStudentId(studentId)) {
+            if (!"approved".equals(e.getStatus()) || !e.getCourseId().equals(courseId)) continue;
+            if (e.getSemesterNo() == null || e.getSemesterNo() != mySem) continue;
+            result.put("success", false);
+            result.put("msg", "你已在本学期第 " + e.getRound() + " 轮录取《" + course.getName() + "》，无需重复报名");
+            return result;
+        }
         Set<Long> seenApproved = new HashSet<>();
         for (Enrollment e : enrollmentRepo.findByStudentId(studentId)) {
             if (!"approved".equals(e.getStatus())) continue;
@@ -450,7 +527,9 @@ public class EnrollmentService {
         // 第三轮：先到先得补选，立即录取（名额满即止），无需等待结算。
         // 此时已持有课程行锁，统计与插入不会被其他报名事务交叉，容量不会被突破。
         if (firstCome) {
-            int approved = (int) enrollmentRepo.findByCourseIdAndRound(courseId, round).stream()
+            // 容量口径：本学期该课的全部已录取人数（跨轮累计）——轮次只是同一学期内的批次，
+            // 第 1/2 轮录取的人同样占座位；只数本轮会跨轮超额录取（实测曾出现「5/4 人」仍放行）。
+            int approved = (int) enrollmentRepo.findByCourseIdAndSemesterNo(courseId, mySem).stream()
                     .filter(e -> "approved".equals(e.getStatus())).count();
             int cap = course.getCapacity() == null ? 0 : course.getCapacity();
             if (approved >= cap) {
@@ -478,14 +557,14 @@ public class EnrollmentService {
         enrollmentRepo.save(enr);
 
         if (firstCome) {
-            Map<String, Integer> stat = courseStat(courseId, round);
+            Map<String, Integer> stat = courseStat(courseId, round, mySem);
             int total = stat.get("total");
             int cap = course.getCapacity() == null ? 0 : course.getCapacity();
             result.put("success", true);
             result.put("msg", "补选成功，已录取《" + course.getName() + "》。当前 " + total + "/" + cap + " 人。");
         } else {
             // 选课期间只登记报名，本轮结算时按投入积分统一录取（同分随机抽签）
-            Map<String, Integer> stat = courseStat(courseId, round);
+            Map<String, Integer> stat = courseStat(courseId, round, mySem);
             int total = stat.get("total");
             int cap = course.getCapacity() == null ? 0 : course.getCapacity();
             result.put("success", true);
@@ -533,6 +612,18 @@ public class EnrollmentService {
         if ("rejected".equals(enr.getStatus()) || "dropped".equals(enr.getStatus())) {
             result.put("success", false); result.put("msg", "该课程未录取"); return result;
         }
+        // 轮次结束（选课未进行中）后，已录取课程不允许学生自助退课：
+        // 由 Controller 生成退课申请，交任课老师审批，形成闭环。
+        if (!Boolean.TRUE.equals(sys.getRoundOpen())) {
+            result.put("success", false);
+            if ("approved".equals(enr.getStatus())) {
+                result.put("needTeacher", true);
+                result.put("msg", "请联系本课程的老师进行退课");
+            } else {
+                result.put("msg", "当前轮次已结束，无法撤销报名，请联系本课程的老师");
+            }
+            return result;
+        }
         String wasStatus = enr.getStatus();
         enr.setStatus("dropped");
         enrollmentRepo.save(enr);
@@ -542,6 +633,25 @@ public class EnrollmentService {
         if ("approved".equals(wasStatus)) waitlistService.promoteIfNeeded(courseId, round);
         result.put("success", true);
         result.put("msg", "pending".equals(wasStatus) ? "已撤销报名，积分已退还" : "退课成功，积分已退还");
+        return result;
+    }
+
+    /** 老师审批通过后的真实退课：跳过「选课进行中」限制，其余与自助退课一致（含候补递补） */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Map<String, Object> dropByTeacher(Long studentId, Long courseId, Integer round) {
+        Map<String, Object> result = new HashMap<>();
+        int r = round == null ? getSystemConfig().getCurrentRound() : round;
+        Enrollment enr = getEnrollment(studentId, courseId, r);
+        if (enr == null || "dropped".equals(enr.getStatus()) || "rejected".equals(enr.getStatus())) {
+            result.put("success", false); result.put("msg", "选课记录已失效，无法退课"); return result;
+        }
+        String wasStatus = enr.getStatus();
+        enr.setStatus("dropped");
+        enrollmentRepo.save(enr);
+        clearSwapMarker(studentId, courseId, r);
+        if ("approved".equals(wasStatus)) waitlistService.promoteIfNeeded(courseId, r);
+        result.put("success", true);
+        result.put("msg", "已退课，积分已退还");
         return result;
     }
 
@@ -910,10 +1020,17 @@ public class EnrollmentService {
         Map<Long, Map<String, Integer>> groupEarnedByStudent = new HashMap<>();
         // 各学生当前学期序缓存（修读记录按学期归属，本学期冲突/学分/门数只看本学期）
         Map<Long, Integer> curSemByStudent = new HashMap<>();
+        // 各 (课程, 学期) 池的已占用座位：跨轮累计——轮次是同一学期内的批次，往轮录取同样占座。
+        // 修复跨轮超额录取：此前结算容量只数本结算批次的录取数（admitted 从 0 起算），三轮可录 3 倍容量。
+        Map<String, Integer> seatsByCourseSem = new HashMap<>();
         for (Enrollment e : enrollmentRepo.findAll()) {
             if (!"approved".equals(e.getStatus())) continue;
             Course c = courseById.get(e.getCourseId());
             if (c == null) continue;
+            // 历史学期行计入其所属学期池，与本学期互不挤占
+            if (e.getSemesterNo() != null) {
+                seatsByCourseSem.merge(e.getCourseId() + ":" + e.getSemesterNo(), 1, Integer::sum);
+            }
             int sem = curSemByStudent.computeIfAbsent(e.getStudentId(), sid -> {
                 User u = userRepo.findById(sid).orElse(null);
                 return GraduationService.currentSemesterNo(u == null ? null : u.getGrade(), java.time.LocalDate.now(),
@@ -1018,12 +1135,22 @@ public class EnrollmentService {
                 }
             }
 
-            String reason = settleRejectReason(e, c, effApproved, effCourseSet, passedSet, processed, admitted,
-                    sys, effCredit, effGroup);
+            // 候选所在学期的 (课程,学期) 池占用：跨轮已录取 + 本结算已新增
+            int candSem = curSemByStudent.computeIfAbsent(sid, k -> {
+                User u = userRepo.findById(k).orElse(null);
+                return GraduationService.currentSemesterNo(u == null ? null : u.getGrade(), java.time.LocalDate.now(),
+                        sys.getSemesterOffset() == null ? 0 : sys.getSemesterOffset());
+            });
+            int occupied = seatsByCourseSem.getOrDefault(c.getId() + ":" + candSem, 0);
+
+            String reason = settleRejectReason(e, c, effApproved, effCourseSet, passedSet, processed,
+                    sys, effCredit, effGroup, occupied);
 
             if (reason == null) {
                 e.setStatus("approved");
                 admitted.merge(cid, 1, Integer::sum);
+                // 新录取占座：计入 (课程,学期) 池，后续候选的容量裁决即时可见
+                seatsByCourseSem.merge(c.getId() + ":" + candSem, 1, Integer::sum);
                 cutline.put(cid, nz(e.getPoints()));
                 approved.put(cid, c);
                 approvedCourseSet.add(cid);
@@ -1034,6 +1161,10 @@ public class EnrollmentService {
                 admittedNow.add(e.getId());
                 if (swapSrc != null) {
                     // 换课成交：新课 B 已录取 → 自动退掉源课 A（含各项口径回退与候补递补）
+                    // 源课 A 若处于已录取状态，其座位同时回退（无论往轮录取还是本结算刚录取）
+                    if ("approved".equals(swapSrc.getStatus())) {
+                        seatsByCourseSem.merge(swapFromId + ":" + candSem, -1, Integer::sum);
+                    }
                     if (executeSwapAtSettlement(swapSrc, courseById, approvedByStudent, creditByStudent,
                             groupEarnedByStudent, courseSetByStudent, admitted, admittedNow)) {
                         admittedCount--;   // 源课是本结算刚录取的：回退其录取计数，让出的名额可被后续候选使用
@@ -1104,9 +1235,8 @@ public class EnrollmentService {
      */
     private String settleRejectReason(Enrollment e, Course c, Map<Long, Course> approved,
                                       Set<Long> approvedCourseSet, Set<Long> passedSet, Set<String> processed,
-                                      Map<Long, Integer> admitted,
                                       SystemConfig sys, int creditUsed,
-                                      Map<String, Integer> groupEarned) {
+                                      Map<String, Integer> groupEarned, int occupiedSeats) {
         if (!processed.add(e.getStudentId() + ":" + c.getId())) {
             return "重复报名";
         }
@@ -1118,7 +1248,8 @@ public class EnrollmentService {
             Course pre = courseRepo.findById(c.getPrereqId()).orElse(null);
             return "需先通过《" + (pre != null ? pre.getName() : "先修课程") + "》";
         }
-        if (admitted.getOrDefault(c.getId(), 0) >= nz(c.getCapacity())) {
+        // 容量口径：该课程在本候选所在学期的跨轮累计占用（含本结算新增），不再只数本结算批次
+        if (occupiedSeats >= nz(c.getCapacity())) {
             return "容量已满";
         }
         if (hasTimeConflict(c, approved.values())) {
@@ -1348,6 +1479,7 @@ public class EnrollmentService {
             item.put("courseId", cid);
             item.put("success", one.get("success"));
             item.put("msg", one.get("msg"));
+            item.put("needTeacher", one.get("needTeacher"));
             details.add(item);
             if (Boolean.TRUE.equals(one.get("success"))) success++; else fail++;
         }

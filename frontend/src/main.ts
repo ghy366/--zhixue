@@ -6,6 +6,8 @@ import 'element-plus/dist/index.css'
 
 // 原版 CSS（覆盖 sidebar / nav / stat-card / course-card 等所有视觉样式）
 import './styles/original.css'
+// 学域星图主题覆盖层：变量 + 侧边栏/顶栏/组件视觉，必须排在 original.css 之后
+import './styles/atlas-theme.css'
 
 import App from './App.vue'
 import router from './router'

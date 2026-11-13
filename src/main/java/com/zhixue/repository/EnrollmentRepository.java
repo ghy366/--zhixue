@@ -16,6 +16,9 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
     /** 跨轮次取某课程全部报名记录（协同过滤"也选了"用） */
     List<Enrollment> findByCourseId(Long courseId);
 
+    /** 按课程+学期取报名记录：容量按「本学期跨轮次已录取」口径统计（修复跨轮超额录取） */
+    List<Enrollment> findByCourseIdAndSemesterNo(Long courseId, Integer semesterNo);
+
     /** 一次性取出某轮全部报名记录，供结算统一分配（避免逐门课查询产生 N+1） */
     List<Enrollment> findByRound(Integer round);
 
@@ -31,4 +34,7 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
 
     /** 是否还有未结算的报名记录，供定时任务快速短路 */
     boolean existsByRoundAndStatus(Integer round, String status);
+
+    /** 按状态计数（容量释放时统计真正让出的座位数） */
+    long countByStatus(String status);
 }

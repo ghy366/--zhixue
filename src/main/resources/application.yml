@@ -13,6 +13,8 @@ server:
 # 可用环境变量 AI_BASE_URL / DASHSCOPE_API_KEY / AI_MODEL / AI_FALLBACK_MODELS 覆盖
 ai:
   base-url: ${AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+  # 通道显示名（前端「自选模型」下拉用，不含任何密钥）
+  channel-name: ${AI_CHANNEL_NAME:阿里云百炼 Qwen}
   # api-key 只在外部 application-local.yml 定义（唯一来源，避免与 config import 的属性优先级打架）；
   # @Value("${ai.api-key:}") 有空值兜底，未加载外部文件时也不会导致启动失败
   model: ${AI_MODEL:qwen-flash}
@@ -22,6 +24,10 @@ ai:
   # 需显式关闭深度思考的模型名（逗号分隔，按模型名精确匹配）；当前主通道 qwen-flash 无深度思考，留空。
   # 留空时思考模型的推理过程会在前端 Chat.vue 的「思考过程」折叠块中展示
   no-thinking-models: ${AI_NO_THINKING_MODELS:}
+  # 支持图片输入的模型白名单（带图请求只允许落到这些模型，前端下拉据此标 🖼）
+  vision-models: ${AI_VISION_MODELS:deepseek-v4.1-flash-1017,qwen3.8-27b,Agents-A1,Sage-A1.5,intern-s2,deepseek-flash}
+  # 自动模式下带图时切换的默认识图模型
+  vision-default-model: ${AI_VISION_DEFAULT_MODEL:deepseek-v4.1-flash-1017}
   # 全部通道失败时自动回退的无密钥兜底通道
   fallback-base-url: ${AI_FALLBACK_BASE_URL:https://text.pollinations.ai/v1}
   # 备用网关列表（不同 baseUrl，JSON 数组）：Intern-AI / 七牛云
@@ -37,20 +43,22 @@ spring:
   # 本地私有配置（密钥等不入 git；文件不存在时自动跳过）
   config:
     import: "optional:file:E:/buyyd数据缓存/application-local.yml"
-
-
+  # 上传上限：论文 Word 等大文件（Spring Boot 默认单文件仅 1MB，必须显式放开）
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 40MB
+  # 前端静态资源：优先工作区最新构建（npm run build 后刷新即可），classpath 兜底
   web:
     resources:
-      static-locations: classpath:/static-vue/
-      # 开发/演示环境禁用静态资源缓存，避免改了前端却仍加载旧文件
+      static-locations: "file:E:/智学选课/智学选课/src/main/resources/static-vue/, classpath:/static-vue/"
       cache:
         cachecontrol:
           no-store: true
           no-cache: true
           must-revalidate: true
           max-age: 0
-
-  # JPA
+  # JPA 自动建表：新增实体无需手工 DDL
   jpa:
     hibernate:
       ddl-auto: update
@@ -59,10 +67,21 @@ spring:
       hibernate:
         format_sql: true
     defer-datasource-initialization: true
-
-
   mvc:
     static-path-pattern: /**
+
+# ===== 文件存储（全部落盘到 E:/ai文件 图片缓存，数据库只存 URL/路径，不再膨胀）=====
+zhixue:
+  upload:
+    # 毕业设计论文 / 里程碑附件（GraduateWorkspaceService）
+    path: E:/ai文件 图片缓存/papers
+    # 公告附件（GraduateWorkspaceController 公告上传）
+    anno-path: E:/ai文件 图片缓存/announcements
+  chat:
+    # AI 助手聊天图片（ChatImageController 上传，/files/chat/** 静态直链访问）
+    image-path: E:/ai文件 图片缓存/chat-images
+    # AI 助手通用附件：Word/txt 等（ChatFileController 上传，同名静态前缀）
+    file-path: E:/ai文件 图片缓存/chat-files
 
 
 ---
@@ -76,6 +95,10 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: root
     password: ghy702400
+    # 连接池扩容:默认 10 连接在 300 并发选课下会与 OSIV 互相等待造成冻结
+    hikari:
+      maximum-pool-size: 30
+      connection-timeout: 10000
   jpa:
     database-platform: org.hibernate.dialect.MySQLDialect
 

@@ -49,9 +49,11 @@ public class CourseController {
                     .toList();
         }
         Map<String, Object> ratings = reviewService.allRatings();
+        // 学生视角按「本学期」统计报名/余量：历史学期的报名记录保留但不挤占新学期名额
+        Integer semesterNo = enrollmentService.currentSemesterOf(userId);
         List<Map<String, Object>> all = new ArrayList<>();
         for (Course c : courses) {
-            all.add(courseToMap(c, userId, round, ratings));
+            all.add(courseToMap(c, userId, round, ratings, semesterNo));
         }
         // 排序口径与前端本地排序一致（迁移到服务端后跨页排序才正确）
         if ("competition".equals(sort)) {
@@ -192,6 +194,10 @@ public class CourseController {
 
 
     private Map<String, Object> courseToMap(Course c, Long userId, int round, Map<String, Object> ratings) {
+        return courseToMap(c, userId, round, ratings, enrollmentService.currentSemesterOf(userId));
+    }
+
+    private Map<String, Object> courseToMap(Course c, Long userId, int round, Map<String, Object> ratings, Integer semesterNo) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", c.getId());
         m.put("name", c.getName());
@@ -213,10 +219,10 @@ public class CourseController {
             m.put("prereqId", c.getPrereqId());
             m.put("prereqName", pre != null ? pre.getName() : null);
         }
-        m.put("stat", enrollmentService.courseStat(c.getId(), round));
-        m.put("oversubscribed", enrollmentService.isOversubscribed(c.getId(), round));
-        m.put("full", waitlistService.isFull(c.getId(), round));
-        m.put("guide", enrollmentService.pointsGuide(c.getId(), round));
+        m.put("stat", enrollmentService.courseStat(c.getId(), round, semesterNo));
+        m.put("oversubscribed", enrollmentService.isOversubscribed(c.getId(), round, semesterNo));
+        m.put("full", waitlistService.isFull(c.getId(), round, userId));
+        m.put("guide", enrollmentService.pointsGuide(c.getId(), round, semesterNo));
         if (userId != null) {
             var enr = enrollmentService.getEnrollment(userId, c.getId(), round);
             m.put("myStatus", enr != null ? enr.getStatus() : null);

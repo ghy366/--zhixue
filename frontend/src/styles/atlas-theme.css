@@ -1,0 +1,489 @@
+/* ==========================================================================
+   ATLAS / 学域星图主题 · 全站覆盖层
+   依据系统名「智学选课」：课程即星辰，选课即连线。
+   加载顺序：element-plus/index.css → original.css → atlas-theme.css（本文件）
+   原则：只覆盖设计变量与视觉层，不改结构 / 交互 / 业务逻辑。
+   登录页 Login.vue 自带同款色板，此处不重复作用。
+   ========================================================================== */
+
+/* ---------- 1. 设计变量：星图色板 ---------- */
+html[data-theme="dark"],
+html:not([data-theme="dark"]) {
+  --atlas-night: #0a1621;
+  --atlas-ink: #0f2430;
+  --atlas-jade: #74e4c4;
+  --atlas-jade-deep: #2f9c8c;
+  --atlas-gold: #e7c58c;
+  --atlas-paper: #eaf4f1;
+  --atlas-mist: #93aab2;
+  --atlas-line: rgba(174, 214, 214, .16);
+  --atlas-line-strong: rgba(174, 214, 214, .3);
+  --atlas-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif;
+  --atlas-mono: "DIN Alternate", "Bahnschrift", "Consolas", ui-monospace, "Courier New", monospace;
+}
+
+html[data-theme="dark"] {
+  --primary: #74e4c4;
+  --primary-light: #9df0d7;
+  --primary-dark: #4fc5aa;
+  --primary-deep: #2f9c8c;
+  --primary-bg: rgba(116, 228, 196, .12);
+  --green-grad: linear-gradient(135deg, #4fc5aa, #2f9c8c);
+  --accent: #e7c58c;
+  --success: #63d8ae;
+  --warning: #e7c58c;
+  --danger: #ff8a7a;
+  --glass-bg: rgba(15, 36, 48, .76);
+  --glass-border: rgba(174, 214, 214, .18);
+  --glass-shadow: 0 14px 38px rgba(2, 10, 16, .48);
+  --glass-lite-bg: rgba(20, 44, 57, .86);
+  --glass-lite-border: rgba(174, 214, 214, .12);
+  --glass-lite-shadow: 0 5px 18px rgba(2, 10, 16, .36);
+  --text: #eaf4f1;
+  --text-light: #b3c7c9;
+  --text-lighter: #8ba3ab;
+  --border: rgba(174, 214, 214, .16);
+  --bg: #0a1621;
+  --card: #0f2430;
+  --card-bg: #0f2430;
+  --card-bg-2: #142c39;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow: 0 2px 6px rgba(2, 10, 16, .4);
+  --shadow-md: 0 10px 26px rgba(2, 10, 16, .44);
+  --shadow-lg: 0 22px 52px rgba(2, 10, 16, .56);
+  --green-text: #74e4c4;
+  --green-text-strong: #9df0d7;
+  --table-head-bg: #142c39;
+  --grid-line: rgba(174, 214, 214, .1);
+
+  /* Element Plus 对齐青玉：亮底按钮一律深色字 */
+  --el-color-primary: #74e4c4;
+  --el-color-primary-light-3: #8ce9d0;
+  --el-color-primary-light-5: #a9f0d8;
+  --el-color-primary-light-7: rgba(116, 228, 196, .36);
+  --el-color-primary-light-8: rgba(116, 228, 196, .22);
+  --el-color-primary-light-9: rgba(116, 228, 196, .12);
+  --el-color-primary-dark-2: #4fc5aa;
+  --el-color-success: #63d8ae;
+  --el-color-warning: #e7c58c;
+  --el-color-danger: #ff8a7a;
+  --el-color-error: #ff8a7a;
+  --el-bg-color: #0f2430;
+  --el-bg-color-page: #0a1621;
+  --el-bg-color-overlay: #0f2430;
+  --el-text-color-primary: #eaf4f1;
+  --el-text-color-regular: #c5d7d7;
+  --el-text-color-secondary: #93aab2;
+  --el-text-color-placeholder: #6f8a93;
+  --el-border-color: rgba(174, 214, 214, .18);
+  --el-border-color-light: rgba(174, 214, 214, .13);
+  --el-border-color-lighter: rgba(174, 214, 214, .09);
+  --el-fill-color-blank: #0f2430;
+  --el-fill-color-light: #142c39;
+  --el-mask-color: rgba(4, 12, 19, .76);
+}
+
+/* ---------- 2. 日间：宣纸底 + 深墨字，仍是同一套星图语言 ---------- */
+html:not([data-theme="dark"]) {
+  --primary: #1f8f7c;
+  --primary-light: #35a892;
+  --primary-dark: #167462;
+  --primary-deep: #105c4f;
+  --primary-bg: rgba(31, 143, 124, .1);
+  --green-grad: linear-gradient(135deg, #35a892, #167462);
+  --accent: #a67c34;
+  --success: #16805f;
+  --warning: #a67c34;
+  --danger: #c85346;
+  --glass-bg: rgba(250, 253, 251, .86);
+  --glass-border: rgba(26, 58, 62, .14);
+  --glass-shadow: 0 10px 30px rgba(26, 58, 62, .1);
+  --glass-lite-bg: rgba(255, 255, 255, .92);
+  --glass-lite-border: rgba(26, 58, 62, .1);
+  --glass-lite-shadow: 0 3px 10px rgba(26, 58, 62, .08);
+  --text: #17343b;
+  --text-light: #42636a;
+  --text-lighter: #6b878c;
+  --border: rgba(26, 58, 62, .14);
+  --bg: #f1f6f3;
+  --card: #fbfdfb;
+  --card-bg: #fbfdfb;
+  --card-bg-2: #e9f1ee;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --green-text: #1f8f7c;
+  --green-text-strong: #167462;
+  --table-head-bg: #e9f1ee;
+  --grid-line: rgba(26, 58, 62, .1);
+
+  --el-color-primary: #1f8f7c;
+  --el-color-primary-light-3: #35a892;
+  --el-color-primary-light-5: #63bda9;
+  --el-color-primary-light-7: rgba(31, 143, 124, .3);
+  --el-color-primary-light-8: rgba(31, 143, 124, .18);
+  --el-color-primary-light-9: rgba(31, 143, 124, .1);
+  --el-color-primary-dark-2: #167462;
+  --el-color-success: #16805f;
+  --el-color-warning: #a67c34;
+  --el-color-danger: #c85346;
+  --el-border-color: rgba(26, 58, 62, .18);
+  --el-fill-color-light: #e9f1ee;
+}
+
+/* ---------- 3. 全站氛围底衬：极淡的星云光，不再有网格与扫描线 ---------- */
+html[data-theme="dark"] body { background: #0a1621; }
+html[data-theme="dark"] body::before {
+  z-index: -1; opacity: 1; pointer-events: none;
+  background:
+    radial-gradient(560px 500px at 14% 2%, rgba(116, 228, 196, .07), transparent 72%),
+    radial-gradient(680px 560px at 88% 92%, rgba(231, 197, 140, .045), transparent 74%),
+    linear-gradient(165deg, #0a1621 0%, #0d1f2b 55%, #0a1621 100%);
+  background-size: auto;
+  mask-image: none;
+}
+html:not([data-theme="dark"]) body { background: #f1f6f3; }
+html:not([data-theme="dark"]) body::before {
+  z-index: -1; opacity: .85; pointer-events: none;
+  background:
+    radial-gradient(560px 500px at 14% 2%, rgba(31, 143, 124, .1), transparent 72%),
+    radial-gradient(620px 520px at 88% 90%, rgba(166, 124, 52, .06), transparent 74%),
+    linear-gradient(165deg, #f1f6f3 0%, #e8f1ec 55%, #f1f6f3 100%);
+  background-size: auto;
+  mask-image: none;
+}
+/* 原主题残留的扫描线：彻底关掉 */
+body::after { content: none !important; opacity: 0 !important; }
+
+/* ---------- 4. 字体：标题衬线、数字等宽，不用终端全大写 ---------- */
+.page-title,
+.stat-value,
+.ark-mono,
+.ark-brief .ab-clock,
+.ab-meta,
+.nav-code {
+  font-variant-numeric: tabular-nums;
+}
+.page-title { font-family: var(--atlas-serif); font-weight: 600; letter-spacing: .08em; text-transform: none; font-size: 16px; }
+.stat-value, .ark-mono, .ark-brief .ab-clock, .ab-meta, .nav-code { font-family: var(--atlas-mono); }
+
+/* ---------- 5. 侧边栏 ---------- */
+html[data-theme="dark"] .sidebar {
+  background: linear-gradient(180deg, rgba(12, 30, 41, .98), rgba(9, 22, 32, .98));
+  border-right: 1px solid var(--atlas-line-strong);
+  box-shadow: 10px 0 38px rgba(2, 10, 16, .34);
+}
+html:not([data-theme="dark"]) .sidebar {
+  background: linear-gradient(180deg, #fbfdfb, #e9f1ee);
+  border-right: 1px solid rgba(26, 58, 62, .14);
+}
+/* 右缘：一段青玉轨道细线，不再是黄黑警示条 */
+.sidebar::after {
+  content: ""; position: absolute; top: 0; right: -1px; width: 2px; height: 132px;
+  background: linear-gradient(180deg, transparent, var(--atlas-jade) 24%, var(--atlas-gold) 78%, transparent);
+  opacity: .72; pointer-events: none;
+}
+.sidebar-logo { position: relative; padding: 18px 18px 16px; border-bottom: 1px solid var(--atlas-line); }
+.sidebar-logo .logo-icon {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(116, 228, 196, .9) 0 14%, rgba(116, 228, 196, .16) 16% 44%, transparent 46%),
+              linear-gradient(135deg, rgba(116, 228, 196, .18), rgba(231, 197, 140, .12));
+  border: 1px solid rgba(116, 228, 196, .5);
+  color: var(--atlas-jade);
+  font-family: var(--atlas-serif); font-weight: 600; font-size: 16px;
+  box-shadow: 0 0 20px rgba(116, 228, 196, .16);
+  clip-path: none;
+}
+.sidebar-logo .logo-text { font-family: var(--atlas-serif); font-size: 16px; letter-spacing: .16em; }
+
+.nav-item {
+  border-radius: 10px;
+  font-size: 13px;
+  letter-spacing: .02em;
+  position: relative;
+  transition: background .2s, color .2s, transform .2s;
+}
+.nav-item::before {
+  content: ""; position: absolute; left: 0; top: 22%; bottom: 22%;
+  width: 2px; border-radius: 2px; background: var(--atlas-jade); opacity: 0;
+  transition: opacity .2s, top .2s, bottom .2s;
+}
+html[data-theme="dark"] .nav-item:hover { background: rgba(116, 228, 196, .08); color: var(--atlas-jade); }
+html:not([data-theme="dark"]) .nav-item:hover { background: rgba(31, 143, 124, .09); color: #1f8f7c; }
+.nav-item:hover::before { opacity: .5; }
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(116, 228, 196, .16), rgba(116, 228, 196, .02));
+  color: var(--atlas-jade);
+  font-weight: 700;
+  clip-path: none;
+}
+html:not([data-theme="dark"]) .nav-item.active { color: #1f8f7c; }
+.nav-item.active::before { opacity: 1; top: 10%; bottom: 10%; width: 3px; }
+/* AI 入口：保留冷青，但换成星图光晕 */
+html[data-theme="dark"] .sidebar-nav .nav-item.nav-item-ai {
+  color: var(--atlas-jade);
+  border-color: rgba(116, 228, 196, .34);
+  background: linear-gradient(135deg, rgba(116, 228, 196, .1), rgba(116, 228, 196, .02));
+}
+html[data-theme="dark"] .nav-item-ai .nav-icon { color: var(--atlas-jade); }
+html[data-theme="dark"] .sidebar-nav .nav-item.nav-item-ai:hover {
+  border-color: rgba(116, 228, 196, .6);
+  background: rgba(116, 228, 196, .14);
+}
+html:not([data-theme="dark"]) .sidebar-nav .nav-item.nav-item-ai {
+  color: #1f8f7c; border-color: rgba(31, 143, 124, .35);
+  background: linear-gradient(135deg, rgba(31, 143, 124, .09), rgba(31, 143, 124, .02));
+}
+.nav-divider { background: var(--atlas-line); margin: 10px 8px; }
+
+.nav-code { margin-left: auto; font-size: 9.5px; letter-spacing: .08em; color: var(--atlas-mist); opacity: .65; white-space: nowrap; text-transform: none; }
+.nav-item.active .nav-code { color: var(--atlas-jade); opacity: .9; }
+.sidebar.collapsed .nav-code { display: none; }
+
+/* 分组标签：一颗星 + 一条细线。
+   flex-shrink:0 防止菜单超长时分组行被压扁、侧栏无法滚动。 */
+.ark-group {
+  display: flex; align-items: center; gap: 8px;
+  flex: 0 0 auto; height: 20px;
+  margin: 14px 10px 4px; color: var(--primary, #16856a);
+  font-family: var(--atlas-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .08em; text-transform: none;
+  white-space: nowrap; overflow: hidden;
+}
+.ark-group::after { content: ""; flex: 1; height: 1px; background: var(--atlas-line); opacity: .8; }
+.ark-group i { width: 5px; height: 5px; border-radius: 50%; background: var(--atlas-jade); box-shadow: 0 0 8px var(--atlas-jade); flex: 0 0 auto; }
+.sidebar.collapsed .ark-group { justify-content: center; margin: 8px 0 2px; }
+.sidebar.collapsed .ark-group span { display: none; }
+.sidebar.collapsed .ark-group::after { display: none; }
+
+/* 底部用户卡片 */
+html[data-theme="dark"] .side-user { background: rgba(234, 244, 241, .035); border-color: var(--atlas-line); border-radius: 12px; }
+.side-user:hover, .side-user.menu-open,
+.sidebar.collapsed .side-user:hover, .sidebar.collapsed .side-user.menu-open {
+  background: rgba(116, 228, 196, .09); border-color: rgba(116, 228, 196, .36);
+}
+.side-user-name { font-family: var(--atlas-serif); letter-spacing: .04em; }
+html[data-theme="dark"] .side-avatar { background: linear-gradient(135deg, #4fc5aa, #2f9c8c); color: #08201d; border-radius: 50%; }
+html[data-theme="dark"] .user-menu,
+html[data-theme="dark"] .notif-panel { background: #0f2430; border-color: var(--atlas-line-strong); border-radius: 14px; }
+.um-item:hover { background: rgba(116, 228, 196, .1); color: var(--atlas-jade); }
+.um-item:hover .icon { color: var(--atlas-jade); }
+.notif-tab.on { background: rgba(116, 228, 196, .12); border-color: rgba(116, 228, 196, .42); color: var(--atlas-jade); border-radius: 9px; }
+.notif-item.unread { background: rgba(116, 228, 196, .06); }
+.notif-item.unread .notif-title::before { background: var(--atlas-jade); border-radius: 50%; }
+html[data-theme="dark"] .notif-ann { background: rgba(116, 228, 196, .08); border-color: rgba(116, 228, 196, .28); color: var(--atlas-jade); border-radius: 10px; }
+
+/* ---------- 6. 顶栏 ---------- */
+html[data-theme="dark"] .topbar {
+  background: rgba(12, 30, 41, .84);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--atlas-line);
+}
+html:not([data-theme="dark"]) .topbar { background: rgba(251, 253, 251, .9); border-bottom: 1px solid rgba(26, 58, 62, .12); }
+.topbar::after {
+  content: ""; position: absolute; left: 0; bottom: -1px; width: 96px; height: 2px;
+  background: linear-gradient(90deg, var(--atlas-jade), transparent); pointer-events: none;
+}
+.topbar-right { gap: 14px; }
+.ark-top-reading {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--atlas-mono); font-size: 10.5px; letter-spacing: .1em;
+  color: var(--atlas-mist); white-space: nowrap;
+}
+.ark-top-reading b { color: var(--atlas-jade); font-weight: 600; }
+.ark-top-reading .ark-led {
+  width: 6px; height: 6px; border-radius: 50%; background: #63d8ae;
+  box-shadow: 0 0 0 3px rgba(99, 216, 174, .14); animation: atlasPulse 2.4s ease-in-out infinite;
+}
+@keyframes atlasPulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.ark-top-sep { width: 1px; height: 16px; background: var(--atlas-line); }
+
+.scroll-progress {
+  background: linear-gradient(90deg, var(--atlas-jade), rgba(116, 228, 196, .28)) !important;
+  border-radius: 0 !important; height: 2px !important;
+}
+
+/* ---------- 7. 卡片 / 面板 ---------- */
+.stat-card, .course-card, .cp-panel, .ds-panel, .section {
+  border: 1px solid var(--atlas-line);
+  border-radius: var(--radius);
+}
+html[data-theme="dark"] .stat-card,
+html[data-theme="dark"] .course-card { background: rgba(15, 36, 48, .86); }
+.stat-card { position: relative; }
+.stat-card::before {
+  content: ""; position: absolute; left: 18px; top: 0; width: 34px; height: 2px;
+  border-radius: 2px; background: linear-gradient(90deg, var(--atlas-jade), transparent); opacity: .9;
+}
+.stat-card::after {
+  content: ""; position: absolute; right: 16px; top: 16px;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--atlas-gold); box-shadow: 0 0 10px rgba(231, 197, 140, .6);
+  border-width: 0; border-style: none; border-color: transparent;
+}
+.stat-card:hover { border-color: rgba(116, 228, 196, .4); box-shadow: var(--shadow-md); }
+.stat-value { color: var(--atlas-jade); letter-spacing: .02em; }
+html:not([data-theme="dark"]) .stat-value { color: #1f8f7c; }
+.stat-icon { border-radius: 10px; }
+/* KPI 图标统一为青玉描边暗底 */
+html[data-theme="dark"] .stat-icon,
+html[data-theme="dark"] .stat-icon.blue,
+html[data-theme="dark"] .stat-icon.green,
+html[data-theme="dark"] .stat-icon.amber,
+html[data-theme="dark"] .stat-icon.purple {
+  background: rgba(116, 228, 196, .1);
+  color: var(--atlas-jade);
+  border: 1px solid rgba(116, 228, 196, .28);
+}
+html:not([data-theme="dark"]) .stat-icon,
+html:not([data-theme="dark"]) .stat-icon.blue,
+html:not([data-theme="dark"]) .stat-icon.green,
+html:not([data-theme="dark"]) .stat-icon.amber,
+html:not([data-theme="dark"]) .stat-icon.purple {
+  background: rgba(31, 143, 124, .1);
+  color: #1f8f7c;
+  border: 1px solid rgba(31, 143, 124, .28);
+}
+
+/* 标题栏：一颗小星而不是黄竖条 */
+.section-header::before,
+.ds-p-title::before,
+.cp-p-title::before {
+  content: ""; display: inline-block; width: 5px; height: 5px;
+  margin-right: 10px; border-radius: 50%;
+  background: var(--atlas-jade); box-shadow: 0 0 9px rgba(116, 228, 196, .6);
+  vertical-align: 2px;
+}
+
+/* ---------- 8. 表单 / 按钮 / 表格 ---------- */
+.form-input, textarea.form-input { border-radius: var(--radius-sm); border-color: var(--atlas-line); }
+.form-input:focus { border-color: var(--atlas-jade); box-shadow: 0 0 0 3px rgba(116, 228, 196, .12); }
+html[data-theme="dark"] .form-input { background: rgba(20, 44, 57, .8); }
+.btn { border-radius: var(--radius-sm); }
+.btn-primary { background: linear-gradient(110deg, #4fc5aa, #7fe9cb); color: #08201d; font-weight: 700; }
+.btn-primary:hover { filter: brightness(1.07); box-shadow: 0 8px 22px rgba(79, 197, 170, .28); }
+.btn-primary:disabled { background: rgba(116, 228, 196, .3); color: #08201d; }
+.btn-outline { color: var(--atlas-jade); border-color: rgba(116, 228, 196, .5); }
+.btn-outline:hover { background: rgba(116, 228, 196, .1); }
+.btn-success { background: #16805f; }
+
+.el-button--primary,
+.el-button--primary:hover,
+.el-button--primary:focus,
+.el-button--primary.is-active { color: #08201d; font-weight: 600; }
+html:not([data-theme="dark"]) .el-button--primary,
+html:not([data-theme="dark"]) .el-button--primary:hover,
+html:not([data-theme="dark"]) .el-button--primary:focus,
+html:not([data-theme="dark"]) .el-button--primary.is-active { color: #fff; }
+.el-button--primary.is-plain,
+.el-button--primary.is-text,
+.el-button--primary.is-link { color: var(--atlas-jade); }
+html:not([data-theme="dark"]) .el-button--primary.is-plain,
+html:not([data-theme="dark"]) .el-button--primary.is-text,
+html:not([data-theme="dark"]) .el-button--primary.is-link { color: #1f8f7c; }
+.el-button { border-radius: var(--radius-sm); }
+html[data-theme="dark"] .el-input__wrapper,
+html[data-theme="dark"] .el-textarea__inner,
+html[data-theme="dark"] .el-select__wrapper {
+  background-color: rgba(20, 44, 57, .82);
+  box-shadow: 0 0 0 1px var(--atlas-line) inset;
+  border-radius: var(--radius-sm);
+}
+html[data-theme="dark"] .el-dialog,
+html[data-theme="dark"] .el-drawer,
+html[data-theme="dark"] .el-card,
+html[data-theme="dark"] .el-table,
+html[data-theme="dark"] .el-table th.el-table__cell {
+  background: #0f2430;
+  border-color: var(--atlas-line);
+  border-radius: var(--radius);
+}
+html[data-theme="dark"] .el-table tr { background: #0f2430; }
+html[data-theme="dark"] .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell { background: #142c39; }
+html[data-theme="dark"] .el-drawer__header,
+html[data-theme="dark"] .el-dialog__title { color: var(--atlas-paper); }
+html[data-theme="dark"] .el-tag--primary { background: rgba(116, 228, 196, .14); border-color: rgba(116, 228, 196, .4); color: var(--atlas-jade); }
+html[data-theme="dark"] .el-switch.is-checked .el-switch__core { background: var(--atlas-jade); border-color: var(--atlas-jade); }
+html[data-theme="dark"] .el-checkbox__input.is-checked .el-checkbox__inner,
+html[data-theme="dark"] .el-radio__input.is-checked .el-radio__inner { background: var(--atlas-jade); border-color: var(--atlas-jade); }
+html[data-theme="dark"] .el-checkbox__input.is-checked + .el-checkbox__label { color: var(--atlas-jade); }
+html[data-theme="dark"] .el-pagination.is-background .el-pager li.is-active { background: var(--atlas-jade); color: #08201d; }
+
+/* ---------- 9. 滚动条 ---------- */
+html[data-theme="dark"] ::-webkit-scrollbar { width: 9px; height: 9px; }
+html[data-theme="dark"] ::-webkit-scrollbar-track { background: #0b1c27; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #234451; border: 2px solid #0b1c27; border-radius: 6px; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: var(--atlas-jade-deep); }
+
+/* ---------- 10. 通用装饰：细星轨，不再是警示条与角标 ---------- */
+.ark-hazard {
+  height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, var(--atlas-jade), rgba(116, 228, 196, .12), var(--atlas-gold), transparent);
+  opacity: .8;
+}
+.ark-corner {
+  position: absolute; width: 10px; height: 10px; pointer-events: none;
+  border-color: var(--atlas-jade); border-radius: 50%; border: 0;
+  background: var(--atlas-jade); box-shadow: 0 0 9px rgba(116, 228, 196, .65); opacity: .75;
+}
+.ark-corner.tl { left: -1px; top: -1px; }
+.ark-corner.br { right: -1px; bottom: -1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ark-top-reading .ark-led { animation: none; }
+}
+
+/* ---------- 11. 旧组件变量名兼容：--ark-* 全部映射到星图色板 ----------
+   历史组件（Dashboard / Chat / ArkHud / MainLayout）仍引用 --ark-y 等变量，
+   在这里统一收口，避免 fallback 回退到旧的警示黄。 */
+html[data-theme="dark"] {
+  --ark-bg: #0a1621;
+  --ark-panel: #0f2430;
+  --ark-panel-2: #142c39;
+  --ark-line: rgba(174, 214, 214, .16);
+  --ark-line-strong: rgba(174, 214, 214, .3);
+  --ark-txt: #eaf4f1;
+  --ark-dim: #93aab2;
+  --ark-y: #74e4c4;
+  --ark-y-soft: rgba(116, 228, 196, .14);
+  --ark-red: #ff8a7a;
+  --ark-cyan: #74e4c4;
+  --ark-mono: var(--atlas-mono);
+}
+html:not([data-theme="dark"]) {
+  --ark-bg: #f1f6f3;
+  --ark-panel: #fbfdfb;
+  --ark-panel-2: #e9f1ee;
+  --ark-line: rgba(26, 58, 62, .14);
+  --ark-line-strong: rgba(26, 58, 62, .24);
+  --ark-txt: #17343b;
+  --ark-dim: #42636a;
+  --ark-y: #1f8f7c;
+  --ark-y-soft: rgba(31, 143, 124, .12);
+  --ark-red: #c85346;
+  --ark-cyan: #1f8f7c;
+  --ark-mono: var(--atlas-mono);
+}
+
+/* 旧版「黄黑警示条 + 斜切角 + 扫描线」→ 星图细轨 + 圆角玻璃 */
+.ab-hazard {
+  height: 3px !important;
+  background: linear-gradient(90deg, var(--ark-y), rgba(116, 228, 196, .12), rgba(231, 197, 140, .6), transparent) !important;
+  opacity: .72 !important;
+}
+.ark-brief {
+  border-radius: 16px !important;
+  clip-path: none !important;
+  background: linear-gradient(115deg, rgba(15, 36, 48, .94), rgba(10, 24, 35, .86) 62%, rgba(20, 44, 57, .7)) !important;
+  box-shadow: 0 16px 40px rgba(2, 10, 16, .3) !important;
+}
+.ark-brief::before {
+  background-image: radial-gradient(circle at 18% 50%, rgba(116, 228, 196, .12), transparent 48%) !important;
+  background-size: auto !important;
+  mask-image: none !important;
+}
+.ark-brief::after { display: none !important; }
+.ab-role { border-radius: 8px !important; clip-path: none !important; }
+html:not([data-theme="dark"]) .stats-page.liquid {
+  background: linear-gradient(180deg, #f1f6f3 0%, #e8f1ec 50%, #f1f6f3 100%) !important;
+}

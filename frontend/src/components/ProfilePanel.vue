@@ -79,7 +79,7 @@
 
     <!-- 底部操作栏 -->
     <div class="pp-footer">
-      <el-button plain @click="confirmLogout">{{ t('退出登录') }}</el-button>
+      <el-button plain @click="confirmLogout">{{ t('退出星域') }}</el-button>
       <el-button type="primary" :disabled="!dirty" :loading="saving" @click="save">{{ t('保存修改') }}</el-button>
     </div>
   </div>
@@ -221,8 +221,8 @@ async function doChangePwd() {
 }
 
 function confirmLogout() {
-  ElMessageBox.confirm(t('退出后将返回登录页'), t('确定退出登录？'), {
-    confirmButtonText: t('退出登录'),
+  ElMessageBox.confirm(t('退出后将返回登录页'), t('确定退出星域？'), {
+    confirmButtonText: t('退出星域'),
     cancelButtonText: t('取消'),
     type: 'warning',
   }).then(() => emit('logout')).catch(() => {})

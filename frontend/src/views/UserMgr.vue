@@ -3,10 +3,19 @@
     <div class="section">
       <div class="section-header">
         <div class="section-title" v-html="svgIcon('users') + ' ' + t('用户管理（共 {n} 人）', { n: total })"></div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
           <el-input v-model="kw" :placeholder="t('搜索学号/姓名')" size="default" clearable style="width:200px" />
-          <el-select v-model="roleFilter" :placeholder="t('全部角色')" clearable size="default" style="width:130px">
+          <el-select v-model="roleFilter" :placeholder="t('全部角色')" clearable size="default" style="width:120px">
             <el-option :label="t('学生')" value="student" /><el-option :label="t('教师')" value="teacher" /><el-option :label="t('管理员')" value="admin" />
+          </el-select>
+          <el-select v-model="collegeFilter" :placeholder="t('全部学院')" clearable filterable size="default" style="width:150px">
+            <el-option v-for="c in collegeOpts" :key="c" :label="c" :value="c" />
+          </el-select>
+          <el-select v-model="majorFilter" :placeholder="t('全部专业')" clearable filterable size="default" style="width:150px" :disabled="!collegeFilter">
+            <el-option v-for="m in majorOpts" :key="m" :label="m" :value="m" />
+          </el-select>
+          <el-select v-model="gradeFilter" :placeholder="t('全部年级')" clearable size="default" style="width:120px">
+            <el-option v-for="g in gradeOpts" :key="g" :label="t('{n} 级', { n: g })" :value="g" />
           </el-select>
           <button class="btn btn-primary btn-sm" @click="openDialog(null)">{{ t('+ 新增用户') }}</button>
         </div>
@@ -88,6 +97,34 @@ const total = ref(0)
 const kw = ref('')
 const roleFilter = ref<string | null>(null)
 const dlg = ref(false)
+// —— 学院/专业/年级筛选:选项来自 register-options(专业字典 ∪ 学生档案),学院→专业级联 ——
+const collegeFilter = ref<string | null>(null)
+const majorFilter = ref<string | null>(null)
+const gradeFilter = ref<number | null>(null)
+const optLoaded = ref(false)
+const optColleges = ref<string[]>([])
+const optMajorsByCollege = ref<Record<string, string[]>>({})
+const optGrades = ref<number[]>([])
+const collegeOpts = computed(() => (optLoaded.value && optColleges.value.length ? optColleges.value : COLLEGES))
+const majorOpts = computed(() => {
+  if (collegeFilter.value) return optMajorsByCollege.value[collegeFilter.value] || []
+  // 未选学院:聚合全部学院的专业并去重排序
+  const all = new Set<string>()
+  for (const list of Object.values(optMajorsByCollege.value)) list.forEach(m => all.add(m))
+  return [...all].sort((a, b) => a.localeCompare(b, 'zh'))
+})
+const gradeOpts = computed(() => (optGrades.value.length ? optGrades.value : Array.from({ length: 6 }, (_, i) => 2021 + i)))
+async function loadFilterOptions() {
+  try {
+    const r: any = await http.get('/auth/register-options')
+    if (r?.success && r.data) {
+      optColleges.value = r.data.colleges || []
+      optMajorsByCollege.value = r.data.majors || {}
+      optGrades.value = r.data.grades || []
+      optLoaded.value = true
+    }
+  } catch { /* 选项加载失败时用兜底常量,不影响主列表 */ }
+}
 const loading = ref(false)
 const loadError = ref('')
 let reqSeq = 0
@@ -113,6 +150,8 @@ watch(kw, () => {
   kwTimer = setTimeout(() => { page.value === 1 ? load() : (page.value = 1) }, 300)
 })
 watch(roleFilter, () => { page.value === 1 ? load() : (page.value = 1) })
+watch(collegeFilter, () => { if (majorFilter.value) majorFilter.value = null; else { page.value === 1 ? load() : (page.value = 1) } })
+watch([majorFilter, gradeFilter], () => { page.value === 1 ? load() : (page.value = 1) })
 watch(page, load)
 watch(totalPages, tp => { if (page.value > tp) page.value = tp })
 const roleLabel = (r: string) => ({ student: t('学生'), teacher: t('教师'), admin: t('管理员') } as any)[r] || r
@@ -124,6 +163,9 @@ async function load() {
   try {
     const params: any = { page: page.value, size: pageSize }
     if (roleFilter.value) params.role = roleFilter.value
+    if (collegeFilter.value) params.college = collegeFilter.value
+    if (majorFilter.value) params.major = majorFilter.value
+    if (gradeFilter.value) params.grade = gradeFilter.value
     if (kw.value.trim()) params.keyword = kw.value.trim()
     const r: any = await http.get('/admin/users', { params })
     if (seq !== reqSeq) return   // 丢弃过期响应，避免旧请求覆盖新结果
@@ -167,7 +209,7 @@ async function resetPwd(u: any) {
   try { await ElMessageBox.confirm(t('确定重置「{name}」的密码为 123456？', { name: u.name }), t('提示'), { type: 'warning', confirmButtonText: t('确定'), cancelButtonText: t('取消') }) } catch { return }
   try { await http.put(`/admin/users/${u.id}/reset-password`, { newPassword: await encryptPassword('123456') }); ElMessage.success(t('已重置')) } catch (e: any) { ElMessage.error(e?.message || t('重置失败')) }
 }
-onMounted(load)
+onMounted(() => { load(); loadFilterOptions() })
 </script>
 
 <style scoped>

@@ -25,6 +25,7 @@ public class RoundScheduleService {
 
     @Autowired private RoundScheduleRepository repo;
     @Autowired private SystemConfigRepository sysRepo;
+    @Autowired private CapacityService capacityService;
 
     /** 确保 1..3 三条记录存在，按轮次号升序返回 */
     public List<RoundSchedule> list() {
@@ -142,11 +143,24 @@ public class RoundScheduleService {
                 || !eq(c.getRoundOpenAt(), newOpenAt)
                 || !eq(c.getRoundCloseAt(), newCloseAt);
         if (changed) {
+            // 进入「第 1 轮开放」= 新选课周期开始：先把上一周期残留的报名占位清空，
+            // 让全部课程容量回到满额（成绩 grades 不动）。手动开启在 SystemController 里同步做一次。
+            boolean enteringRound1 = newOpen
+                    && Integer.valueOf(1).equals(newRound)
+                    && !(Boolean.TRUE.equals(c.getRoundOpen()) && Integer.valueOf(1).equals(c.getCurrentRound()));
             c.setCurrentRound(newRound);
             c.setRoundOpen(newOpen);
             c.setRoundOpenAt(newOpenAt);
             c.setRoundCloseAt(newCloseAt);
             c = sysRepo.save(c);
+            if (enteringRound1) {
+                try {
+                    capacityService.releaseAll();
+                } catch (Exception e) {
+                    org.slf4j.LoggerFactory.getLogger(RoundScheduleService.class)
+                            .warn("第 1 轮自动开放时释放容量失败：{}", e.getMessage());
+                }
+            }
         }
         return c;
     }

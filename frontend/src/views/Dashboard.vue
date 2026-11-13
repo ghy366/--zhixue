@@ -1,15 +1,30 @@
 <template>
   <div class="stats-page liquid">
-    <!-- ===== 欢迎条（紧凑单行，三端通用） ===== -->
-    <div class="home-hero home-hero-slim" v-if="!bigScreen">
-      <div class="home-hero-main">
-        <div class="home-hero-hello">{{ t('欢迎回来，') }}<b>{{ auth.user?.name || t('同学') }}</b></div>
-        <div class="home-hero-tip">{{ roleLabel }} · {{ roleTip }}</div>
+    <!-- ===== 学域星图简报（三端通用 · 含 three.js 3D 核心） ===== -->
+    <div class="ark-brief" v-if="!bigScreen">
+      <span class="ark-corner tl" aria-hidden="true" /><span class="ark-corner br" aria-hidden="true" />
+      <div class="ab-left">
+        <div class="ab-kicker">ZHIXUE · COURSE ATLAS <em>// {{ briefCode }}</em></div>
+        <div class="ab-title">
+          <span class="ab-mark">◤</span>
+          <b>{{ t('学习总览') }}</b>
+          <span class="ab-role">{{ t(roleTactical) }}</span>
+        </div>
+        <div class="ab-hello">{{ t('欢迎回来，') }}<b>{{ auth.user?.name || t('同学') }}</b><span class="ab-slash">/</span>{{ roleTip }}</div>
+        <div class="ab-meta">
+          <span class="ab-led" aria-hidden="true" />{{ t('系统在线') }}
+          <i aria-hidden="true" />
+          <span>ID / {{ auth.user?.no || '—' }}</span>
+          <i aria-hidden="true" />
+          <span>轮次 / {{ systemConfig.currentRound || '—' }}</span>
+          <i aria-hidden="true" />
+          <span :class="systemConfig.roundOpen ? 'ab-on' : 'ab-off'">{{ systemConfig.roundOpen ? t('选课进行中') : t('选课未开放') }}</span>
+          <i aria-hidden="true" />
+          <span class="ab-clock">{{ nowText.slice(-8) }}</span>
+        </div>
       </div>
-      <div v-if="isStudent && systemConfig.currentRound" class="home-hero-round">
-        <span class="hhr-num">{{ t('第 {n} 轮', { n: systemConfig.currentRound }) }}</span>
-        <span class="hhr-status" :class="systemConfig.roundOpen ? 'open' : 'closed'">{{ systemConfig.roundOpen ? t('选课进行中') : t('选课已关闭') }}</span>
-      </div>
+      <div class="ab-right"><ArkHud /></div>
+      <div class="ab-hazard" aria-hidden="true" />
     </div>
 
     <!-- ===== 教师 / 管理员 KPI（唯一一处） ===== -->
@@ -324,6 +339,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, onUnmounted } from
 import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
 import EChart from '@/components/charts/EChart.vue'
+import ArkHud from '@/components/ArkHud.vue'
 import { PALETTE, TOOLTIP } from '@/utils/echarts'
 import { useCountUp } from '@/utils/useCountUp'
 import { t } from '@/i18n'
@@ -337,11 +353,12 @@ const isStudent = computed(() => role.value === 'student')
 const isTeacher = computed(() => role.value === 'teacher')
 const isAdmin = computed(() => role.value === 'admin')
 
-const roleLabel = computed(() => isStudent.value ? t('同学') : isTeacher.value ? t('老师') : t('管理员'))
+const roleTactical = computed(() => isStudent.value ? t('同学') : isTeacher.value ? t('老师') : t('管理员'))
+const briefCode = computed(() => isStudent.value ? 'STD' : isTeacher.value ? 'TCH' : 'ADM')
 const roleTip = computed(() =>
-  isStudent.value ? t('愿你今天选到心仪的好课 ✨') :
-  isTeacher.value ? t('愿你今天工作顺利 ✨') :
-  t('高效管理选课系统 ✨')
+  isStudent.value ? t('本学期课程已就绪，可随时发起选课') :
+  isTeacher.value ? t('授课安排已同步，等待下一轮选课') :
+  t('星图数据链路正常，管理权限已确认')
 )
 
 // ===== API 数据 =====
@@ -981,6 +998,91 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ===== 学域星图简报（三端共用头部） ===== */
+.ark-brief {
+  position: relative; display: flex; align-items: stretch; gap: 12px;
+  min-height: 198px; margin-bottom: 22px; overflow: hidden;
+  background: linear-gradient(100deg, rgba(9, 13, 18, .97) 0%, rgba(15, 21, 28, .9) 58%, rgba(9, 13, 18, .62) 100%);
+  border: 1px solid var(--ark-line-strong, rgba(210, 225, 235, .26));
+  border-radius: 3px;
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .28);
+}
+.ark-brief::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(116, 228, 196, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(116, 228, 196, .035) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, .7), transparent 78%);
+}
+.ark-brief::after {
+  content: ''; position: absolute; left: 0; right: 0; top: -60%; height: 60%;
+  background: linear-gradient(180deg, transparent, rgba(116, 228, 196, .06), transparent);
+  animation: abScan 7s linear infinite; pointer-events: none;
+}
+@keyframes abScan { 0% { transform: translateY(0); } 100% { transform: translateY(280%); } }
+
+.ab-left { position: relative; z-index: 2; flex: 1; min-width: 0; padding: 20px 8px 22px 26px; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+.ab-kicker {
+  font-family: var(--ark-mono); font-size: 9.5px; letter-spacing: .18em;
+  color: var(--ark-dim, #8b98a4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ab-kicker em { font-style: normal; color: var(--ark-y, #74e4c4); }
+.ab-title { display: flex; align-items: center; gap: 12px; line-height: 1.1; }
+.ab-title b { font-size: 30px; font-weight: 800; letter-spacing: .06em; color: #eef3f6; }
+.ab-mark { color: var(--ark-y, #74e4c4); font-size: 17px; line-height: 1; }
+.ab-role {
+  font-family: var(--ark-mono); font-size: 10px; letter-spacing: .12em;
+  padding: 3px 9px; color: #0a0d10; background: var(--ark-y, #74e4c4);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%);
+}
+.ab-hello { font-size: 13px; color: #c3cdd6; }
+.ab-hello b { color: var(--ark-y, #74e4c4); font-weight: 700; }
+.ab-slash { margin: 0 10px; color: var(--ark-line-strong, rgba(210, 225, 235, .26)); }
+.ab-meta {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  margin-top: 4px; font-family: var(--ark-mono); font-size: 10.5px;
+  letter-spacing: .08em; color: var(--ark-dim, #8b98a4);
+}
+.ab-meta i { width: 1px; height: 12px; background: var(--ark-line-strong, rgba(210, 225, 235, .26)); }
+.ab-meta .ab-led {
+  width: 7px; height: 7px; border-radius: 50%; background: #4ad6a0;
+  box-shadow: 0 0 0 3px rgba(74, 214, 160, .15); animation: arkPulse 2.2s ease-in-out infinite;
+}
+.ab-meta .ab-on { color: var(--ark-y, #74e4c4); }
+.ab-meta .ab-off { color: var(--ark-red, #ff4a3d); }
+.ab-meta .ab-clock { color: #eef3f6; font-variant-numeric: tabular-nums; }
+
+.ab-right { position: relative; z-index: 1; flex: 0 0 196px; width: 196px; min-height: 198px; margin-right: 12px; align-self: center; }
+.ab-hazard {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 5px;
+  background: repeating-linear-gradient(-45deg, var(--ark-y, #74e4c4) 0 9px, #151a10 9px 18px);
+  opacity: .68;
+}
+
+/* 日间模式：简报保持深色质感，页面底色改宣纸白 */
+html:not([data-theme="dark"]) .stats-page.liquid {
+  background: linear-gradient(180deg, #e8ebe6 0%, #f0f2ec 50%, #e8ebe6 100%);
+}
+
+@media (max-width: 900px) {
+  .ab-right { flex-basis: 150px; width: 150px; }
+  .ab-title b { font-size: 25px; }
+}
+@media (max-width: 760px) {
+  .ark-brief { min-height: 172px; }
+  .ab-left { padding: 18px 116px 20px 18px; }
+  .ab-right { position: absolute; right: 4px; top: 18px; width: 122px; height: 122px; min-height: 0; flex: none; opacity: .62; }
+  .ab-right :deep(.ark-hud) { min-height: 0; }
+  .ab-title b { font-size: 22px; }
+  .ab-kicker { font-size: 8px; letter-spacing: .1em; }
+  .ab-meta { gap: 7px; font-size: 9.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ark-brief::after, .ab-meta .ab-led { animation: none; }
+}
+
 /* ===== 驾驶舱 ===== */
 /* 管理员统计卡口径说明 */
 .stat-sub { font-size: 12px; color: var(--text-light); margin-top: 2px; }

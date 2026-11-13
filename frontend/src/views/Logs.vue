@@ -7,7 +7,8 @@
         <span class="card-aura" aria-hidden="true" />
         <div class="stat-pro-top">
           <div class="stat-icon blue" v-html="svgIcon('bar-chart')" />
-          <span class="stat-delta up">+{{ deltaPct.toFixed(1) }}%</span>
+          <span class="delta-cap">{{ t('较前15分钟') }}</span>
+          <span class="stat-delta" :class="deltaPct >= 0 ? 'up' : 'down'">{{ deltaPct >= 0 ? '+' : '' }}{{ deltaPct.toFixed(1) }}%</span>
         </div>
         <div class="stat-value">{{ totalAll }}</div>
         <div class="stat-label">{{ t('总操作数') }}</div>
@@ -370,22 +371,6 @@ function avatarBg(name: string) {
 }
 
 // sparkline 生成器（原版 sparkSvg 逻辑）
-function hourlyTrendFake(arr: any[], n = 12) {
-  if (!arr?.length) return Array(n).fill(5)
-  const buckets = Array(n).fill(0)
-  for (const item of arr) {
-    const t = item.createdAt
-    if (!t) continue
-    const d = typeof t === 'number' ? new Date(t) : new Date(String(t).replace(' ', 'T'))
-    if (isNaN(d.getTime())) continue
-    const h = d.getHours()
-    buckets[h % n]++
-  }
-  // 如果全是 0，给随机噪音让图好看点
-  if (buckets.every(x => x === 0)) return buckets.map(() => Math.floor(Math.random() * 6) + 2)
-  return buckets
-}
-
 function sparkPoints(vals: number[], w = 120, h = 36) {
   const n = vals.length
   const max = Math.max(...vals, 1)
@@ -404,9 +389,19 @@ function toArea(points: readonly (readonly [number, number])[], w = 120, h = 36)
   return toLine(points) + ` ${w},${h} 0,${h}`
 }
 
-const trendAll = computed(() => hourlyTrendFake(logs.value, 12))
-const trendSucc = computed(() => hourlyTrendFake(logs.value.filter(l => l.status === '成功'), 12))
-const trendFail = computed(() => hourlyTrendFake(logs.value.filter(l => l.status === '失败'), 12))
+// ===== 趋势数据源:/stats/live 的最近 30 分钟逐分钟真实聚合(此前是当前页 10 行造假分桶) =====
+const liveTrend = ref<{ minute: string; ops: number; fails: number }[]>([])
+async function loadLiveTrend() {
+  try {
+    const r: any = await http.get('/stats/live')
+    const tl = r?.data?.timeline
+    liveTrend.value = Array.isArray(tl) ? tl.map((t: any) => ({ minute: t.minute, ops: t.ops || 0, fails: t.fails || 0 })) : []
+  } catch { /* 保留旧数据 */ }
+}
+
+const trendAll = computed(() => liveTrend.value.map(t => t.ops))
+const trendSucc = computed(() => liveTrend.value.map(t => Math.max(0, t.ops - t.fails)))
+const trendFail = computed(() => liveTrend.value.map(t => t.fails))
 
 const linePts = computed(() => toLine(sparkPoints(trendAll.value)))
 const areaPts = computed(() => toArea(sparkPoints(trendAll.value)))
@@ -415,9 +410,9 @@ const succAreaPts = computed(() => toArea(sparkPoints(trendSucc.value)))
 const failLinePts = computed(() => toLine(sparkPoints(trendFail.value)))
 const failAreaPts = computed(() => toArea(sparkPoints(trendFail.value)))
 
-// delta 涨幅（原版 statCardPro 功能）
-const recentHalf = computed(() => trendAll.value.slice(6).reduce((a, b) => a + b, 0))
-const prevHalf = computed(() => trendAll.value.slice(0, 6).reduce((a, b) => a + b, 0))
+// delta 涨幅:最近 15 分钟 vs 前 15 分钟(真实分钟桶,不再是比较造假数据的两半)
+const recentHalf = computed(() => trendAll.value.slice(15).reduce((a, b) => a + b, 0))
+const prevHalf = computed(() => trendAll.value.slice(0, 15).reduce((a, b) => a + b, 0))
 const deltaPct = computed(() => prevHalf.value ? ((recentHalf.value - prevHalf.value) / prevHalf.value * 100) : 0)
 
 function fmt(t: any) {
@@ -489,7 +484,7 @@ async function loadLogs() {
 }
 
 async function load() {
-  await Promise.all([loadLogs(), loadStats()])
+  await Promise.all([loadLogs(), loadStats(), loadLiveTrend()])
 }
 
 async function loadStats() {
@@ -600,6 +595,12 @@ html[data-theme="dark"] .stats-page.liquid.logs-page .card {
 .stats-page.liquid.logs-page .stat-card.stat-pro .stat-pro-top {
   width: 100%;
   margin-bottom: 8px;
+}
+.stats-page.liquid.logs-page .delta-cap {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 11px;
+  color: var(--text-light, #94a3b8);
 }
 .stats-page.liquid.logs-page .stat-card > .stat-spark {
   position: absolute;
