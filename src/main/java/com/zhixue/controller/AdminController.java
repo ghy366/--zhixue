@@ -19,9 +19,10 @@ public class AdminController {
     @Autowired private com.zhixue.util.PasswordUtil passwordEncoder;
 
     /**
-     * 用户列表（全校账号，服务端分页）。传 page/size 时返回 {items,total,page,size}，
-     * 未传时保持旧的全量数组（旧调用方零破坏）。
-     * 过滤：role 角色；keyword 模糊匹配 学号/姓名/学院/专业；college/major/grade 精确匹配。
+     * 用户列表（全校账号，服务端分页）。传 page/size 时返回
+     * {items,total,page,size,counts,classes}，未传时保持旧的全量数组（旧调用方零破坏）。
+     * 过滤：role 角色；classNo 班级；keyword 模糊匹配 学号/姓名/学院/专业/班级/手机号；
+     * college/major/grade 精确匹配。结果按班级分组排序，便于前端插入分组行。
      */
     @GetMapping("/users")
     public ApiResponse<Object> users(
@@ -31,8 +32,66 @@ public class AdminController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String college,
             @RequestParam(required = false) String major,
-            @RequestParam(required = false) Integer grade) {
-        List<User> all = userRepo.findAll();
+            @RequestParam(required = false) Integer grade,
+            @RequestParam(required = false) String classNo) {
+        List<User> allUsers = userRepo.findAll();
+
+        // 聚合数据基于全库，不随筛选变化：角色 Tab 人数 + 班级下拉选项
+        Map<String, Long> counts = new LinkedHashMap<>();
+        counts.put("all", (long) allUsers.size());
+        counts.put("student", allUsers.stream().filter(u -> "student".equals(u.getRole())).count());
+        counts.put("teacher", allUsers.stream().filter(u -> "teacher".equals(u.getRole())).count());
+        counts.put("admin", allUsers.stream().filter(u -> "admin".equals(u.getRole())).count());
+        List<String> classes = allUsers.stream().map(User::getClassNo)
+                .filter(c -> c != null && !c.isBlank()).distinct().sorted().collect(Collectors.toList());
+        // 每个班级的全库总人数：分组行不能因为分页被切断而显示偏小
+        Map<String, Long> classCounts = allUsers.stream()
+                .filter(u -> u.getClassNo() != null && !u.getClassNo().isBlank())
+                .collect(Collectors.groupingBy(User::getClassNo, LinkedHashMap::new, Collectors.counting()));
+
+        // 左侧组织树：学院 → 专业 → 班级，每级带人数；无班级的用户归入「未分班」(__none__)
+        Map<String, Map<String, Map<String, Long>>> grouped = new LinkedHashMap<>();
+        for (User u : allUsers) {
+            String c = str(u.getCollege()).isEmpty() ? "未填写学院" : u.getCollege();
+            String m = str(u.getMajor()).isEmpty() ? "未填写专业" : u.getMajor();
+            String k = str(u.getClassNo()).isEmpty() ? "__none__" : u.getClassNo();
+            grouped.computeIfAbsent(c, x -> new LinkedHashMap<>())
+                    .computeIfAbsent(m, x -> new LinkedHashMap<>())
+                    .merge(k, 1L, Long::sum);
+        }
+        List<Map<String, Object>> tree = new java.util.ArrayList<>();
+        for (var ce : grouped.entrySet()) {
+            long collegeCount = 0;
+            List<Map<String, Object>> majors = new java.util.ArrayList<>();
+            for (var me : ce.getValue().entrySet()) {
+                long majorCount = 0;
+                List<Map<String, Object>> cls = new java.util.ArrayList<>();
+                for (var le : me.getValue().entrySet()) {
+                    majorCount += le.getValue();
+                    Map<String, Object> lm = new LinkedHashMap<>();
+                    lm.put("name", "__none__".equals(le.getKey()) ? "未分班" : le.getKey());
+                    lm.put("value", le.getKey());
+                    lm.put("count", le.getValue());
+                    cls.add(lm);
+                }
+                cls.sort(java.util.Comparator.comparing(x -> (String) x.get("name")));
+                collegeCount += majorCount;
+                Map<String, Object> mm = new LinkedHashMap<>();
+                mm.put("name", me.getKey());
+                mm.put("count", majorCount);
+                mm.put("classes", cls);
+                majors.add(mm);
+            }
+            majors.sort(java.util.Comparator.comparing(x -> (String) x.get("name")));
+            Map<String, Object> cm = new LinkedHashMap<>();
+            cm.put("name", ce.getKey());
+            cm.put("count", collegeCount);
+            cm.put("majors", majors);
+            tree.add(cm);
+        }
+        tree.sort(java.util.Comparator.comparing(x -> (String) x.get("name")));
+
+        List<User> all = allUsers;
         if (role != null && !role.isBlank()) {
             all = all.stream().filter(u -> role.equals(u.getRole())).toList();
         }
@@ -45,11 +104,26 @@ public class AdminController {
         if (grade != null) {
             all = all.stream().filter(u -> grade.equals(u.getGrade())).toList();
         }
+        if (classNo != null && !classNo.isBlank()) {
+            if ("__none__".equals(classNo)) {
+                all = all.stream().filter(u -> str(u.getClassNo()).isEmpty()).toList();
+            } else {
+                all = all.stream().filter(u -> classNo.equals(u.getClassNo())).toList();
+            }
+        }
         if (keyword != null && !keyword.isBlank()) {
             String k = keyword.toLowerCase();
             all = all.stream().filter(u -> (str(u.getNo()) + " " + str(u.getName()) + " "
-                    + str(u.getCollege()) + " " + str(u.getMajor())).toLowerCase().contains(k)).toList();
+                    + str(u.getCollege()) + " " + str(u.getMajor()) + " "
+                    + str(u.getClassNo()) + " " + str(u.getPhone())).toLowerCase().contains(k)).toList();
         }
+        // 有班级的按班级聚合在前，同班内按学号；无班级的教职工排在最后
+        all = all.stream().sorted(java.util.Comparator
+                .comparing((User u) -> str(u.getClassNo()).isEmpty() ? 1 : 0)
+                .thenComparing((User u) -> str(u.getClassNo()))
+                .thenComparing((User u) -> str(u.getNo())))
+                .collect(Collectors.toList());
+
         List<Map<String, Object>> list = all.stream().map(u -> {
             Map<String, Object> m = new java.util.HashMap<>();
             m.put("id", u.getId());
@@ -59,6 +133,8 @@ public class AdminController {
             m.put("college", u.getCollege());
             m.put("major", u.getMajor());
             m.put("grade", u.getGrade());
+            m.put("classNo", u.getClassNo());
+            m.put("phone", u.getPhone());
             m.put("avatar", u.getAvatar());
             return m;
         }).collect(Collectors.toList());
@@ -72,6 +148,10 @@ public class AdminController {
         data.put("total", list.size());
         data.put("page", page);
         data.put("size", size);
+        data.put("counts", counts);
+        data.put("classes", classes);
+        data.put("classCounts", classCounts);
+        data.put("tree", tree);
         return ApiResponse.ok(data);
     }
 

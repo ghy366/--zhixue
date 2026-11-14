@@ -214,30 +214,60 @@ public class DataService {
         return rows;
     }
 
-    public String studentTemplateCsv() {
-        return "学号,姓名,密码,学院,专业,年级,班级,手机号\n" +
-               "2023090101,张三,123456,计算机学院,软件工程,2023,软工2301班,13800000000\n";
+    /** Excel 导入模板：第一行表头（列名用于自动映射字段），第二行示例 */
+    public List<List<String>> studentTemplateRows() {
+        return List.of(
+            Arrays.asList("学号", "姓名", "密码", "学院", "专业", "年级", "班级", "手机号"),
+            Arrays.asList("2023090101", "张三", "123456", "计算机学院", "软件工程", "2023", "软工2301班", "13800000000")
+        );
     }
 
-    public String courseTemplateCsv() {
-        return "课程代码,课程名称,教师工号,学分,学时,容量,类别,上课时间,上课地点\n" +
-               "CS501,分布式系统,T002,3,48,60,专业选修,周三 08:00-09:40,明志楼-403\n";
+    public List<List<String>> courseTemplateRows() {
+        return List.of(
+            Arrays.asList("课程代码", "课程名称", "教师工号", "学分", "学时", "容量", "类别", "上课时间", "上课地点"),
+            Arrays.asList("CS501", "分布式系统", "T002", "3", "48", "60", "专业选修", "周三 08:00-09:40", "明志楼-403")
+        );
     }
 
-    // ================= 导入 =================
+    // ================= Excel(.xlsx) 导入 =================
+    private static final String[] STUDENT_HEADERS = {"学号", "姓名", "密码", "学院", "专业", "年级", "班级", "手机号"};
+    private static final String[] COURSE_HEADERS = {"课程代码", "课程名称", "教师工号", "学分", "学时", "容量", "类别", "上课时间", "上课地点"};
+
+    /** 首行是否表头；按列名建立映射，支持用户调整列顺序或加多余列 */
+    private static int[] headerMap(List<String> head, String[] names) {
+        int[] idx = new int[names.length];
+        Arrays.fill(idx, -1);
+        for (int i = 0; i < head.size(); i++) {
+            String h = head.get(i) == null ? "" : head.get(i).trim();
+            for (int j = 0; j < names.length; j++) if (h.equals(names[j])) idx[j] = i;
+        }
+        return idx;
+    }
+
+    private static boolean isHeaderRow(List<String> f, String[] names) {
+        if (f.isEmpty() || f.get(0) == null) return false;
+        String first = f.get(0).trim();
+        for (String n : names) if (first.equals(n)) return true;
+        return false;
+    }
+
+    /** 取第 j 个字段：有表头映射按列名取，否则按固定列序 */
+    private static String cell(List<String> f, int[] map, int j) {
+        return s(f, map != null && map[j] >= 0 ? map[j] : j).trim();
+    }
+
     @Transactional
-    public Map<String, Object> importStudentsCsv(String text) {
+    public Map<String, Object> importStudentsRows(List<List<String>> rows) {
         int created = 0, updated = 0, skipped = 0, lineNo = 0;
+        int[] map = null;
         List<String> errors = new ArrayList<>();
-        for (String raw : splitLines(text)) {
+        for (List<String> f : rows) {
             lineNo++;
-            String line = raw.trim();
-            if (line.isEmpty()) continue;
-            if (lineNo == 1 && isHeader(line)) continue;
-            List<String> f = parseLine(line);
-            String no = s(f, 0), name = s(f, 1);
+            if (f == null || f.isEmpty()) continue;
+            if (lineNo == 1 && isHeaderRow(f, STUDENT_HEADERS)) { map = headerMap(f, STUDENT_HEADERS); continue; }
+            String no = cell(f, map, 0), name = cell(f, map, 1);
             if (no.isEmpty() || name.isEmpty()) { skipped++; errors.add("第 " + lineNo + " 行：学号或姓名为空，已跳过"); continue; }
-            String pwd = s(f, 2).isEmpty() ? "123456" : s(f, 2);
+            String pwd = cell(f, map, 2).isEmpty() ? "123456" : cell(f, map, 2);
             User u = userRepo.findByNo(no).orElse(null);
             if (u != null && !"student".equals(u.getRole())) {
                 skipped++; errors.add("第 " + lineNo + " 行：" + no + " 已存在且不是学生，已跳过"); continue;
@@ -249,39 +279,32 @@ public class DataService {
                 u.setPassword(passwordUtil.encode(pwd));
                 u.setAvatar("🎓");
                 created++;
-            } else {
-                updated++;
-            }
+            } else updated++;
             u.setName(name);
-            if (!s(f, 3).isEmpty()) u.setCollege(s(f, 3));
-            if (!s(f, 4).isEmpty()) u.setMajor(s(f, 4));
-            if (!s(f, 5).isEmpty()) {
-                try { u.setGrade(Integer.parseInt(s(f, 5))); } catch (NumberFormatException ignored) {}
-            }
-            if (!s(f, 6).isEmpty()) u.setClassNo(s(f, 6));
-            if (!s(f, 7).isEmpty()) u.setPhone(s(f, 7));
+            String college = cell(f, map, 3); if (!college.isEmpty()) u.setCollege(college);
+            String major = cell(f, map, 4); if (!major.isEmpty()) u.setMajor(major);
+            String grade = cell(f, map, 5);
+            if (!grade.isEmpty()) { try { u.setGrade(Integer.parseInt(grade)); } catch (NumberFormatException ignored) {} }
+            String classNo = cell(f, map, 6); if (!classNo.isEmpty()) u.setClassNo(classNo);
+            String phone = cell(f, map, 7); if (!phone.isEmpty()) u.setPhone(phone);
             userRepo.save(u);
         }
         Map<String, Object> r = new LinkedHashMap<>();
-        r.put("created", created);
-        r.put("updated", updated);
-        r.put("skipped", skipped);
-        r.put("errors", errors);
+        r.put("created", created); r.put("updated", updated); r.put("skipped", skipped); r.put("errors", errors);
         r.put("msg", "导入完成：新增 " + created + " 人，更新 " + updated + " 人，跳过 " + skipped + " 行");
         return r;
     }
 
     @Transactional
-    public Map<String, Object> importCoursesCsv(String text) {
+    public Map<String, Object> importCoursesRows(List<List<String>> rows) {
         int created = 0, updated = 0, skipped = 0, lineNo = 0;
+        int[] map = null;
         List<String> errors = new ArrayList<>();
-        for (String raw : splitLines(text)) {
+        for (List<String> f : rows) {
             lineNo++;
-            String line = raw.trim();
-            if (line.isEmpty()) continue;
-            if (lineNo == 1 && isHeader(line)) continue;
-            List<String> f = parseLine(line);
-            String code = s(f, 0), name = s(f, 1);
+            if (f == null || f.isEmpty()) continue;
+            if (lineNo == 1 && isHeaderRow(f, COURSE_HEADERS)) { map = headerMap(f, COURSE_HEADERS); continue; }
+            String code = cell(f, map, 0), name = cell(f, map, 1);
             if (code.isEmpty() || name.isEmpty()) { skipped++; errors.add("第 " + lineNo + " 行：课程代码或名称为空，已跳过"); continue; }
 
             Course c = courseRepo.findAll().stream()
@@ -290,25 +313,29 @@ public class DataService {
             else updated++;
 
             c.setName(name);
-            String tNo = s(f, 2);
+            String tNo = cell(f, map, 2);
             if (!tNo.isEmpty()) {
                 User t = userRepo.findByNo(tNo).orElse(null);
                 if (t == null) errors.add("第 " + lineNo + " 行：教师工号 " + tNo + " 不存在，该课程未指定教师");
                 else c.setTeacherId(t.getId());
             }
-            if (!s(f, 3).isEmpty()) { try { c.setCredit(Integer.parseInt(s(f, 3))); } catch (NumberFormatException ignored) {} }
-            if (!s(f, 4).isEmpty()) { try { c.setHours(Integer.parseInt(s(f, 4))); } catch (NumberFormatException ignored) {} }
-            if (!s(f, 5).isEmpty()) { try { c.setCapacity(Integer.parseInt(s(f, 5))); } catch (NumberFormatException ignored) {} }
-            if (!s(f, 6).isEmpty()) c.setCategory(s(f, 6));
-            if (!s(f, 7).isEmpty()) c.setTime(s(f, 7));
-            if (!s(f, 8).isEmpty()) c.setLocation(s(f, 8));
+            for (int[] pair : new int[][]{{3, 0}, {4, 1}, {5, 2}}) {
+                String v = cell(f, map, pair[0]);
+                if (v.isEmpty()) continue;
+                try {
+                    int n = Integer.parseInt(v);
+                    if (pair[1] == 0) c.setCredit(n);
+                    else if (pair[1] == 1) c.setHours(n);
+                    else c.setCapacity(n);
+                } catch (NumberFormatException ignored) {}
+            }
+            String cat = cell(f, map, 6); if (!cat.isEmpty()) c.setCategory(cat);
+            String time = cell(f, map, 7); if (!time.isEmpty()) c.setTime(time);
+            String loc = cell(f, map, 8); if (!loc.isEmpty()) c.setLocation(loc);
             courseRepo.save(c);
         }
         Map<String, Object> r = new LinkedHashMap<>();
-        r.put("created", created);
-        r.put("updated", updated);
-        r.put("skipped", skipped);
-        r.put("errors", errors);
+        r.put("created", created); r.put("updated", updated); r.put("skipped", skipped); r.put("errors", errors);
         r.put("msg", "导入完成：新增 " + created + " 门，更新 " + updated + " 门，跳过 " + skipped + " 行");
         return r;
     }

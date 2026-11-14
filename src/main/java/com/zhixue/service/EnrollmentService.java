@@ -369,6 +369,20 @@ public class EnrollmentService {
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    /** 当前是否处于「合法开放的选课轮次」：被跳级设置但未解锁的轮次一律视为不可选课 */
+    public boolean roundUsable(SystemConfig sys) {
+        if (!Boolean.TRUE.equals(sys.getRoundOpen())) return false;
+        int round = sys.getCurrentRound() == null ? 1 : sys.getCurrentRound();
+        int progress = sys.getRoundProgress() == null ? 0 : sys.getRoundProgress();
+        return round <= Math.min(3, progress + 1);
+    }
+
+    public String roundBlockMsg(SystemConfig sys) {
+        if (!Boolean.TRUE.equals(sys.getRoundOpen())) return "当前选课已关闭";
+        int round = sys.getCurrentRound() == null ? 1 : sys.getCurrentRound();
+        return "第 " + round + " 轮尚未解锁，当前无法选课";
+    }
+
     public Map<String, Object> enroll(Long studentId, Long courseId, int points) {
         Map<String, Object> result = new HashMap<>();
         if (studentId == null) {
@@ -377,8 +391,8 @@ public class EnrollmentService {
         SystemConfig sys = getSystemConfig();
         int round = sys.getCurrentRound();
 
-        if (!sys.getRoundOpen()) {
-            result.put("success", false); result.put("msg", "当前选课已关闭"); return result;
+        if (!roundUsable(sys)) {
+            result.put("success", false); result.put("msg", roundBlockMsg(sys)); return result;
         }
 
         // 先锁学生行、再锁课程行：同一学生的并发请求与同一门课的并发抢名额都在锁内串行化。
@@ -614,7 +628,7 @@ public class EnrollmentService {
         }
         // 轮次结束（选课未进行中）后，已录取课程不允许学生自助退课：
         // 由 Controller 生成退课申请，交任课老师审批，形成闭环。
-        if (!Boolean.TRUE.equals(sys.getRoundOpen())) {
+        if (!roundUsable(sys)) {
             result.put("success", false);
             if ("approved".equals(enr.getStatus())) {
                 result.put("needTeacher", true);
@@ -664,8 +678,8 @@ public class EnrollmentService {
         }
         SystemConfig sys = getSystemConfig();
         int round = sys.getCurrentRound();
-        if (!sys.getRoundOpen()) {
-            result.put("success", false); result.put("msg", "当前轮次未开放，无法改选"); return result;
+        if (!roundUsable(sys)) {
+            result.put("success", false); result.put("msg", roundBlockMsg(sys)); return result;
         }
         if (oldCourseId.equals(newCourseId)) {
             result.put("success", false); result.put("msg", "请选择与原课程不同的课程"); return result;
@@ -743,7 +757,7 @@ public class EnrollmentService {
         }
         SystemConfig sys = getSystemConfig();
         int round = sys.getCurrentRound();
-        if (!sys.getRoundOpen()) { result.put("success", false); result.put("msg", "当前轮次未开放，无法换课"); return result; }
+        if (!roundUsable(sys)) { result.put("success", false); result.put("msg", roundBlockMsg(sys)); return result; }
         if (fromCourseId.equals(toCourseId)) { result.put("success", false); result.put("msg", "新课不能与原课程相同"); return result; }
 
         User stu = userRepo.findByIdForUpdate(studentId).orElse(null);

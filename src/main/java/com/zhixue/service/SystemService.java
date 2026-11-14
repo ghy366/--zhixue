@@ -21,25 +21,61 @@ public class SystemService {
 
     public SystemConfig getConfig() { return enrollmentService.getSystemConfig(); }
 
+    /** 已完成轮次数（0..3），兼容旧数据 NULL */
+    public int roundProgress() { return progressOf(getConfig()); }
+
+    private int progressOf(SystemConfig c) {
+        Integer v = c.getRoundProgress();
+        return v == null ? 0 : Math.max(0, Math.min(3, v));
+    }
+
+    /** 当前允许开启 / 切换到的最高轮次 */
+    public int unlockedRound() { return Math.min(3, roundProgress() + 1); }
+
+    /**
+     * 轮次门控：返回拒绝原因，null 表示允许。
+     * 第 1 轮需先「开启新学期」；第 2/3 轮需前一轮已关闭并结算（roundProgress 推进）。
+     * 不允许跳级切轮，也不允许重复开启已完成的轮次。
+     */
+    public String roundGateError(int target, boolean opening) {
+        SystemConfig c = getConfig();
+        int unlocked = unlockedRound();
+        if (target < 1 || target > 3) return "选课轮次只能是 1 ~ 3 轮";
+        if (target > unlocked)
+            return "第 " + target + " 轮尚未解锁：请先完成第 " + unlocked
+                    + " 轮（关闭本轮即自动结算并解锁下一轮）";
+        if (opening && target < unlocked)
+            return "第 " + target + " 轮已完成，不能重复开启；请切换到第 " + unlocked + " 轮";
+        if (opening && target == 1 && !Boolean.TRUE.equals(c.getNewSemesterReady()))
+            return "请先开启新学期：到「学期管理」点「推进到下一学期」，或在本页点「进入新学期」，再开启第 1 轮选课";
+        return null;
+    }
+
     public SystemConfig setRound(int round) {
         SystemConfig c = getConfig();
-        int oldRound = c.getCurrentRound() == null ? 1 : c.getCurrentRound();
+        String err = roundGateError(round, false);
+        if (err != null) throw new IllegalArgumentException(err);
+        if (Boolean.TRUE.equals(c.getRoundOpen()))
+            throw new IllegalArgumentException("请先关闭本轮选课，再切换轮次（关闭时会结算并解锁下一轮）");
         c.setCurrentRound(round);
         c.setAutoSchedule(false);   // 手动切换即退出自动模式，避免被时间窗口立即覆盖
-        SystemConfig saved = sysRepo.save(c);
-        // 向前切轮时补结算被跳过的 1/2 轮，避免旧轮报名悬空在待录取
-        for (int r = oldRound; r < round && r <= 2; r++) {
-            settleCurrentRound(r);
-        }
-        return saved;
+        return sysRepo.save(c);
     }
 
     public SystemConfig setRoundOpen(boolean open) {
         SystemConfig c = getConfig();
+        int round = c.getCurrentRound() == null ? 1 : c.getCurrentRound();
         c.setRoundOpen(open);
         c.setAutoSchedule(false);   // 手动开关即退出自动模式
         SystemConfig saved = sysRepo.save(c);
-        if (!open) settleCurrentRound(saved.getCurrentRound());
+        if (!open) {
+            settleCurrentRound(round);
+            // 关闭本轮 = 完成本轮，解锁下一轮（只前进不后退）
+            if (round > progressOf(saved)) {
+                saved.setRoundProgress(round);
+                sysRepo.save(saved);
+            }
+        }
         return saved;
     }
 
@@ -68,6 +104,13 @@ public class SystemService {
     public SystemConfig setSemesterOffset(Integer v) {
         SystemConfig c = getConfig();
         c.setSemesterOffset(v == null || v < 0 ? 0 : v);
+        return sysRepo.save(c);
+    }
+
+    /** 开启第 1 轮后消费「新学期已开启」标记，防止重复开轮跳过学期推进 */
+    public SystemConfig consumeNewSemester() {
+        SystemConfig c = getConfig();
+        c.setNewSemesterReady(false);
         return sysRepo.save(c);
     }
 

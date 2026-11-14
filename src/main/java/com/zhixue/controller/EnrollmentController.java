@@ -346,6 +346,15 @@ public class EnrollmentController {
     public ApiResponse<Map<String, Object>> settle(@RequestBody(required = false) Map<String, Object> body) {
         Integer round = (body == null || body.get("round") == null)
                 ? null : Integer.parseInt(body.get("round").toString());
+        // 结算只允许针对「当前已解锁且进行中」的轮次，防止跳级结算第 2/3 轮
+        com.zhixue.entity.SystemConfig cfg = enrollmentService.getSystemConfig();
+        int cur = cfg.getCurrentRound() == null ? 1 : cfg.getCurrentRound();
+        int progress = cfg.getRoundProgress() == null ? 0 : cfg.getRoundProgress();
+        int unlocked = Math.min(3, progress + 1);
+        if (round == null) round = cur;
+        if (round != cur) return ApiResponse.fail("只能结算当前进行中的第 " + cur + " 轮");
+        if (round > unlocked) return ApiResponse.fail("第 " + round + " 轮尚未解锁，不能结算");
+        if (round >= 3) return ApiResponse.fail("第 3 轮为先到先得，无需结算");
         Map<String, Object> r = enrollmentService.settleRound(round);
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) r.get("data");

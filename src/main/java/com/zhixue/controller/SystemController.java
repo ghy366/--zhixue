@@ -127,45 +127,52 @@ public class SystemController {
 
     @PostMapping("/round")
     public ApiResponse<SystemConfig> setRound(@RequestBody SystemConfig body) {
-        return ApiResponse.ok("已切换到第 " + body.getCurrentRound() + " 轮", systemService.setRound(body.getCurrentRound()));
+        int n = body.getCurrentRound() == null ? 1 : body.getCurrentRound();
+        try {
+            return ApiResponse.ok("已切换到第 " + n + " 轮", systemService.setRound(n));
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.fail(e.getMessage());
+        }
     }
 
     @PostMapping("/round-open")
     public ApiResponse<SystemConfig> setRoundOpen(@RequestBody SystemConfig body) {
         boolean open = Boolean.TRUE.equals(body.getRoundOpen());
         SystemConfig before = systemService.getConfig();
-        boolean wasOpen = Boolean.TRUE.equals(before.getRoundOpen());
         int round = before.getCurrentRound() == null ? 1 : before.getCurrentRound();
 
-        // 第 1 轮开启 = 新选课周期开始：先把上一周期残留的报名/候补占位清空，
-        // 让全部课程容量重新满额（成绩 grades 不动，学分/GPA 不受影响）
-        Map<String, Object> released = null;
-        if (open && !wasOpen && round == 1) {
-            try { released = capacityService.releaseAll(); } catch (Exception ignored) {}
+        // 轮次必须逐轮解锁：第 1 轮需先开启新学期，第 2/3 轮需上一轮已关闭并结算
+        if (open) {
+            String err = systemService.roundGateError(round, true);
+            if (err != null) return ApiResponse.fail(err);
+            if (round == 1) systemService.consumeNewSemester();   // 新学期标记只消费一次
         }
 
         systemService.setRoundOpen(open);
         // 手动切换后补齐本轮时间窗，保证登录页/侧边栏倒计时能拿到目标时间
         SystemConfig c = roundScheduleService.fillCurrentWindow();
 
-        String msg = open ? "本轮选课已开放" : "本轮选课已关闭";
-        if (released != null) {
-            msg += "，并释放本学期容量（清理 " + released.get("enrollments") + " 条本学期报名，让出 "
-                    + released.get("freedSeats") + " 个已占座位；历史学期 " + released.get("keptHistory") + " 条报名记录已保留）";
-        }
+        String msg;
+        if (open) msg = "第 " + round + " 轮选课已开放";
+        else if (round < 3) msg = "第 " + round + " 轮选课已关闭并结算，已解锁第 " + (round + 1) + " 轮";
+        else msg = "第 3 轮选课已关闭，本学期三轮选课全部结束";
+        if (open && round == 1) msg += "（新学期名额已按学期口径释放，全部报名与成绩记录保留）";
         return ApiResponse.ok(msg, c);
     }
 
     /**
-     * 手动释放本学期容量：清空本学期报名 / 候补 / 待处理退课申请，
-     * 历史学期的报名记录与成绩 grades 保持不变。用于新学期开轮前重置。
+     * 手动开启新周期：推进学期偏移使名额按学期口径释放，不删除任何报名/成绩记录；
+     * 候补与待处理退课申请只标记为 expired 归档。
      */
     @PostMapping("/release-capacity")
     public ApiResponse<Map<String, Object>> releaseCapacity() {
-        Map<String, Object> r = capacityService.releaseAll();
-        return ApiResponse.ok("已释放本学期容量：清理 " + r.get("enrollments") + " 条本学期报名、"
-                + r.get("waitlists") + " 条候补、" + r.get("dropRequests") + " 条待处理退课申请，让出 "
-                + r.get("freedSeats") + " 个已占座位；历史学期 " + r.get("keptHistory") + " 条报名记录已保留", r);
+        Map<String, Object> r = capacityService.startNewCycle();
+        if (Boolean.TRUE.equals(r.get("alreadyReady"))) {
+            return ApiResponse.ok("新学期已开启，无需重复操作；现在可以开启第 1 轮选课", r);
+        }
+        return ApiResponse.ok("已进入新学期并释放名额：全部 " + r.get("keptEnrollments")
+                + " 条报名记录与成绩完整保留，归档 " + r.get("archivedWaitlists") + " 条候补、"
+                + r.get("archivedDropRequests") + " 条待处理申请；现在可以开启第 1 轮选课", r);
     }
 
     @PostMapping("/confirm-minutes")
@@ -174,13 +181,15 @@ public class SystemController {
         return ApiResponse.ok("候补确认时限已设为 " + m + " 分钟", systemService.setConfirmMinutes(m));
     }
 
-    /** 学期滚动：推进到下一学期（旧学期成绩归档、新学期必修自动排入） */
+    /** 学期滚动：开启新学期（推进偏移 + 解锁第 1 轮选课），旧成绩与报名按学期归档、不删数据 */
     @PostMapping("/semester-advance")
     public ApiResponse<SystemConfig> advanceSemester() {
-        SystemConfig c = systemService.getConfig();
-        int off = c.getSemesterOffset() == null ? 0 : c.getSemesterOffset();
-        systemService.setSemesterOffset(off + 1);
-        return ApiResponse.ok("已推进到下一学期（偏移 " + (off + 1) + "），新学期必修课将自动排入", systemService.getConfig());
+        Map<String, Object> r = capacityService.startNewCycle();
+        boolean already = Boolean.TRUE.equals(r.get("alreadyReady"));
+        String msg = already
+                ? "新学期已开启（偏移 " + r.get("semesterOffset") + "），无需重复推进；现在可以开启第 1 轮选课"
+                : "新学期已开启（偏移 " + r.get("semesterOffset") + "）：名额按学期口径释放，全部记录保留，现在可以开启第 1 轮选课";
+        return ApiResponse.ok(msg, systemService.getConfig());
     }
 
     /** 教师每学期最多授课门数 */

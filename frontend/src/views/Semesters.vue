@@ -4,7 +4,7 @@
     <div class="sm-advance">
       <div class="sm-adv-main">
         <b>{{ t('学期滚动') }}</b>
-        <span>{{ t('推进到下一学期：旧学期成绩与课表自动归档，新学期必修课按培养方案自动排入（挂科必修自动重修）。') }}</span>
+        <span>{{ t('开启新学期：旧学期成绩与课表按学期归档、名额满额释放，全部记录保留；只有开启新学期后，才允许启动第 1 轮选课。') }}</span>
       </div>
       <button class="btn btn-primary" :disabled="advancing" @click="advance">{{ advancing ? t('推进中…') : t('推进到下一学期') }}</button>
     </div>
@@ -61,7 +61,7 @@ const form = reactive<any>({ id: null, name: '', year: new Date().getFullYear(),
 const advancing = ref(false)
 async function advance() {
   try {
-    await ElMessageBox.confirm(t('确认推进到下一学期？此操作影响全体学生的学期序与必修排课。'), t('学期滚动'), {
+    await ElMessageBox.confirm(t('确认开启新学期？将推进全体学生的学期序、按学期归档旧报名并解锁第 1 轮选课；不会删除任何报名或成绩记录。'), t('学期滚动'), {
       type: 'warning', confirmButtonText: t('确认推进'), cancelButtonText: t('取消')
     })
   } catch { return }

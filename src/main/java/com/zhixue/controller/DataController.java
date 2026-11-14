@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-/** CSV 批量导入 / 导出 */
+/** Excel(.xlsx) 批量导入 + CSV / Excel 导出。导入与模板仅管理员可用（/api/data → ADMIN） */
 @RestController
 @RequestMapping("/api/data")
 public class DataController {
@@ -82,27 +82,48 @@ public class DataController {
         return xlsx(excelService.toXlsx("选课名单", dataService.courseEnrollmentsRows(courseId)), "course-" + courseId + "-enrollments");
     }
 
+    /** 导入模板：真正的 .xlsx，第一行列名用于自动映射字段 */
     @GetMapping("/template/students")
     public ResponseEntity<byte[]> templateStudents() {
-        return csv(dataService.studentTemplateCsv(), "students-template.csv");
+        return xlsx(excelService.toXlsx("学生导入模板", dataService.studentTemplateRows()), "students-template");
     }
 
     @GetMapping("/template/courses")
     public ResponseEntity<byte[]> templateCourses() {
-        return csv(dataService.courseTemplateCsv(), "courses-template.csv");
+        return xlsx(excelService.toXlsx("课程导入模板", dataService.courseTemplateRows()), "courses-template");
     }
 
+    /** 批量导入：仅 .xlsx、仅管理员（RoleInterceptor 已把 /api/data 限定为 ADMIN） */
     @PostMapping("/import/students")
-    public ApiResponse<Map<String, Object>> importStudents(@RequestParam("file") MultipartFile file) throws IOException {
-        String text = new String(file.getBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> r = dataService.importStudentsCsv(text);
-        return ApiResponse.ok((String) r.get("msg"), r);
+    public ApiResponse<Map<String, Object>> importStudents(@RequestParam("file") MultipartFile file) {
+        try {
+            requireXlsx(file);
+            Map<String, Object> r = dataService.importStudentsRows(excelService.readXlsx(file.getBytes()));
+            return ApiResponse.ok((String) r.get("msg"), r);
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.fail(e.getMessage());
+        } catch (Exception e) {
+            return ApiResponse.fail("读取 Excel 失败：" + e.getMessage());
+        }
     }
 
     @PostMapping("/import/courses")
-    public ApiResponse<Map<String, Object>> importCourses(@RequestParam("file") MultipartFile file) throws IOException {
-        String text = new String(file.getBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> r = dataService.importCoursesCsv(text);
-        return ApiResponse.ok((String) r.get("msg"), r);
+    public ApiResponse<Map<String, Object>> importCourses(@RequestParam("file") MultipartFile file) {
+        try {
+            requireXlsx(file);
+            Map<String, Object> r = dataService.importCoursesRows(excelService.readXlsx(file.getBytes()));
+            return ApiResponse.ok((String) r.get("msg"), r);
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.fail(e.getMessage());
+        } catch (Exception e) {
+            return ApiResponse.fail("读取 Excel 失败：" + e.getMessage());
+        }
+    }
+
+    private void requireXlsx(MultipartFile file) {
+        String n = file.getOriginalFilename();
+        if (n == null || !n.toLowerCase().endsWith(".xlsx")) {
+            throw new IllegalArgumentException("只支持 .xlsx 文件：请先下载模板，用 Excel 填写后另存为 .xlsx 再导入");
+        }
     }
 }

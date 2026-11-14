@@ -94,6 +94,10 @@ public class SystemConfig {
     @Column(name = "semester_offset")
     private Integer semesterOffset = 0;
 
+    /** 新学期已开启标记：只有先「推进到下一学期」置 true，才允许开启第 1 轮选课；开轮后消费为 false */
+    @Column(name = "new_semester_ready")
+    private Boolean newSemesterReady = false;
+
     public SystemConfig() {}
 
     public Long getId() { return id; }
@@ -143,6 +147,15 @@ public class SystemConfig {
     public void setAutoSchedule(Boolean v) { this.autoSchedule = v; }
     public Integer getTeacherMaxCourses() { return teacherMaxCourses; }
     public void setTeacherMaxCourses(Integer v) { this.teacherMaxCourses = v; }
+    public Boolean getNewSemesterReady() { return newSemesterReady; }
+    public void setNewSemesterReady(Boolean v) { this.newSemesterReady = v; }
     public Integer getSemesterOffset() { return semesterOffset; }
     public void setSemesterOffset(Integer v) { this.semesterOffset = v; }
+
+    /** 本学期已完成（关闭并结算）的轮次数：下一可开启轮 = roundProgress + 1 */
+    @Column(name = "round_progress")
+    private Integer roundProgress = 0;
+
+    public Integer getRoundProgress() { return roundProgress; }
+    public void setRoundProgress(Integer v) { this.roundProgress = v; }
 }

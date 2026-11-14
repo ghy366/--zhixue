@@ -138,29 +138,25 @@ public class RoundScheduleService {
             }
         }
 
+        // 轮次门控：自动排班同样不能跳级，也不能在未开启新学期时开放第 1 轮
+        int progress = c.getRoundProgress() == null ? 0 : Math.max(0, Math.min(3, c.getRoundProgress()));
+        int unlocked = Math.min(3, progress + 1);
+        if (newRound == null) newRound = unlocked;
+        if (newRound > unlocked) { newRound = unlocked; newOpen = false; }
+        if (newOpen && Integer.valueOf(1).equals(newRound)
+                && !Boolean.TRUE.equals(c.getNewSemesterReady())) newOpen = false;
+
         boolean changed = !eq(c.getCurrentRound(), newRound)
                 || !eq(c.getRoundOpen(), newOpen)
                 || !eq(c.getRoundOpenAt(), newOpenAt)
                 || !eq(c.getRoundCloseAt(), newCloseAt);
         if (changed) {
-            // 进入「第 1 轮开放」= 新选课周期开始：先把上一周期残留的报名占位清空，
-            // 让全部课程容量回到满额（成绩 grades 不动）。手动开启在 SystemController 里同步做一次。
-            boolean enteringRound1 = newOpen
-                    && Integer.valueOf(1).equals(newRound)
-                    && !(Boolean.TRUE.equals(c.getRoundOpen()) && Integer.valueOf(1).equals(c.getCurrentRound()));
+            // 自动排班不再清理报名数据：容量按学期口径释放，开启新学期由管理员显式操作
             c.setCurrentRound(newRound);
             c.setRoundOpen(newOpen);
             c.setRoundOpenAt(newOpenAt);
             c.setRoundCloseAt(newCloseAt);
             c = sysRepo.save(c);
-            if (enteringRound1) {
-                try {
-                    capacityService.releaseAll();
-                } catch (Exception e) {
-                    org.slf4j.LoggerFactory.getLogger(RoundScheduleService.class)
-                            .warn("第 1 轮自动开放时释放容量失败：{}", e.getMessage());
-                }
-            }
         }
         return c;
     }

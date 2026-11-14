@@ -95,32 +95,6 @@
         </div>
       </div>
 
-      <!-- ===== 教师工作量 ===== -->
-      <div class="section">
-        <div class="section-header"><div class="section-title"><span v-html="svgIcon('users')" />{{ t('教师工作量') }}</div></div>
-        <div v-if="teachers.length" class="data-table">
-          <table>
-            <thead><tr><th>{{ t('教师') }}</th><th>{{ t('学院') }}</th><th>{{ t('开设课程') }}</th><th>{{ t('本轮录取学生') }}</th><th>{{ t('收到评价') }}</th><th>{{ t('平均评分') }}</th></tr></thead>
-            <tbody>
-              <tr v-for="t in teachers" :key="t.teacherName">
-                <td><b>{{ t.teacherName }}</b></td>
-                <td>{{ t.college || '—' }}</td>
-                <td>{{ t.courseCount }}</td>
-                <td>{{ t.studentCount }}</td>
-                <td>{{ t.reviewCount }}</td>
-                <td>
-                  <span v-if="t.reviewCount" class="rating-cell">
-                    <span class="rating-stars">{{ '★★★★★'.slice(0, Math.round(t.avgRating)) }}</span>
-                    <span class="rating-num">{{ t.avgRating }}</span>
-                  </span>
-                  <span v-else>—</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-else class="empty-state"><div class="empty-icon" v-html="svgIcon('users')" /><p>{{ t('暂无教师数据') }}</p></div>
-      </div>
     </div>
 
     <!-- ================= 分析 Tab ================= -->
@@ -209,7 +183,6 @@ const ov = reactive<any>({ round: 1, totalCourses: 0, totalUsers: 0, applied: 0,
 const hot = ref<any[]>([])
 const fill = ref<any[]>([])
 const rounds = ref<any[]>([])
-const teachers = ref<any[]>([])
 
 const round = ref(1)
 const roundOptions = ref<number[]>([1])
@@ -254,7 +227,6 @@ async function load() {
     hot.value = d.hot || []
     fill.value = d.fill || []
     rounds.value = d.rounds || []
-    teachers.value = d.teachers || []
 
     const list = Array.from(new Set<number>([
       Number(ov.round) || 1,

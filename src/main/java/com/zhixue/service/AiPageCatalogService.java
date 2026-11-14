@@ -78,8 +78,8 @@ public class AiPageCatalogService {
                 "教室、容量与校区", "教室|场地|教室容量|楼", "admin");
         add("course-mgr", "课程总库", "course-mgr", "/api/courses",
                 "全部课程配置（容量、学分、教师、时间）", "课程库|课程管理|课程总库|开课", "admin");
-        add("user-mgr", "用户权限", "user-mgr", "/api/admin/users",
-                "全部用户账号、角色与年级", "用户|账号|权限|角色|学生名单|教师名单", "admin");
+        add("user-mgr", "用户管理", "user-mgr", "/api/admin/users",
+                "全部用户账号、角色与年级", "用户|账号|角色|学生名单|教师名单|用户管理", "admin");
         add("announce", "公告管理", "announce", "/api/announcements?all=1",
                 "全部公告、已读统计", "公告管理|发公告|通知管理|已读统计", "admin");
         add("stats", "统计报表", "stats", "/api/stats/report",

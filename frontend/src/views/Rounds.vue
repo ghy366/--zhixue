@@ -9,6 +9,8 @@
       <div class="rsb-item"><span class="rsb-label">{{ t('倒计时') }}</span><span class="rsb-val">{{ countdownText || t('—') }}</span></div>
       <div class="rsb-item"><span class="rsb-label">{{ t('阶段') }}</span><span class="rsb-val">{{ phaseLabel(derivedPhase || config.currentPhase) }}</span></div>
       <div class="rsb-item"><span class="rsb-label">{{ t('每学期学分上限') }}</span><span class="rsb-val">{{ config.maxCreditPerSemester ?? '—' }} {{ t('分') }}</span></div>
+      <div class="rsb-item"><span class="rsb-label">{{ t('新学期') }}</span><span class="rsb-val"><span class="rd-pill" :class="config.newSemesterReady ? 'rd-pill-green' : 'rd-pill-amber'">{{ config.newSemesterReady ? t('已开启') : t('未开启') }}</span></span></div>
+      <div class="rsb-item"><span class="rsb-label">{{ t('轮次进度') }}</span><span class="rsb-val">{{ t('已完成 {n} / 3 轮 · 可开启第 {m} 轮', { n: roundProgress, m: unlockedRound }) }}</span></div>
       <span class="rd-auto-tag" :class="{ on: schedule.autoSchedule }"><span class="rd-auto-dot"></span>{{ schedule.autoSchedule ? t('自动排班已开启') : t('手动模式') }}</span>
     </div>
 
@@ -33,34 +35,34 @@
           <div class="rd-manual-row">
             <div class="rd-manual-info">
               <b>{{ t('当前状态：') }}{{ config.roundOpen ? t('选课开放中') : t('选课已关闭') }}</b>
-              <span>{{ t('直接开/关本轮选课（第 {n} 轮）；关闭时自动结算待录取报名', { n: config.currentRound ?? '—' }) }}</span>
+              <span>{{ t('直接开/关本轮选课（第 {n} 轮）；关闭时自动结算待录取报名并解锁下一轮', { n: config.currentRound ?? '—' }) }}{{ roundBlockReason ? t('　⚠ ') + roundBlockReason : '' }}</span>
             </div>
-            <button v-if="!config.roundOpen" class="btn btn-success" @click="setRoundOpen(true)">{{ t('开启本轮') }}</button>
+            <button v-if="!config.roundOpen" class="btn btn-success" :disabled="!!roundBlockReason" @click="setRoundOpen(true)">{{ roundBlockReason ? t('本轮未解锁') : t('开启本轮') }}</button>
             <button v-else class="btn btn-danger" @click="setRoundOpen(false)">{{ t('关闭本轮') }}</button>
           </div>
           <div class="rd-manual-row">
             <div class="rd-manual-info">
               <b>{{ t('立即结算本轮') }}</b>
-              <span>{{ t('按积分从高到低统一录取当前轮的待录取报名（同分随机抽签），关闭/切换轮次时也会自动结算') }}</span>
+              <span>{{ t('按积分从高到低统一录取当前轮的待录取报名（同分随机抽签）；仅可结算当前已解锁的轮次，第 3 轮先到先得无需结算') }}</span>
             </div>
-            <button class="btn btn-primary" :disabled="settling" @click="settleNow">{{ settling ? t('结算中…') : t('立即结算') }}</button>
+            <button class="btn btn-primary" :disabled="settling || roundLocked || (config.currentRound ?? 1) >= 3" @click="settleNow">{{ settling ? t('结算中…') : t('立即结算') }}</button>
           </div>
           <div class="rd-manual-row">
             <div class="rd-manual-info">
               <b>{{ t('切换轮次') }}</b>
-              <span>{{ t('直接跳转到指定轮次（1 ~ 3）') }}</span>
+              <span>{{ t('只能切换到已解锁轮次（当前最高第 {n} 轮）；需先关闭本轮，关闭时自动结算并解锁下一轮', { n: unlockedRound }) }}</span>
             </div>
             <div class="rd-round-ctl">
-              <el-input-number v-model="manualRound" :min="1" :max="3" />
-              <button class="btn btn-primary" @click="switchRound">{{ t('切换') }}</button>
+              <el-input-number v-model="manualRound" :min="1" :max="unlockedRound" />
+              <button class="btn btn-primary" :disabled="config.roundOpen || manualRound > unlockedRound" @click="switchRound">{{ t('切换') }}</button>
             </div>
           </div>
           <div class="rd-manual-row">
             <div class="rd-manual-info">
-              <b>{{ t('释放本学期容量') }}</b>
-              <span>{{ t('清空本学期报名 / 候补 / 待处理退课申请，让每门课名额回到满额；历史学期的报名记录与成绩学分全部保留。开启第 1 轮时会自动执行一次。') }}</span>
+              <b>{{ t('进入新学期 / 释放名额') }}</b>
+              <span>{{ t('开启新学期并解锁第 1 轮选课：推进学期偏移，旧报名自动归档、名额按学期口径满额释放；报名记录、成绩与学分一条都不删，候补与待处理申请仅标记归档。未开启新学期时无法开启第 1 轮。') }}</span>
             </div>
-            <button class="btn btn-danger" :disabled="releasing" @click="releaseCapacity">{{ releasing ? t('释放中…') : t('释放容量') }}</button>
+            <button class="btn btn-primary" :disabled="releasing" @click="releaseCapacity">{{ releasing ? t('处理中…') : t('进入新学期') }}</button>
           </div>
         </div>
       </div>
@@ -331,6 +333,22 @@ const phaseLabel = (v: any) => PHASE_LABELS[v] ? t(PHASE_LABELS[v]) : (v ? Strin
 
 const rdTab = ref<'run' | 'schedule' | 'params' | 'plans'>('run')
 const config = ref<any>({})
+/** 第 1 轮从关闭→开启，必须先「进入新学期」；标记由后端开轮后消费 */
+const needNewSemester = computed(() => !config.value.roundOpen
+  && (config.value.currentRound ?? 1) === 1
+  && !config.value.newSemesterReady)
+const roundProgress = computed(() => Math.max(0, Math.min(3, Number(config.value.roundProgress ?? 0))))
+const unlockedRound = computed(() => Math.min(3, roundProgress.value + 1))
+const roundLocked = computed(() => (config.value.currentRound ?? 1) > unlockedRound.value)
+const roundBlockReason = computed(() => {
+  const cur = config.value.currentRound ?? 1
+  if (config.value.roundOpen) return ''
+  if (cur > unlockedRound.value)
+    return t('第 {n} 轮尚未解锁：请先完成第 {m} 轮（关闭本轮即自动结算）', { n: cur, m: unlockedRound.value })
+  if (cur === 1 && !config.value.newSemesterReady) return t('第 1 轮需先「进入新学期」才能开启')
+  if (cur < unlockedRound.value) return t('第 {n} 轮已完成，请切换到第 {m} 轮', { n: cur, m: unlockedRound.value })
+  return ''
+})
 const derivedPhase = ref<string>('')
 const form = reactive<any>({ roundOpenAt: null, roundCloseAt: null, currentPhase: 'auto', maxCreditPerSemester: 24, maxCoursesPerSemester: 2, confirmMinutes: 30, teacherMaxCourses: 3, gradReqRequired: 6, gradReqElective: 5, gradReqGeneral: 3, gradReqPractice: 2, gradReqCourses: 9 })
 const manualRound = ref<number>(1)
@@ -575,12 +593,16 @@ async function settleNow() {
   finally { settling.value = false }
 }
 async function setRoundOpen(open: boolean) {
-  const willRelease = open && !config.value.roundOpen && (config.value.currentRound ?? 1) === 1
+  if (open && roundBlockReason.value) {
+    ElMessage.warning(roundBlockReason.value)
+    return
+  }
+  const firstRoundStart = open && !config.value.roundOpen && (config.value.currentRound ?? 1) === 1
   try {
     await ElMessageBox.confirm(
       open
         ? t('开启第 {n} 轮选课？学生将立即可以选课。', { n: config.value.currentRound })
-          + (willRelease ? t(' 注意：第 1 轮开启会先释放本学期容量——清空本学期报名 / 候补 / 待处理退课申请，所有课程名额回到满额；历史学期的报名记录与成绩学分全部保留。') : '')
+          + (firstRoundStart ? t(' 新学期名额已按学期口径释放，全部报名与成绩记录保留。') : '')
         : t('关闭第 {n} 轮选课？学生将无法继续选课。', { n: config.value.currentRound }),
       open ? t('开启选课') : t('关闭选课'),
       { type: 'warning', confirmButtonText: open ? t('开启') : t('关闭'), cancelButtonText: t('取消') }
@@ -591,14 +613,14 @@ async function setRoundOpen(open: boolean) {
   } catch (e: any) { if (e !== 'cancel') ElMessage.error(e?.message || t('操作失败')) }
 }
 
-/* ---------- 释放容量 ---------- */
+/* ---------- 进入新学期（按学期口径释放名额，不删数据） ---------- */
 const releasing = ref(false)
 async function releaseCapacity() {
   try {
     await ElMessageBox.confirm(
-      t('释放本学期容量？将清空本学期的报名、候补与待处理退课申请，每门课名额回到满额；历史学期的报名记录与成绩（学分/GPA）全部保留，本学期清理不可撤销。'),
-      t('释放本学期容量'),
-      { type: 'warning', confirmButtonText: t('确认释放'), cancelButtonText: t('取消') }
+      t('进入新学期？将推进学期偏移并解锁第 1 轮选课，旧报名自动归档、名额满额释放；报名记录、成绩与学分全部保留，不会删除任何数据，仅候补与待处理申请标记为归档。已开启时重复点击不会再次推进学期。'),
+      t('进入新学期'),
+      { type: 'info', confirmButtonText: t('确认进入'), cancelButtonText: t('取消') }
     )
   } catch { return }
   releasing.value = true
@@ -610,6 +632,10 @@ async function releaseCapacity() {
   finally { releasing.value = false }
 }
 async function switchRound() {
+  if (config.value.roundOpen) { ElMessage.warning(t('请先关闭本轮选课，关闭后会自动结算并解锁下一轮')); return }
+  if (manualRound.value > unlockedRound.value) {
+    ElMessage.warning(t('第 {n} 轮尚未解锁：请先完成第 {m} 轮', { n: manualRound.value, m: unlockedRound.value })); return
+  }
   if (manualRound.value === config.value.currentRound) { ElMessage.info(t('已经是第 {n} 轮了', { n: manualRound.value })); return }
   try {
     await ElMessageBox.confirm(t('切换到第 {n} 轮？手动切换将退出自动排班模式。', { n: manualRound.value }), t('切换轮次'),

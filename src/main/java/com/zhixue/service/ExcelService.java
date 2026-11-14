@@ -7,7 +7,11 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 /** 生成真正的 .xlsx（Excel）文件字节流 */
@@ -76,5 +80,34 @@ public class ExcelService {
         } catch (Exception e) {
             throw new RuntimeException("生成 Excel 失败：" + e.getMessage(), e);
         }
+    }
+
+    /** 读取 .xlsx 首个工作表，返回「行 × 列」字符串矩阵（供批量导入按列名映射字段）。
+     *  整数数值按原样输出，避免学号 / 年级被读成 2.023090101E9 之类的科学计数法。 */
+    public List<List<String>> readXlsx(byte[] bytes) throws IOException {
+        List<List<String>> rows = new ArrayList<>();
+        try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
+            if (wb.getNumberOfSheets() == 0) return rows;
+            Sheet sheet = wb.getSheetAt(0);
+            DataFormatter fmt = new DataFormatter();
+            for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
+                Row row = sheet.getRow(r);
+                List<String> cells = new ArrayList<>();
+                if (row != null) {
+                    for (int c = Math.max(0, row.getFirstCellNum()); c < row.getLastCellNum(); c++) {
+                        Cell cell = row.getCell(c);
+                        if (cell == null) { cells.add(""); continue; }
+                        if (cell.getCellType() == CellType.NUMERIC) {
+                            double d = cell.getNumericCellValue();
+                            if (d == Math.rint(d) && !Double.isInfinite(d)) {
+                                cells.add(BigDecimal.valueOf(d).toBigInteger().toString());
+                            } else cells.add(fmt.formatCellValue(cell));
+                        } else cells.add(fmt.formatCellValue(cell).trim());
+                    }
+                }
+                rows.add(cells);
+            }
+        }
+        return rows;
     }
 }

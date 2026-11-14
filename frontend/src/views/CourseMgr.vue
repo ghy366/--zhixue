@@ -9,6 +9,11 @@
           <button class="btn btn-outline btn-sm" @click="prereqVisible = true">🔗 {{ t('先修链') }}</button>
         </div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 0 10px">
+        <span style="margin-right:auto;font-size:12px;color:var(--text-lighter)">{{ t('批量导入：仅 .xlsx，按模板列名自动填入（仅管理员）') }}</span>
+        <button class="btn btn-outline btn-sm" @click="downloadTemplate('courses')">{{ t('下载模板') }}</button>
+        <button class="btn btn-outline btn-sm" @click="pickAndImport('courses', load)">{{ t('导入 Excel') }}</button>
+      </div>
       <div class="data-table">
         <table>
           <thead><tr><th>{{ t('课程名') }}</th><th>{{ t('类别') }}</th><th>{{ t('学分') }}</th><th>{{ t('教师') }}</th><th>{{ t('容量/已报') }}</th><th>{{ t('状态') }}</th><th>{{ t('操作') }}</th></tr></thead>
@@ -131,6 +136,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api'
 import { t } from '@/i18n'
+import { downloadTemplate, pickAndImport } from '@/utils/xlsxImport'
 import { buildTimeOptionGroups, describeSchedule } from '@/utils/classSchedule'
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
 const list = ref<any[]>([])
