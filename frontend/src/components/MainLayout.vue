@@ -522,9 +522,12 @@ const pinned = ref(localStorage.getItem('zhixue_sidebar_pinned') !== '0')
 const hovering = ref(false)        // 悬停/键盘焦点临时展开
 const mobileOpen = ref(false)      // 移动端抽屉
 // AI 助手页自带一层导航：外层侧栏收成 72px 窄轨，避免双层侧栏把内容挤窄
-// （窄轨上图标仍可点击，导航不丢失）
+// （窄轨上图标仍可点击，导航不丢失；悬停时以覆盖层形式临时展开，不推挤内容）
 const chatMode = computed(() => route.path.replace(/\/+$/, '') === '/chat')
-const expanded = computed(() => !chatMode.value && (pinned.value || hovering.value || mobileOpen.value))
+const expanded = computed(() =>
+  chatMode.value
+    ? (hovering.value || mobileOpen.value)   // AI 页：仅悬停/移动端展开（pinned 不生效，防双层侧栏挤压）
+    : (pinned.value || hovering.value || mobileOpen.value))
 
 // ======== 左下角个人菜单（头像点击弹出：个人中心/主题切换/通知中心）========
 const showUserMenu = ref(false)

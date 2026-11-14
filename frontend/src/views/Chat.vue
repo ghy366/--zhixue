@@ -455,14 +455,27 @@
                         @keydown.enter.exact.prevent="send()"
                         @paste="onPaste"
                         :rows="1" @input="autoResize" />
-              <select v-model="selectedKey" class="ai-model-select" :title="t('选择通道与模型')" @change="onModelChange">
-                <option value="auto">{{ t('自动 · 智能级联') }}</option>
-                <optgroup v-for="ch in modelChannels" :key="ch.id" :label="ch.name">
-                  <option v-for="m in ch.models" :key="ch.id + '|' + m.id" :value="ch.id + '|' + m.id">
-                    {{ m.label }}{{ m.primary ? ' ★' : '' }}{{ m.vision ? ' 🖼' : '' }}
-                  </option>
-                </optgroup>
-              </select>
+              <el-select v-model="selectedKey" class="ai-model-select" popper-class="ai-model-popper"
+                         placement="top-end" :fit-input-width="false" filterable
+                         :title="t('选择通道与模型')" @change="onModelChange">
+                <el-option value="auto" :label="t('自动 · 智能级联')" class="mo-auto">
+                  <div class="mo-row">
+                    <span class="mo-label">✦ {{ t('自动 · 智能级联') }}</span>
+                  </div>
+                </el-option>
+                <el-option-group v-for="ch in modelChannels" :key="ch.id" :label="ch.name">
+                  <el-option v-for="m in ch.models" :key="ch.id + '|' + m.id"
+                             :value="ch.id + '|' + m.id" :label="m.label">
+                    <div class="mo-row">
+                      <span class="mo-label">{{ m.label }}</span>
+                      <span class="mo-badges">
+                        <span v-if="m.primary" class="mo-badge mo-star" :title="t('该通道默认模型')">★</span>
+                        <span v-if="m.vision" class="mo-badge mo-vision" :title="t('支持识图')">🖼</span>
+                      </span>
+                    </div>
+                  </el-option>
+                </el-option-group>
+              </el-select>
             </div>
             <button class="chat-img-btn" :disabled="!visionAllowed" :title="visionTip" @click="pickImage">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1385,17 +1398,23 @@ onBeforeUnmount(() => {
 .chat-clear-btn { font-size: 12px; padding: 5px 12px; border-radius: 20px; background: var(--bg); border: 1px solid var(--border); color: var(--text-light); cursor: pointer; transition: all .2s; white-space: nowrap; }
 .chat-clear-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 
-/* 自选通道 / 模型下拉：嵌在输入框右端、发送按钮左侧 */
-.ai-model-select {
-  flex: 0 0 auto; align-self: center;
-  max-width: 150px; height: 30px; padding: 3px 8px; border-radius: 8px;
-  background: rgba(43,177,135,0.08); border: 1px solid var(--border); color: var(--text);
-  font: inherit; font-size: 12px; cursor: pointer; outline: none; white-space: nowrap;
-  transition: border-color .2s, color .2s;
+/* 自选通道 / 模型下拉（Element Plus）：嵌在输入框右端、发送按钮左侧 */
+.ai-model-select { flex: 0 0 auto; align-self: center; max-width: 150px; }
+.ai-model-select :deep(.el-select__wrapper) {
+  min-height: 30px; padding: 3px 8px; border-radius: 8px;
+  background: rgba(43,177,135,0.08);
+  box-shadow: 0 0 0 1px var(--border) inset;
+  transition: box-shadow .2s;
 }
-.ai-model-select:hover, .ai-model-select:focus { border-color: var(--primary); color: var(--primary); }
-.ai-model-select optgroup, .ai-model-select option { background: var(--card); color: var(--text); }
-@media (max-width: 720px) { .ai-model-select { max-width: 96px; font-size: 11px; padding: 2px 4px; } }
+.ai-model-select :deep(.el-select__wrapper.is-hovered),
+.ai-model-select :deep(.el-select__wrapper.is-focused) { box-shadow: 0 0 0 1px var(--primary) inset; }
+.ai-model-select :deep(.el-select__placeholder),
+.ai-model-select :deep(.el-select__input) { color: var(--text); font-size: 12px; }
+.ai-model-select :deep(.el-select__wrapper.is-hovered .el-select__placeholder),
+.ai-model-select :deep(.el-select__wrapper.is-focused .el-select__placeholder),
+.ai-model-select :deep(.el-select__wrapper.is-focused .el-select__input) { color: var(--primary); }
+.ai-model-select :deep(.el-select__caret) { width: 14px; height: 14px; color: var(--text-light); }
+@media (max-width: 720px) { .ai-model-select { max-width: 96px; } .ai-model-select :deep(.el-select__placeholder), .ai-model-select :deep(.el-select__input) { font-size: 11px; } }
 .chat-clear-btn:disabled { opacity: .4; cursor: not-allowed; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; background: var(--card); min-height: 0; }
 
@@ -1878,4 +1897,46 @@ html[data-theme="dark"] .chat-page .chat-md :deep(.md-table tr:nth-child(even) t
 /* 页面容器底色：用更高特异性压过全局 .stats-page.liquid 的透传，保证容器本身也随主题变 */
 .chat-page.stats-page.liquid { background: #ffffff; }
 html[data-theme="dark"] .chat-page.stats-page.liquid { background: #12202e; }
+</style>
+
+<!-- 通道/模型弹层：teleport 到 body，需非 scoped -->
+<style>
+/* ===== 通道/模型下拉弹层 ===== */
+.ai-model-popper.el-popper { width: 264px; border: none; border-radius: 12px; background: transparent; }
+.ai-model-popper .el-popper__arrow { display: none; }
+.ai-model-popper .el-select-dropdown {
+  background: var(--card, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 40, 30, .16); overflow: hidden; padding: 0;
+}
+.ai-model-popper .el-scrollbar__wrap { max-height: 54vh; }
+.ai-model-popper .el-select-dropdown__list { padding: 6px; }
+/* 选项行 */
+.ai-model-popper .el-select-dropdown__item {
+  height: 34px; line-height: 34px; margin: 1px 0; padding: 0 12px;
+  border-radius: 8px; color: var(--text, #1f2937); font-size: 12.5px;
+}
+.ai-model-popper .el-select-dropdown__item.is-hovering { background: rgba(43, 177, 135, .08); }
+.ai-model-popper .el-select-dropdown__item.is-selected {
+  color: var(--primary, #1fa67a); font-weight: 600; background: rgba(43, 177, 135, .12);
+}
+/* 「自动 · 智能级联」首项：虚线与其余通道分隔 */
+.ai-model-popper .el-select-dropdown__item.mo-auto {
+  border-bottom: 1px dashed var(--border, #e5e7eb); border-radius: 8px 8px 0 0; margin-bottom: 4px;
+}
+.ai-model-popper .el-select-dropdown__item.mo-auto .mo-label { color: var(--primary, #1fa67a); font-weight: 600; }
+/* 分组标题（通道名） */
+.ai-model-popper .el-select-group__title {
+  color: var(--text-light, #5b6b7a); font-size: 11px; font-weight: 600;
+  letter-spacing: .3px; padding: 10px 12px 4px; text-transform: none;
+}
+.ai-model-popper .el-select-group__wrap:not(:last-of-type)::after { display: none; }
+/* 徽标：★ 默认模型 / 🖼 支持识图 */
+.mo-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.mo-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mo-badges { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.mo-badge { font-size: 11px; line-height: 1; }
+.mo-star { color: #e7a94c; }
+.mo-vision { font-size: 12px; opacity: .7; }
+/* 深色主题下阴影加深 */
+html[data-theme="dark"] .ai-model-popper .el-select-dropdown { box-shadow: 0 12px 32px rgba(0, 0, 0, .45); }
 </style>
