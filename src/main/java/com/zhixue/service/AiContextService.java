@@ -99,6 +99,7 @@ public class AiContextService {
     @Autowired private WaitlistRepository waitlistRepo;
     @Autowired private WaitlistService waitlistService;
     @Autowired private GradeService gradeService;
+    @Autowired private GradeLedgerService ledger;
     @Autowired private CourseService courseService;
     @Autowired private IntentService intentService;
     @Autowired private GraduationService graduationService;
@@ -121,14 +122,15 @@ public class AiContextService {
                 + "确认候补时需要系统提示你在确认时限内操作，超时顺延给下一位。\n");
         sb.append("7. 必修课（公共必修 / 专业必修）不参与选课，由系统按教学计划自动排入课表，不占积分、不用投分。\n");
         sb.append("8. 退课：退课会释放名额并触发候补递补；已投入积分在退课时按系统规则处理。\n");
-        sb.append("9. 毕业口径：毕业学分 = 必修 + 选修 + 通识 + 实践 四大类分别达标，"
-                + "某一类修满不能抵扣其他类的缺口；必修需逐门修满教学计划。\n");
+        int pubElec = cfg != null && cfg.getGradReqGeneral() != null && cfg.getGradReqGeneral() > 0
+                ? cfg.getGradReqGeneral() : 8;
+        sb.append("9. 毕业口径：毕业学分 = 必修 + 公共选修 + 专业选修 三类分别达标（对齐厦门华厦学院），"
+                + "某一类修满不能抵扣另一类的缺口；必修需逐门修满教学计划，公共选修须修满 8 学分。\n");
         if (cfg != null) {
             sb.append("10. 当前每学期学分上限：").append(cfg.getMaxCreditPerSemester()).append(" 分。\n");
             sb.append("11. 当前毕业学分要求：必修≥").append(cfg.getGradReqRequired())
-              .append("、选修≥").append(cfg.getGradReqElective())
-              .append("、通识≥").append(cfg.getGradReqGeneral())
-              .append("、实践≥").append(cfg.getGradReqPractice()).append("。\n");
+              .append("、公共选修≥").append(pubElec)
+              .append("、专业选修≥").append(cfg.getGradReqElective()).append("。\n");
             sb.append("12. 候补确认时限：被递补者须在 ").append(cfg.getConfirmMinutes())
               .append(" 分钟内确认，超时名额自动顺延给下一位（此为系统真实配置值）。\n");
         }
@@ -732,7 +734,7 @@ public class AiContextService {
         if (u == null || u.getGrade() == null) return null;
         SystemConfig cfg = configRepo.findById(1L).orElse(null);
         int offset = cfg == null || cfg.getSemesterOffset() == null ? 0 : cfg.getSemesterOffset();
-        return GraduationService.currentSemesterNo(u.getGrade(), java.time.LocalDate.now(), offset);
+        return GraduationService.currentSemesterNo(u.getGrade(), u.getMajor(), java.time.LocalDate.now(), offset);
     }
 
     /** 目标课程与我已录取课程的时间冲突明细（同 id 不算冲突） */
@@ -928,6 +930,8 @@ public class AiContextService {
         sb.append("\n-- 【我的成绩】--\n");
         List<com.zhixue.entity.Grade> grades = gradeService.findByStudent(userId);
         if (grades.isEmpty()) { sb.append("暂无已发布成绩。\n"); rec.sources.add("我的成绩"); return; }
+        // 绩点按成绩流水的有效记录（最新通过优先，补考封顶），与 GPA / 毕业口径一致
+        Map<Long, com.zhixue.entity.GradeRecord> effective = ledger.effectiveRecords(userId);
         // 学期归属:成绩行自带 semester_no,按「学年-学期」分组输出,支持「某学期成绩」类提问
         Integer entryYear = userRepo.findById(userId).map(User::getGrade).orElse(null);
         Map<Integer, List<String>> rowsBySem = new TreeMap<>();
@@ -936,12 +940,14 @@ public class AiContextService {
         for (com.zhixue.entity.Grade g : grades) {
             Course c = courseRepo.findById(g.getCourseId()).orElse(null);
             if (c == null) continue;
+            com.zhixue.entity.GradeRecord eff = effective.get(g.getCourseId());
+            double pts = eff != null ? GradeLedgerService.pointsOf(eff)
+                    : GradeService.scoreToGpa(g.getTotalScore() == null ? 0 : g.getTotalScore());
             String line = "· 《" + c.getName() + "》｜学分 " + nz(c.getCredit(), "?")
               + "｜平时分 " + fmt(g.getRegularScore())
               + "｜期末分 " + fmt(g.getFinalScore())
               + "｜总评 " + fmt(g.getTotalScore())
-              + "｜GPA " + String.format(Locale.ROOT, "%.1f", GradeService.scoreToGpa(
-                      g.getTotalScore() == null ? 0 : g.getTotalScore()))
+              + "｜GPA " + String.format(Locale.ROOT, "%.1f", pts)
               + "｜全字段:" + dumpAllFields(g);
             int sem = g.getSemesterNo() == null ? -1 : g.getSemesterNo();
             rowsBySem.computeIfAbsent(sem, k -> new ArrayList<>()).add(line);
@@ -1238,9 +1244,7 @@ public class AiContextService {
               .append(Boolean.TRUE.equals(cfg.getRoundOpen()) ? "选课进行中" : "选课已关闭").append("\n");
             sb.append("学分上限 ").append(cfg.getMaxCreditPerSemester())
               .append(" 分｜毕业要求 必修 ").append(cfg.getGradReqRequired())
-              .append(" / 选修 ").append(cfg.getGradReqElective())
-              .append(" / 通识 ").append(cfg.getGradReqGeneral())
-              .append(" / 实践 ").append(cfg.getGradReqPractice()).append("\n");
+              .append(" / 选修 ").append(cfg.getGradReqElective()).append("\n");
             sb.append("系统配置全字段:").append(dumpAllFields(cfg)).append("\n");
         }
         rec.sources.add("系统概览");

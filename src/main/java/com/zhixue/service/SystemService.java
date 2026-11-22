@@ -1,9 +1,14 @@
 package com.zhixue.service;
 
+import com.zhixue.entity.Course;
 import com.zhixue.entity.GradeRequirement;
 import com.zhixue.entity.SystemConfig;
+import com.zhixue.entity.TrainingPlanCourse;
+import com.zhixue.repository.CourseRepository;
 import com.zhixue.repository.GradeRequirementRepository;
 import com.zhixue.repository.SystemConfigRepository;
+import com.zhixue.repository.TrainingPlanCourseRepository;
+import com.zhixue.util.CourseGroup;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +23,8 @@ public class SystemService {
     @Autowired private SystemConfigRepository sysRepo;
     @Autowired private GradeRequirementRepository gradeReqRepo;
     @Autowired private EnrollmentService enrollmentService;
+    @Autowired private TrainingPlanCourseRepository trainingPlanRepo;
+    @Autowired private CourseRepository courseRepo;
 
     public SystemConfig getConfig() { return enrollmentService.getSystemConfig(); }
 
@@ -132,6 +139,20 @@ public class SystemService {
         return sysRepo.save(c);
     }
 
+    /** 补考/重修参数：封顶分、补考次数、重修上限、组班门槛、补考报名窗口 */
+    public SystemConfig setMakeupConfig(Integer scoreCap, Integer makeupMax, Integer retakeMax,
+                                        Integer groupThreshold, java.time.LocalDateTime openAt,
+                                        java.time.LocalDateTime closeAt) {
+        SystemConfig c = getConfig();
+        if (scoreCap != null) c.setMakeupScoreCap(scoreCap);
+        if (makeupMax != null) c.setMakeupMaxAttempts(Math.max(1, makeupMax));
+        if (retakeMax != null) c.setMaxRetakeAttempts(Math.max(1, retakeMax));
+        if (groupThreshold != null) c.setRetakeGroupThreshold(Math.max(1, groupThreshold));
+        if (openAt != null) c.setMakeupOpenAt(openAt);
+        if (closeAt != null) c.setMakeupCloseAt(closeAt);
+        return sysRepo.save(c);
+    }
+
     public SystemConfig setGraduationReqs(Integer required, Integer elective, Integer general, Integer practice, Integer courses) {
         SystemConfig c = getConfig();
         if (required != null) c.setGradReqRequired(required);
@@ -142,43 +163,131 @@ public class SystemService {
         return sysRepo.save(c);
     }
 
-    /* ---------- 按年级差异化毕业要求 ---------- */
+    /* ---------- 毕业条件：学制两套（普通本科 / 专升本），即培养方案，不按年级分化 ---------- */
 
-    public List<GradeRequirement> listGradeReqs() {
-        return gradeReqRepo.findAllByOrderByGradeAsc();
+    /**
+     * 毕业条件清单：学制两套——「普通本科」与「专升本」，每套固定一行。
+     * 必修/专业选修分母全部由培养方案推导（修满方案即达标），公共选修按全校课程池展示（公选由学生自选）。
+     */
+    public List<Map<String, Object>> listGradeReqs() {
+        int gxTotal = 0;
+        for (Course c : courseRepo.findAll()) {
+            if (c.getCategory() != null && c.getCategory().contains("公共选修")
+                    && CourseGroup.countsForGraduation(c.getCourseCode())) {
+                gxTotal += c.getCredit() == null ? 0 : c.getCredit();
+            }
+        }
+        List<GradeRequirement> all = gradeReqRepo.findAllByOrderByGradeAsc();
+        GradeRequirement normal = all.stream()
+                .filter(g -> g.getLabel() == null || !g.getLabel().contains("专升本")).findFirst().orElse(null);
+        GradeRequirement zsb = all.stream()
+                .filter(g -> g.getLabel() != null && g.getLabel().contains("专升本")).findFirst().orElse(null);
+        List<Map<String, Object>> out = new java.util.ArrayList<>();
+        out.add(trackRow("normal", "普通本科", gxTotal));
+        out.add(trackRow("zsb", "专升本", gxTotal));
+        return out;
     }
 
-    /** 整表保存：以提交列表为准全量替换（年级数量少，替换最直观且不易残留脏行） */
+    /** 一套学制的毕业条件行：分母按覆盖专业的培养方案逐专业推导，并附每专业的精确毕业条件 */
+    private Map<String, Object> trackRow(String track, String label, int gxTotal) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("track", track);
+        m.put("label", label);
+        // 覆盖专业：普通本科 = 不带专升本后缀的方案专业；专升本 = 带「专升本」的方案专业
+        java.util.Set<String> covered = new java.util.LinkedHashSet<>();
+        for (TrainingPlanCourse t : trainingPlanRepo.findByEnabledTrue()) {
+            if (t.getMajor() == null || t.getMajor().isBlank()) continue;
+            boolean zsbMajor = t.getMajor().contains("专升本");
+            if (("zsb".equals(track)) == zsbMajor) covered.add(t.getMajor().trim());
+        }
+        // 每个专业的精确毕业条件（必修 / 专业选修 / 门数），合计 = 必修 + 专业选修 + 公选 6
+        java.util.List<Map<String, Object>> majors = new java.util.ArrayList<>();
+        Integer bxMin = null, bxMax = null, zxMin = null, zxMax = null;
+        for (String cm : covered) {
+            Map<String, Integer> sup = planSupplyOf(cm);
+            int bx = sup.get("bx"), zx = sup.get("zx");
+            bxMin = bxMin == null ? bx : Math.min(bxMin, bx);
+            bxMax = bxMax == null ? bx : Math.max(bxMax, bx);
+            zxMin = zxMin == null ? zx : Math.min(zxMin, zx);
+            zxMax = zxMax == null ? zx : Math.max(zxMax, zx);
+            Map<String, Object> mj = new LinkedHashMap<>();
+            mj.put("major", cm);
+            mj.put("bx", sup.get("bx"));
+            mj.put("zx", sup.get("zx"));
+            mj.put("courses", sup.get("courses"));
+            mj.put("total", bx + zx + 6);
+            majors.add(mj);
+        }
+        majors.sort(java.util.Comparator.comparingInt(o -> -((Number) o.get("total")).intValue()));
+        if (bxMin != null) { m.put("planBxMin", bxMin); m.put("planBxMax", bxMax); }
+        if (zxMin != null) { m.put("planZxMin", zxMin); m.put("planZxMax", zxMax); }
+        m.put("gxSupply", gxTotal);
+        m.put("coveredMajorCount", covered.size());
+        m.put("majors", majors);
+        return m;
+    }
+
+    /** 某专业培养方案的学分供给：必修 / 可计专业选修 / 课程门数（非 PE-，可计入毕业学分） */
+    private Map<String, Integer> planSupplyOf(String major) {
+        int bx = 0, zx = 0, courses = 0;
+        // 与 GraduationService 的毕业审核口径一致：按课程名称去重。
+        // 方案里存在同名不同 course_id 的重复条目（如机器人工程"嵌入式系统"1322/4401），
+        // 若按 id 去重会把重复学分计入毕业条件表，造成与学生实际审核分母不一致。
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (TrainingPlanCourse t : trainingPlanRepo.findApplicable(major, null)) {
+            Course c = courseRepo.findById(t.getCourseId()).orElse(null);
+            if (c == null || !CourseGroup.countsForGraduation(c.getCourseCode())) continue;
+            if (!seen.add(c.getName() == null ? ("id" + c.getId()) : c.getName())) continue;
+            String cat = c.getCategory() == null ? "" : c.getCategory();
+            int cr = c.getCredit() == null ? 0 : c.getCredit();
+            if (cat.contains("必修")) bx += cr;
+            else if (cat.contains("专业选修")) zx += cr;
+            courses++;
+        }
+        Map<String, Integer> m = new LinkedHashMap<>();
+        m.put("bx", bx); m.put("zx", zx); m.put("courses", courses);
+        return m;
+    }
+
+    /**
+     * 保存两套学制的毕业要求：以 label（普通本科 / 专升本）upsert，
+     * 年级与专业字段不再使用（置空）——毕业要求不按年级/专业分化。
+     */
     @Transactional
     public Map<String, Object> saveGradeReqs(List<GradeRequirement> items) {
         Map<String, Object> r = new LinkedHashMap<>();
-        if (items == null) items = List.of();
-        for (GradeRequirement g : items) {
-            if (g.getGrade() == null) { r.put("success", false); r.put("msg", "存在未填写年级的配置行"); return r; }
-            if (g.getGrade() < 2000 || g.getGrade() > 2100) { r.put("success", false); r.put("msg", "年级应为入学年份（如 2023）"); return r; }
+        GradeRequirement normal = null, zsb = null;
+        for (GradeRequirement g : items == null ? List.<GradeRequirement>of() : items) {
+            boolean zsbRow = g.getLabel() != null && g.getLabel().contains("专升本");
+            if (zsbRow) {
+                if (zsb != null) { r.put("success", false); r.put("msg", "专升本方案配置重复"); return r; }
+                zsb = g;
+            } else {
+                if (normal != null) { r.put("success", false); r.put("msg", "普通本科方案配置重复"); return r; }
+                normal = g;
+            }
         }
-        // 同一「年级+专业」组合只能有一行（major 为空 = 该年级通用方案）
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        for (GradeRequirement g : items) {
-            String key = g.getGrade() + ":" + (g.getMajor() == null ? "" : g.getMajor().trim());
-            if (!seen.add(key)) { r.put("success", false); r.put("msg", "年级 " + g.getGrade() + (g.getMajor() == null || g.getMajor().isBlank() ? "" : "（" + g.getMajor() + "）") + " 配置重复"); return r; }
-        }
+        if (normal == null) { r.put("success", false); r.put("msg", "缺少普通本科方案"); return r; }
+        if (zsb == null) { r.put("success", false); r.put("msg", "缺少专升本方案"); return r; }
         gradeReqRepo.deleteAll();
-        for (GradeRequirement g : items) {
-            GradeRequirement e = new GradeRequirement();
-            e.setGrade(g.getGrade());
-            e.setMajor(g.getMajor() == null || g.getMajor().isBlank() ? null : g.getMajor().trim());
-            e.setLabel(g.getLabel() == null ? "" : g.getLabel().trim());
-            e.setGradReqRequired(nz(g.getGradReqRequired()));
-            e.setGradReqElective(nz(g.getGradReqElective()));
-            e.setGradReqGeneral(nz(g.getGradReqGeneral()));
-            e.setGradReqPractice(nz(g.getGradReqPractice()));
-            e.setGradReqCourses(nz(g.getGradReqCourses()));
-            gradeReqRepo.save(e);
-        }
+        saveTrack(null, "普通本科", normal);
+        saveTrack(null, "专升本", zsb);
         r.put("success", true);
-        r.put("msg", "培养方案已保存（" + items.size() + " 行）");
+        r.put("msg", "毕业要求已保存（普通本科 + 专升本 两套）");
         return r;
+    }
+
+    private void saveTrack(Integer grade, String label, GradeRequirement g) {
+        GradeRequirement e = new GradeRequirement();
+        e.setGrade(grade);          // 毕业要求不再按年级分化，置空
+        e.setMajor(null);
+        e.setLabel(label);
+        e.setGradReqRequired(nz(g.getGradReqRequired()));
+        e.setGradReqGeneral(nz(g.getGradReqGeneral()));
+        e.setGradReqElective(nz(g.getGradReqElective()));
+        e.setGradReqPractice(0);
+        e.setGradReqCourses(0);
+        gradeReqRepo.save(e);
     }
 
     @Transactional

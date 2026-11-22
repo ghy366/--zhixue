@@ -1,6 +1,31 @@
 <template>
   <div class="stats-page liquid logs-page">
     <div class="logs-orb" aria-hidden="true" />
+
+    <!-- ===== 顶部 sticky 导航栏 ===== -->
+    <header class="lg-topbar">
+      <div class="lg-brand">
+        <div class="lg-brand-icon">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7 15 3-4 3 2 5-6"/></svg>
+        </div>
+        <div class="lg-brand-text">
+          <div class="lg-title">{{ t('系统日志') }}</div>
+          <div class="lg-subtitle">{{ t('共 {n} 条操作记录', { n: total }) }}</div>
+        </div>
+      </div>
+      <button class="lg-search-trigger" @click="openCommand" :aria-label="t('打开搜索')">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span class="lg-search-ph">{{ filters.keyword || t('搜索用户 / 操作 / IP / 类型，支持拼音首字母…') }}</span>
+        <kbd class="lg-kbd">{{ isMac ? '⌘' : 'Ctrl+' }} K</kbd>
+      </button>
+      <div class="lg-top-actions">
+        <button class="lg-btn lg-btn-outline" @click="exportCsv">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m0 0 4-4m-4 4-4-4"/><path d="M4 20h16"/></svg>
+          <span>{{ t('导出 CSV') }}</span>
+        </button>
+      </div>
+    </header>
+
     <!-- ===== 原版 statCardPro 3 卡 ===== -->
     <div class="stats-grid">
       <div class="stat-card stat-pro">
@@ -164,31 +189,27 @@
         <div class="lg-count">{{ t('共 {n} 条记录', { n: total }) }}</div>
       </div>
 
+      <!-- 筛选轨道 chips：状态 / 类型，读写同一个 filters -->
       <div class="lg-toolbar">
-        <div class="search-box lg-search">
-          <input v-model="kw" :placeholder="t('搜索用户 / 操作 / IP…')" />
+        <div class="lg-chips">
+          <button class="cat-tab" :class="{ active: filters.status === '' }" @click="setStatus('')">{{ t('全部') }}</button>
+          <button class="cat-tab lg-ok" :class="{ active: filters.status === '成功' }" @click="setStatus('成功')">{{ t('成功 {n}', { n: succ }) }}</button>
+          <button class="cat-tab lg-err" :class="{ active: filters.status === '失败' }" @click="setStatus('失败')">{{ t('失败 {n}', { n: fail }) }}</button>
         </div>
         <div class="lg-chips">
-          <button class="cat-tab" :class="{ active: fStatus === '' }" @click="setStatus('')">{{ t('全部') }}</button>
-          <button class="cat-tab lg-ok" :class="{ active: fStatus === '成功' }" @click="setStatus('成功')">{{ t('成功 {n}', { n: succ }) }}</button>
-          <button class="cat-tab lg-err" :class="{ active: fStatus === '失败' }" @click="setStatus('失败')">{{ t('失败 {n}', { n: fail }) }}</button>
-        </div>
-        <div class="lg-chips">
-          <button class="cat-tab" :class="{ active: fType === '' }" @click="setType('')">{{ t('全部类型') }}</button>
-          <button v-for="[t, c] in typeChips" :key="t" class="cat-tab" :class="{ active: fType === t }" @click="setType(t)">
-            <span class="lg-dot" :style="{ background: typeColor(t) }" />{{ t }} <i class="lg-chip-cnt">{{ c }}</i>
+          <button class="cat-tab" :class="{ active: filters.type === '' }" @click="setType('')">{{ t('全部类型') }}</button>
+          <button v-for="[ty, c] in typeChips" :key="ty" class="cat-tab" :class="{ active: filters.type === ty }" @click="setType(ty)">
+            <span class="lg-dot" :style="{ background: typeColor(ty) }" />{{ ty }} <i class="lg-chip-cnt">{{ c }}</i>
           </button>
         </div>
-        <button class="lg-export" @click="exportCsv">
-          <span class="icon" v-html="svgIcon('download')" /> {{ t('导出 CSV') }}<span class="lg-export-cnt">{{ total }}</span>
-        </button>
+        <button v-if="hasFilter" class="lg-reset" @click="clearFilters">{{ t('清空') }}</button>
       </div>
 
       <div v-if="paged.length" class="data-table">
         <table>
           <thead><tr><th>{{ t('时间') }}</th><th>{{ t('用户') }}</th><th>{{ t('类型') }}</th><th>{{ t('操作') }}</th><th>{{ t('状态') }}</th><th>{{ t('IP') }}</th></tr></thead>
           <tbody>
-            <tr v-for="l in paged" :key="l.id">
+            <tr v-for="l in paged" :key="l.id" class="lg-row" @click="lgDetail = l">
               <td class="lg-time">{{ fmt(l.createdAt) }}</td>
               <td>
                 <div class="lg-user">
@@ -204,7 +225,14 @@
           </tbody>
         </table>
       </div>
-      <div v-else class="empty-state"><div class="empty-icon" v-html="svgIcon('file-text')" /><p>{{ total ? t('没有匹配的日志，试试调整筛选条件') : t('暂无日志') }}</p></div>
+      <div v-else class="lg-empty">
+        <div class="lg-empty-title">{{ total ? t('没有匹配的日志，试试调整筛选条件') : t('暂无日志') }}</div>
+        <div v-if="suggestChips.length" class="lg-suggest">
+          <span class="lg-suggest-label">{{ t('是不是想找') }}</span>
+          <button v-for="s in suggestChips" :key="s" class="lg-suggest-chip" @click="filters.keyword = s">{{ s }}</button>
+        </div>
+        <button v-if="hasFilter" class="lg-empty-reset" @click="clearFilters">{{ t('清空筛选') }}</button>
+      </div>
 
       <div v-if="total" class="lg-pagebar">
         <div class="lg-total">{{ t('第 {a}–{b} 条 / 共 {n} 条', { a: pageStart + 1, b: pageEnd, n: total }) }}</div>
@@ -215,22 +243,79 @@
             <option :value="50">{{ t('50 条/页') }}</option>
             <option :value="100">{{ t('100 条/页') }}</option>
           </select>
-          <button :disabled="page <= 1" @click="page--">{{ t('‹ 上一页') }}</button>
+          <button :disabled="page <= 1" @click="page--">‹</button>
           <span class="lg-pageinfo">{{ page }} / {{ pageCount }}</span>
-          <button :disabled="page >= pageCount" @click="page++">{{ t('下一页 ›') }}</button>
+          <button :disabled="page >= pageCount" @click="page++">›</button>
         </div>
       </div>
     </div>
+
+    <!-- ================= 命令面板 ================= -->
+    <Teleport to="body">
+      <div v-if="cmdOpen" class="cmd-overlay" @click="closeCommand(false)">
+        <div class="cmd-panel" @click.stop>
+          <div class="cmd-input-row">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input ref="cmdInput" v-model="cmdTerm" :placeholder="t('搜索用户 / 操作 / IP / 日志类型，支持拼音首字母…')" />
+            <kbd class="lg-kbd">esc</kbd>
+          </div>
+          <div class="cmd-results">
+            <template v-if="cmdItems.length">
+              <div v-if="cmdLogs.length" class="cmd-group">
+                <div class="cmd-group-h">{{ t('日志') }} <span>{{ cmdLogs.length }}</span></div>
+                <button v-for="(l, i) in cmdLogs" :key="l.id" class="cmd-item" :class="{ active: cmdCursor === i }" @mouseenter="cmdCursor = i" @click="selectCmd(cmdItems[i])">
+                  <span class="cmd-item-ico user"><span class="cmd-avatar" :style="{ background: avatarBg(l.userName) }">{{ (l.userName || '?').slice(0, 1) }}</span></span>
+                  <span class="cmd-item-main"><b>{{ l.userName }} · {{ t(l.type) }}</b><small>{{ l.operation }} · {{ t(l.status) }} · {{ fmt(l.createdAt) }}</small></span>
+                  <span class="cmd-enter" v-if="cmdCursor === i">↵</span>
+                </button>
+              </div>
+              <div v-if="cmdFilters.length" class="cmd-group">
+                <div class="cmd-group-h">{{ t('快捷筛选') }} <span>{{ cmdFilters.length }}</span></div>
+                <button v-for="(o, j) in cmdFilters" :key="o.value" class="cmd-item" :class="{ active: cmdCursor === cmdLogs.length + j }" @mouseenter="cmdCursor = cmdLogs.length + j" @click="selectCmd(cmdItems[cmdLogs.length + j])">
+                  <span class="cmd-item-ico org"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+                  <span class="cmd-item-main"><b>{{ o.label }}</b><small>{{ t('按此类型筛选日志') }}</small></span>
+                  <span class="cmd-enter" v-if="cmdCursor === cmdLogs.length + j">↵</span>
+                </button>
+              </div>
+            </template>
+            <div v-else class="cmd-empty">{{ cmdLoading ? t('搜索中…') : t('没有联想结果，试试用户 / 操作 / 拼音首字母') }}</div>
+          </div>
+          <div class="cmd-footer">
+            <span><kbd class="lg-kbd">↑</kbd><kbd class="lg-kbd">↓</kbd> {{ t('导航') }}</span>
+            <span><kbd class="lg-kbd">↵</kbd> {{ t('选中') }}</span>
+            <span class="cmd-footer-tip">{{ t('选中日志看详情 · 选中类型即筛选') }}</span>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ================= 日志详情抽屉 ================= -->
+    <Teleport to="body">
+      <div v-if="lgDetail" class="lg-mask" @click="lgDetail = null">
+        <div class="lg-drawer" @click.stop>
+          <div class="lg-drawer-h">
+            <div><b>{{ lgDetail.userName }}</b><span>{{ t(lgDetail.type) }} · {{ t(lgDetail.status) }}</span></div>
+            <button class="lg-close" @click="lgDetail = null">×</button>
+          </div>
+          <div class="lg-drawer-body">
+            <div v-for="f in detailFields" :key="f.label" class="lg-field"><span>{{ f.label }}</span><b>{{ f.value || '—' }}</b></div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, reactive, toRefs, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '@/api'
 import { useCountUp } from '@/utils/useCountUp'
 import { t } from '@/i18n'
+import { diceCoefficient } from '@/utils/similarity'
+import { initialsOf } from '@/utils/pinyin'
 
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
 const PIE_COLORS = ['#34d399', '#22d3ee', '#60a5fa', '#f59e0b', '#a78bfa', '#94a3b8']
 
@@ -263,16 +348,20 @@ const typeColor = (t: string) => typeColorMap.value[t] || '#94a3b8'
 
 const typeChips = computed(() => typeEntries.value.slice(0, 6))
 
-// ===== 明细筛选（关键词 / 状态 / 类型）——筛选传后端，服务端分页 =====
-const kw = ref('')
-const fType = ref('')
-const fStatus = ref('')
+// ===== 单一状态源：chips / 命令面板 / 搜索框读写同一个 filters =====
+const filters = reactive({ keyword: '' as string, type: '' as string, status: '' as string })
+const { keyword: kw, type: fType, status: fStatus } = toRefs(filters)
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 
-function setStatus(s: string) { fStatus.value = s; page.value === 1 ? loadLogs() : (page.value = 1) }
-function setType(t: string) { fType.value = fType.value === t ? '' : t; page.value === 1 ? loadLogs() : (page.value = 1) }
+function setStatus(s: string) { filters.status = s; page.value === 1 ? loadLogs() : (page.value = 1) }
+function setType(ty: string) { filters.type = filters.type === ty ? '' : ty; page.value === 1 ? loadLogs() : (page.value = 1) }
+const hasFilter = computed(() => !!(kw.value || filters.type || filters.status))
+function clearFilters() {
+  kw.value = ''; filters.type = ''; filters.status = ''
+  page.value === 1 ? loadLogs() : (page.value = 1)
+}
 let kwTimer: any = null
 watch(kw, () => {
   clearTimeout(kwTimer)
@@ -500,13 +589,120 @@ async function loadStats() {
     heat.value = hm?.data?.rows?.length ? hm.data : { rows: [], max: 0, total: 0, peakDay: null, peakHour: null, peakCount: 0 }
   } catch {}
 }
+/* ===== 详情抽屉 ===== */
+const lgDetail = ref<any>(null)
+const detailFields = computed(() => !lgDetail.value ? [] : [
+  { label: t('时间'), value: fmt(lgDetail.value.createdAt) },
+  { label: t('用户'), value: lgDetail.value.userName },
+  { label: t('操作类型'), value: t(lgDetail.value.type) },
+  { label: t('操作'), value: lgDetail.value.operation },
+  { label: t('状态'), value: t(lgDetail.value.status) },
+  { label: t('IP 地址'), value: lgDetail.value.ip },
+])
+
+/* ===== 空结果 Dice 纠错（bigram + 单字） ===== */
+function charDice(a: string, b: string): number {
+  const A = new Set(Array.from(a.toLowerCase().replace(/\s+/g, '')))
+  const B = new Set(Array.from(b.toLowerCase().replace(/\s+/g, '')))
+  if (!A.size || !B.size) return 0
+  let inter = 0
+  for (const c of A) if (B.has(c)) inter++
+  return (2 * inter) / (A.size + B.size)
+}
+const suggestChips = computed(() => {
+  const k = kw.value.trim()
+  if (!k) return []
+  const names = new Set<string>()
+  for (const l of paged.value) { if (l.userName) names.add(l.userName); if (l.operation) names.add(l.operation) }
+  for (const e of typeEntries.value) names.add(e[0])
+  const scored = new Map<string, number>()
+  for (const n of names) {
+    const score = Math.max(diceCoefficient(k, n), charDice(k, n))
+    if (score >= 0.34) scored.set(n, score)
+  }
+  return [...scored.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([n]) => n)
+})
+
+/* ===== 命令面板：日志池懒加载 + 类型快捷筛选 ===== */
+const logPool = ref<any[]>([])
+const logPoolLoaded = ref(false)
+const cmdLoading = ref(false)
+async function ensureLogPool() {
+  if (logPoolLoaded.value || cmdLoading.value) return
+  cmdLoading.value = true
+  try {
+    const r: any = await http.get('/logs')
+    const arr = Array.isArray(r?.data) ? r.data : (r?.data?.items || [])
+    logPool.value = arr.slice(0, 300).map((l: any) => ({ ...l, _py: initialsOf(`${l.userName || ''} ${l.operation || ''} ${l.type || ''} ${l.ip || ''}`) }))
+    logPoolLoaded.value = true
+  } catch {} finally { cmdLoading.value = false }
+}
+const cmdOpen = ref(false)
+const cmdTerm = ref('')
+const cmdCursor = ref(0)
+const cmdInput = ref<HTMLInputElement | null>(null)
+function matchText(haystack: string, py: string, q: string): boolean {
+  const ql = q.toLowerCase().replace(/\s+/g, '')
+  if (!ql) return true
+  if ((haystack || '').toLowerCase().replace(/\s+/g, '').includes(ql)) return true
+  return !!py && py.includes(ql)
+}
+function openCommand() {
+  cmdTerm.value = kw.value; cmdCursor.value = 0; cmdOpen.value = true
+  ensureLogPool()
+  nextTick(() => cmdInput.value?.focus())
+}
+function closeCommand(clear: boolean) {
+  cmdOpen.value = false
+  if (clear) { cmdTerm.value = ''; kw.value = '' }
+  else { cmdTerm.value = kw.value }
+}
+watch(cmdTerm, v => { if (cmdOpen.value) kw.value = v })
+const cmdLogs = computed(() => {
+  const q = cmdTerm.value.trim()
+  const arr = !q ? logPool.value.slice(0, 8)
+    : logPool.value.filter(l => matchText(`${l.userName || ''} ${l.operation || ''} ${l.type || ''} ${l.ip || ''}`, l._py || '', q)).slice(0, 8)
+  return arr
+})
+const cmdFilters = computed(() => {
+  const q = cmdTerm.value.trim()
+  return typeEntries.value.map(([ty, c]) => ({ value: ty, label: ty, count: c }))
+    .filter(o => !q || matchText(o.label, initialsOf(o.label), q)).slice(0, 6)
+})
+type CmdItem = { kind: 'log' | 'filter'; raw: any }
+const cmdItems = computed<CmdItem[]>(() => [
+  ...cmdLogs.value.map(l => ({ kind: 'log' as const, raw: l })),
+  ...cmdFilters.value.map(o => ({ kind: 'filter' as const, raw: o })),
+])
+watch(cmdItems, () => { if (cmdCursor.value >= cmdItems.value.length) cmdCursor.value = 0 })
+function selectCmd(item: CmdItem | undefined) {
+  if (!item) return
+  if (item.kind === 'log') { lgDetail.value = item.raw; cmdOpen.value = false; cmdTerm.value = ''; kw.value = '' }
+  else { setType(item.raw.value); cmdOpen.value = false; cmdTerm.value = ''; kw.value = ''; ElMessage.success(t('已按类型筛选：{n}', { n: item.raw.value })) }
+}
+function onGlobalKey(e: KeyboardEvent) {
+  const meta = e.metaKey || e.ctrlKey
+  if (meta && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    cmdOpen.value ? closeCommand(false) : openCommand()
+    return
+  }
+  if (!cmdOpen.value) return
+  if (e.key === 'Escape') { e.preventDefault(); closeCommand(false) }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); if (cmdItems.value.length) cmdCursor.value = (cmdCursor.value + 1) % cmdItems.value.length }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (cmdItems.value.length) cmdCursor.value = (cmdCursor.value - 1 + cmdItems.value.length) % cmdItems.value.length }
+  else if (e.key === 'Enter') { e.preventDefault(); selectCmd(cmdItems.value[cmdCursor.value]) }
+}
+
 onMounted(async () => {
   await load()
   // 数据就绪后再触发环形图绘制动画（不用 rAF：后台窗口会被挂起）
   await nextTick()
   window.setTimeout(() => { revealed.value = true }, 60)
   window.setTimeout(() => { revealDone.value = true }, 1500)
+  window.addEventListener('keydown', onGlobalKey)
 })
+onBeforeUnmount(() => { window.removeEventListener('keydown', onGlobalKey) })
 </script>
 
 <style scoped>
@@ -827,4 +1023,76 @@ html[data-theme="dark"] .logs-page .section .data-table tbody tr:hover td { back
   .logs-page .donut-seg { transition: none; }
 }
 html[data-theme="dark"] .cat-tab { color: #c5cdd9; }
+
+/* ================= 检索体验升级：顶栏 / 命令面板 / 抽屉 / 空结果 ================= */
+.logs-page { --g: #10b981; --g-dark: #059669; --g-soft: rgba(16,185,129,.10); }
+.ic { display: block; }
+.lg-topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 18px; background: color-mix(in srgb, var(--card, #fff) 86%, transparent); backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); border: 0.5px solid var(--border, #e5e7eb); border-radius: 16px; box-shadow: 0 1px 2px rgba(16,24,40,.03), 0 8px 24px rgba(16,24,40,.04); }
+.lg-brand { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.lg-brand-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #34d399, var(--g-dark)); box-shadow: 0 4px 12px rgba(16,185,129,.32); }
+.lg-brand-icon .ic { width: 21px; height: 21px; }
+.lg-title { font-size: 17px; font-weight: 700; color: var(--text, #0f172a); line-height: 1.2; }
+.lg-subtitle { font-size: 12px; color: var(--text-lighter, #94a3b8); margin-top: 2px; }
+.lg-search-trigger { flex: 1 1 320px; max-width: 520px; min-width: 180px; height: 38px; display: flex; align-items: center; gap: 9px; padding: 0 10px 0 14px; border: 1px solid var(--border, #e5e7eb); border-radius: 999px; background: var(--card, #fff); color: var(--text-lighter, #94a3b8); cursor: pointer; transition: all .18s; font-family: inherit; }
+.lg-search-trigger:hover { border-color: var(--g); box-shadow: 0 0 0 3px var(--g-soft); }
+.lg-search-trigger .ic { width: 17px; height: 17px; flex: 0 0 auto; }
+.lg-search-ph { flex: 1; text-align: left; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lg-kbd { font-family: inherit; font-size: 11px; line-height: 1; white-space: nowrap; padding: 4px 7px; border-radius: 6px; border: 1px solid var(--border, #e5e7eb); background: color-mix(in srgb, var(--card, #fff) 92%, #000 8%); color: var(--text-light, #64748b); flex: 0 0 auto; }
+.lg-top-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; margin-left: auto; }
+.lg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .16s; white-space: nowrap; border: 1px solid transparent; }
+.lg-btn .ic { width: 15px; height: 15px; }
+.lg-btn-outline { background: var(--card, #fff); color: var(--text, #334155); border-color: var(--border, #e5e7eb); }
+.lg-btn-outline:hover { border-color: var(--g); color: var(--g); }
+.lg-reset { border: none; background: none; color: var(--text-lighter); font-family: inherit; font-size: 12.5px; cursor: pointer; padding: 6px 8px; margin-left: auto; }
+.lg-reset:hover { color: #ef4444; }
+.lg-row { cursor: pointer; }
+.lg-row:hover { background: var(--g-soft) !important; }
+.lg-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 20px; }
+.lg-empty-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.lg-suggest { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
+.lg-suggest-label { font-size: 12px; color: var(--text-light); }
+.lg-suggest-chip { border: 1px solid var(--border); background: var(--card); color: var(--g-dark); font-family: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; cursor: pointer; transition: all .15s; }
+.lg-suggest-chip:hover { border-color: var(--g); background: var(--g-soft); }
+.lg-empty-reset { margin-top: 16px; border: none; background: none; color: var(--g); font-family: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.cmd-overlay { position: fixed; inset: 0; z-index: 4000; display: flex; justify-content: center; align-items: flex-start; padding: 14vh 16px 16px; background: rgba(15,23,42,.42); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: cmdFade .16s ease; }
+.cmd-panel { width: 100%; max-width: 600px; max-height: 68vh; display: flex; flex-direction: column; border: 0.5px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--card); box-shadow: 0 24px 70px rgba(15,23,42,.34); animation: cmdUp .2s cubic-bezier(.16,1,.3,1); }
+.cmd-input-row { display: flex; align-items: center; gap: 11px; padding: 14px 16px; border-bottom: 0.5px solid var(--border); }
+.cmd-input-row .ic { width: 19px; height: 19px; color: var(--g); flex: 0 0 auto; }
+.cmd-input-row input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text); font-family: inherit; font-size: 15px; }
+.cmd-input-row input::placeholder { color: var(--text-lighter); }
+.cmd-results { flex: 1; overflow-y: auto; padding: 8px; }
+.cmd-group + .cmd-group { margin-top: 6px; }
+.cmd-group-h { display: flex; align-items: center; gap: 7px; padding: 6px 10px; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--text-lighter); text-transform: uppercase; }
+.cmd-group-h span { font-weight: 500; }
+.cmd-item { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; border: none; background: none; font-family: inherit; cursor: pointer; padding: 9px 10px; border-radius: 10px; color: var(--text); }
+.cmd-item.active { background: var(--g-soft); }
+.cmd-item-ico { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: 0 0 auto; }
+.cmd-item-ico .ic { width: 17px; height: 17px; }
+.cmd-item-ico.user { background: rgba(16,185,129,.13); }
+.cmd-item-ico.org { background: rgba(59,130,246,.13); color: #3b82f6; }
+.cmd-avatar { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 600; }
+.cmd-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmd-item-main b { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-item-main small { font-size: 11px; color: var(--text-lighter); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-enter { color: var(--g); font-size: 14px; flex: 0 0 auto; }
+.cmd-empty { padding: 36px 16px; text-align: center; color: var(--text-lighter); font-size: 13px; }
+.cmd-footer { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-top: 0.5px solid var(--border); background: color-mix(in srgb, var(--card) 94%, #000 6%); font-size: 11px; color: var(--text-lighter); }
+.cmd-footer span { display: inline-flex; align-items: center; gap: 4px; }
+.cmd-footer .lg-kbd { padding: 2px 6px; }
+.cmd-footer-tip { margin-left: auto; color: var(--g); }
+@keyframes cmdFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes cmdUp { from { opacity: 0; transform: translateY(-10px) scale(.985) } to { opacity: 1; transform: none } }
+.lg-mask { position: fixed !important; inset: 0; background: rgba(0,0,0,.42); z-index: 3500 !important; display: flex; justify-content: flex-end; animation: cmdFade .16s ease; }
+.lg-drawer { width: 400px; max-width: 92vw; height: 100%; background: var(--card); border-left: 0.5px solid var(--border); display: flex; flex-direction: column; animation: drawerIn .22s cubic-bezier(.16,1,.3,1); }
+@keyframes drawerIn { from { transform: translateX(24px); opacity: .6 } to { transform: none; opacity: 1 } }
+.lg-drawer-h { display: flex; align-items: center; padding: 18px 20px; border-bottom: 0.5px solid var(--border); }
+.lg-drawer-h b { font-size: 16px; color: var(--text); }
+.lg-drawer-h span { display: block; font-size: 12px; color: var(--text-lighter); margin-top: 3px; }
+.lg-close { margin-left: auto; border: none; background: none; font-size: 24px; color: var(--text-light); cursor: pointer; line-height: 1; }
+.lg-drawer-body { flex: 1; overflow-y: auto; padding: 12px 20px; }
+.lg-field { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 0.5px solid var(--border); font-size: 12.5px; }
+.lg-field span { color: var(--text-lighter); flex: 0 0 auto; }
+.lg-field b { color: var(--text); font-weight: 500; text-align: right; word-break: break-all; }
+@media (max-width: 1100px) { .lg-search-trigger { order: 3; flex-basis: 100%; max-width: none; } .lg-top-actions { order: 2; } }
+@media (max-width: 560px) { .lg-topbar { padding: 12px; } .lg-kbd { display: none; } }
 </style>

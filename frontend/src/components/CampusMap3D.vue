@@ -34,6 +34,15 @@
         </div>
         <div v-if="!selectedCourses.length" class="c3d-nodata">这栋楼这学期没有你的课</div>
       </div>
+      <!-- 导航：从当前楼到目标楼 -->
+      <div class="c3d-nav">
+        <span>🧭 从「{{ selected }}」到</span>
+        <select v-model="navTarget" @change="drawNav">
+          <option value="">选择目的地…</option>
+          <option v-for="b in navChoices" :key="b" :value="b">{{ b }}</option>
+        </select>
+        <button v-if="navTarget" @click="clearNav">清除</button>
+      </div>
     </div>
   </div>
 </template>
@@ -78,8 +87,16 @@ const labelList = computed(() =>
   }),
 )
 
+const navTarget = ref('')
+const navChoices = CAMPUS_BUILDINGS.map(b => b.name).sort()
+let drawNavFn: ((to: string) => void) | null = null
+let clearNavFn: (() => void) | null = null
+function drawNav() { if (navTarget.value) drawNavFn?.(navTarget.value) }
+function clearNav() { navTarget.value = ''; clearNavFn?.() }
+
 function select(name: string | null) {
   selected.value = name
+  if (!name) { navTarget.value = ''; clearNavFn?.() }
   emit('select', name)
   paintSelection()
 }
@@ -144,54 +161,112 @@ onMounted(async () => {
       const envScene = new RoomEnvironment()
       const envRT = pmrem.fromScene(envScene as any, 0.04)
       scene.environment = envRT.texture
-      ;(scene as any).environmentIntensity = 0.22
+      ;(scene as any).environmentIntensity = 0.38
       pmrem.dispose()
     } catch { /* 环境贴图失败不影响主流程 */ }
 
     /* ---------- 天空渐变 ---------- */
-    function skyTexture(dark: boolean, night = false) {
+    function skyTexture(dark: boolean, night = false, equirect = true) {
+      const W2 = 1024, H2 = 512
       const cv = document.createElement('canvas')
-      cv.width = 8; cv.height = 512
+      cv.width = W2; cv.height = H2
       const c = cv.getContext('2d')!
-      const g = c.createLinearGradient(0, 0, 0, 512)
+      const g = c.createLinearGradient(0, 0, 0, H2)
       if (night) {
         g.addColorStop(0, '#070d1e'); g.addColorStop(0.48, '#111e3c')
         g.addColorStop(0.86, '#1d3052'); g.addColorStop(1, '#3c4a63')
       } else if (dark) {
         g.addColorStop(0, '#141d30'); g.addColorStop(0.46, '#22304a'); g.addColorStop(1, '#3a4762')
       } else {
-        g.addColorStop(0, '#a6cdf2'); g.addColorStop(0.42, '#dcebf8'); g.addColorStop(1, '#f4f0e0')
+        g.addColorStop(0, '#7db4e8'); g.addColorStop(0.38, '#c8e3f7'); g.addColorStop(0.72, '#e8f2fa'); g.addColorStop(1, '#f6f0dc')
       }
-      c.fillStyle = g
-      c.fillRect(0, 0, 8, 512)
+      c.fillStyle = g; c.fillRect(0, 0, W2, H2)
+
+      if (night) {
+        // 星点 + 月亮：集中在画面上半部到中部（相机俯视时可见的天区）
+        for (let i = 0; i < 520; i++) {
+          const x = Math.random() * W2, y = Math.random() * H2 * 0.5
+          const r = Math.random() * 1.2 + 0.3
+          c.fillStyle = `rgba(235,245,255,${0.35 + Math.random() * 0.6})`
+          c.beginPath(); c.arc(x, y, r, 0, 7); c.fill()
+        }
+        // 几颗亮星带十字光芒
+        for (const [bx, by] of [[0.22, 0.18], [0.52, 0.12], [0.84, 0.26]] as Array<[number, number]>) {
+          const x = W2 * bx, y = H2 * by
+          c.strokeStyle = 'rgba(255,255,255,.7)'; c.lineWidth = 1
+          c.beginPath(); c.moveTo(x - 6, y); c.lineTo(x + 6, y); c.moveTo(x, y - 6); c.lineTo(x, y + 6); c.stroke()
+          c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x, y, 2, 0, 7); c.fill()
+        }
+        const mx = W2 * 0.72, my = H2 * 0.3
+        const mg = c.createRadialGradient(mx, my, 0, mx, my, 62)
+        mg.addColorStop(0, 'rgba(255,250,225,.95)'); mg.addColorStop(0.15, 'rgba(255,248,220,.8)')
+        mg.addColorStop(1, 'rgba(255,245,210,0)')
+        c.fillStyle = mg; c.beginPath(); c.arc(mx, my, 62, 0, 7); c.fill()
+        c.fillStyle = '#fffbe8'; c.beginPath(); c.arc(mx, my, 16, 0, 7); c.fill()
+      } else {
+        // 云层：多层椭圆晕染，覆盖整幅贴图（俯视机位只看到天区一条，需全高分布）
+        const cloudBands = dark ? 30 : 52
+        for (let i = 0; i < cloudBands; i++) {
+          const cx = Math.random() * W2
+          const cy = 30 + Math.random() * H2 * 0.72
+          const rx = 70 + Math.random() * 150
+          const ry = 14 + Math.random() * 26
+          const alpha = dark ? 0.1 : 0.26 + Math.random() * 0.22
+          c.save(); c.translate(cx, cy); c.scale(1, ry / rx)
+          const cg = c.createRadialGradient(0, 0, 0, 0, 0, rx)
+          cg.addColorStop(0, `rgba(255,255,255,${alpha})`)
+          cg.addColorStop(0.6, `rgba(255,255,255,${alpha * 0.55})`)
+          cg.addColorStop(1, 'rgba(255,255,255,0)')
+          c.fillStyle = cg; c.beginPath(); c.arc(0, 0, rx, 0, 7); c.fill(); c.restore()
+        }
+        // 太阳光晕
+        const sx = W2 * 0.18, sy = H2 * 0.2
+        const sg = c.createRadialGradient(sx, sy, 0, sx, sy, 90)
+        sg.addColorStop(0, 'rgba(255,248,214,.75)'); sg.addColorStop(1, 'rgba(255,245,200,0)')
+        c.fillStyle = sg; c.beginPath(); c.arc(sx, sy, 90, 0, 7); c.fill()
+      }
       const t = new THREE.CanvasTexture(cv)
       t.colorSpace = THREE.SRGBColorSpace
+      if (equirect) t.mapping = THREE.EquirectangularReflectionMapping
       return t
     }
     let sky = skyTexture(darkMode())
     scene.background = sky
+    let domeTex = skyTexture(darkMode(), false, false)
+
+    // 天空穹顶：俯视机位下 scene.background 只采样到贴图窄窄一段，
+    // 云/星月几乎不可见。改用独立球体（BackSide + 普通 UV）。
+    const skyDomeMat = new THREE.MeshBasicMaterial({
+      map: domeTex, side: THREE.BackSide, depthWrite: false, fog: false,
+    })
+    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(500, 40, 24), skyDomeMat)
+    skyDome.renderOrder = -1000
+    scene.add(skyDome)
 
     /* ---------- 灯光 ---------- */
-    const hemi = new THREE.HemisphereLight(darkMode() ? 0x9fb6dd : 0xdfeeff, darkMode() ? 0x2a3346 : 0x8fac6a, darkMode() ? 0.46 : 0.46)
+    const hemi = new THREE.HemisphereLight(darkMode() ? 0x9fb6dd : 0xdcefff, darkMode() ? 0x2a3346 : 0x7a9c58, darkMode() ? 0.42 : 0.38)
     scene.add(hemi)
 
-    const sun = new THREE.DirectionalLight(darkMode() ? 0xbcd0ff : 0xffeecb, darkMode() ? 2.0 : 2.5)
-    sun.position.set((GRID_W * G) / 2 + 50, 62, (GRID_H * G) / 2 + 34)
+    // 主光：暖色斜射，拉长建筑投影，得到明显的日照方向感
+    const sun = new THREE.DirectionalLight(darkMode() ? 0xbcd0ff : 0xffedcc, darkMode() ? 2.0 : 2.9)
+    sun.position.set((GRID_W * G) / 2 + 92, 48, (GRID_H * G) / 2 + 62)
     sun.target.position.set((GRID_W * G) / 2, 0, (GRID_H * G) / 2)
     sun.castShadow = true
-    const SS = lite ? 1024 : 2048
+    const SS = lite ? 1024 : 3072
     sun.shadow.mapSize.set(SS, SS)
     const sc = sun.shadow.camera as any
-    sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70
-    sc.near = 1; sc.far = 260
+    sc.left = -78; sc.right = 78; sc.top = 78; sc.bottom = -78
+    sc.near = 1; sc.far = 300
     sc.updateProjectionMatrix()
-    sun.shadow.bias = -0.0007
-    sun.shadow.normalBias = 0.02
+    sun.shadow.bias = -0.0005
+    sun.shadow.normalBias = 0.018
+    sun.shadow.radius = 2.2   // 柔和半影，避免硬边阴影
     scene.add(sun)
     scene.add(sun.target)
 
-    const fill = new THREE.DirectionalLight(darkMode() ? 0x6f8dcc : 0xd8e8ff, darkMode() ? 0.3 : 0.22)
-    fill.position.set(-46, 34, -40)
+    // 冷色轮廓光：勾出建筑背光面的边缘
+    const fill = new THREE.DirectionalLight(darkMode() ? 0x6f8dcc : 0xa9d4ff, darkMode() ? 0.3 : 0.32)
+    fill.position.set(-52, 26, -44)
     scene.add(fill)
 
     /* ---------- 材质工具 ---------- */
@@ -199,7 +274,7 @@ onMounted(async () => {
       new THREE.MeshStandardMaterial({ color, roughness: 0.88, metalness: 0.03, ...opt })
 
     const glassMat = new THREE.MeshStandardMaterial({
-      color: 0xa9cbe3, roughness: 0.08, metalness: 0.32, envMapIntensity: 1.5,
+      color: 0xa9cbe3, roughness: 0.06, metalness: 0.55, envMapIntensity: 2.1,
     })
 
     /**
@@ -356,29 +431,53 @@ onMounted(async () => {
 
     /** 草地贴图 */
     function grassTexture() {
+      const S = 1024
       const cv = document.createElement('canvas')
-      cv.width = cv.height = 512
+      cv.width = cv.height = S
       const c = cv.getContext('2d')!
-      c.fillStyle = '#90ba65'
-      c.fillRect(0, 0, 512, 512)
-      for (let i = 0; i < 26; i++) {
-        const x = Math.random() * 512, y = Math.random() * 512, r = 50 + Math.random() * 100
-        const tone = Math.random() > 0.5 ? '170,210,108' : '124,178,78'
+      // 底层：柔和的绿渐变，模拟阳光下的草坪色差
+      const base = c.createLinearGradient(0, 0, S, S)
+      base.addColorStop(0, '#8fb95f'); base.addColorStop(0.5, '#9cc76b'); base.addColorStop(1, '#86b158')
+      c.fillStyle = base; c.fillRect(0, 0, S, S)
+      // 大尺度色斑：修剪痕迹 + 土壤湿度差异
+      for (let i = 0; i < 60; i++) {
+        const x = Math.random() * S, y = Math.random() * S, r = 40 + Math.random() * 130
+        const tone = Math.random() > 0.5 ? '186,222,124' : '112,158,72'
         const g = c.createRadialGradient(x, y, 0, x, y, r)
-        g.addColorStop(0, `rgba(${tone},.36)`)
-        g.addColorStop(1, `rgba(${tone},0)`)
-        c.fillStyle = g
-        c.beginPath(); c.arc(x, y, r, 0, 7); c.fill()
+        g.addColorStop(0, `rgba(${tone},.24)`); g.addColorStop(1, `rgba(${tone},0)`)
+        c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill()
       }
-      for (let i = 0; i < 6000; i++) {
-        c.fillStyle = Math.random() > 0.5 ? 'rgba(122,170,88,.22)' : 'rgba(196,224,152,.22)'
-        c.fillRect(Math.random() * 512, Math.random() * 512, 2, 3)
+      // 细密草丝：短线段，比方块更像真实草
+      for (let i = 0; i < 26000; i++) {
+        const x = Math.random() * S, y = Math.random() * S
+        const len = 2 + Math.random() * 3
+        c.strokeStyle = Math.random() > 0.5 ? 'rgba(206,232,158,.30)' : 'rgba(94,142,60,.26)'
+        c.lineWidth = 0.8
+        c.beginPath(); c.moveTo(x, y); c.lineTo(x + (Math.random() - 0.5), y - len); c.stroke()
       }
       const t = new THREE.CanvasTexture(cv)
       t.wrapS = t.wrapT = THREE.RepeatWrapping
-      t.repeat.set(6, 5)
+      t.repeat.set(5, 4)
       t.colorSpace = THREE.SRGBColorSpace
-      t.anisotropy = 4
+      t.anisotropy = 8
+      return t
+    }
+    /** 草地法线贴图：让阳光在草面上有细微起伏的明暗，而非死平面 */
+    function grassNormalTexture() {
+      const S = 256
+      const cv = document.createElement('canvas'); cv.width = cv.height = S
+      const c = cv.getContext('2d')!
+      c.fillStyle = '#8080ff'; c.fillRect(0, 0, S, S)  // 平法线 (128,128,255)
+      for (let i = 0; i < 5000; i++) {
+        const x = Math.random() * S, y = Math.random() * S
+        const nx = 128 + (Math.random() - 0.5) * 46
+        const ny = 128 + (Math.random() - 0.5) * 46
+        c.fillStyle = `rgb(${nx|0},${ny|0},255)`
+        c.fillRect(x, y, 1, 1)
+      }
+      const t = new THREE.CanvasTexture(cv)
+      t.wrapS = t.wrapT = THREE.RepeatWrapping
+      t.repeat.set(30, 24)
       return t
     }
 
@@ -388,7 +487,10 @@ onMounted(async () => {
     const CX = (GRID_W * G) / 2
     const CZ = (GRID_H * G) / 2
 
-    const groundMat = std(0xffffff, { map: grassTexture(), roughness: 1 })
+    const groundMat = std(0xffffff, {
+      map: grassTexture(), normalMap: grassNormalTexture(),
+      normalScale: new THREE.Vector2(0.5, 0.5), roughness: 0.96, metalness: 0,
+    })
     const ground = new THREE.Mesh(
       new THREE.BoxGeometry(groundW, 2, groundD),
       groundMat,
@@ -445,6 +547,54 @@ onMounted(async () => {
       }
     }
 
+    /* ---------- 动态车流 / 行人：沿主路往返移动，给沙盘注入生活感 ---------- */
+    const movers: Array<{
+      obj: THREE.Object3D; ax: number; az: number; bx: number; bz: number;
+      t: number; speed: number; dir: number; facing: number;
+    }> = []
+    {
+      const carColors = [0xe05a4f, 0x3f7fc4, 0xf0c04a, 0xe8e8e4, 0x4b5563, 0x7c5cc4]
+      const carBodyGeo = new THREE.BoxGeometry(1.5, 0.5, 0.85)
+      const carTopGeo = new THREE.BoxGeometry(0.8, 0.36, 0.78)
+      const carTopMat = std(0x2a3b4c, { roughness: 0.2, metalness: 0.5 })
+      // 主路 + 中部横路 + 南侧横路放车，支路放行人
+      CAMPUS_ROADS.forEach((r, ri) => {
+        const len = Math.hypot(r.x2 - r.x1, r.y2 - r.y1)
+        const ax = r.x1 * G, az = r.y1 * G, bx = r.x2 * G, bz = r.y2 * G
+        const isMain = (r.w || 1) >= 0.85
+        if (isMain && len > 4) {
+          const n = ri === 0 ? 3 : 2
+          for (let k = 0; k < n; k++) {
+            const g = new THREE.Group()
+            const body = new THREE.Mesh(carBodyGeo, std(carColors[(ri + k) % carColors.length], { roughness: 0.35, metalness: 0.45 }))
+            body.position.y = 0.48
+            g.add(body)
+            const top = new THREE.Mesh(carTopGeo, carTopMat)
+            top.position.set(-0.1, 0.86, 0)
+            g.add(top)
+            g.castShadow = true
+            scene.add(g)
+            movers.push({ obj: g, ax, az, bx, bz, t: (k / n + ri * 0.13) % 1, speed: 0.0009 + (k % 3) * 0.00022, dir: k % 2 ? -1 : 1, facing: 0 })
+          }
+        } else if (len > 3) {
+          // 行人：小圆柱身体 + 球头，颜色随机
+          const n = 2
+          for (let k = 0; k < n; k++) {
+            const g = new THREE.Group()
+            const shirt = [0xef6b6b, 0x4a90d9, 0x5cb85c, 0xf0ad4e][(ri + k) % 4]
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.72, 8), std(shirt))
+            body.position.y = 0.56
+            g.add(body)
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), std(0xf0c9a0))
+            head.position.y = 1.06
+            g.add(head)
+            scene.add(g)
+            movers.push({ obj: g, ax, az, bx, bz, t: (k / n + ri * 0.21) % 1, speed: 0.0004 + (k % 2) * 0.0001, dir: k % 2 ? -1 : 1, facing: 0 })
+          }
+        }
+      })
+    }
+
     /* ---------- 湖（地图：教学群东侧的不规则南北向水面 + 小岛 + 亲水栈桥） ---------- */
     {
       const { cx, cy, rx, rz } = CAMPUS_LAKE
@@ -472,7 +622,23 @@ onMounted(async () => {
         scene.add(mesh)
       }
       flat(1.16, std(0xd9e6c0, { roughness: 1 }), 0.22)   // 草岸
-      flat(1.0, new THREE.MeshStandardMaterial({ color: 0x8fcde8, roughness: 0.06, metalness: 0.55, envMapIntensity: 1.7 }), 0.42)
+      // 水面：低粗糙度 + 高环境反射，模拟倒影
+      const waterMat = new THREE.MeshStandardMaterial({
+        color: 0x7ec4e4, roughness: 0.025, metalness: 0.72, envMapIntensity: 2.4,
+        transparent: true, opacity: 0.94,
+      })
+      flat(1.0, waterMat, 0.42)
+      // 倒影色块：几片半透明亮斑模拟天空/建筑在水面的反射
+      for (let i = 0; i < 5; i++) {
+        const refl = new THREE.Mesh(
+          new THREE.CircleGeometry(0.3 + Math.random() * 0.5, 16),
+          new THREE.MeshBasicMaterial({ color: i % 2 ? 0xe8f4ff : 0xcfe0c0, transparent: true, opacity: 0.12 + Math.random() * 0.1, depthWrite: false })
+        )
+        refl.rotation.x = -Math.PI / 2
+        refl.position.set(X + (Math.random() - 0.5) * rx * G * 1.2, 0.44, Z + (Math.random() - 0.5) * rz * G * 1.2)
+        refl.scale.y = 0.5
+        scene.add(refl)
+      }
       // 湖心小岛 + 树
       const ix = X - rx * G * 0.24, iz = Z + rz * G * 0.18
       const isle = new THREE.Mesh(new THREE.CylinderGeometry(rx * G * 0.3, rx * G * 0.34, 0.5, 20), std(0xc4d99f))
@@ -1461,6 +1627,39 @@ onMounted(async () => {
       }
     }
 
+    // 导航箭头（由 drawNavFn 填充）
+    const navArrows: Array<{ mesh: THREE.Mesh; t: number; pts: THREE.Vector3[]; curve: any }> = []
+
+    // 车流/行人常驻动画（轻量，只在组件挂载期间运行）
+    let moverRaf = 0
+    let moverT = 0
+    let animateMovers = () => {
+      moverT += 1
+      for (const m of movers) {
+        m.t += m.speed * m.dir
+        if (m.t > 1) m.t -= 1
+        if (m.t < 0) m.t += 1
+        const x = m.ax + (m.bx - m.ax) * m.t
+        const z = m.az + (m.bz - m.az) * m.t
+        m.obj.position.set(x, 0, z)
+        // 朝向行进方向
+        const dx = (m.bx - m.ax) * m.dir, dz = (m.bz - m.az) * m.dir
+        m.obj.rotation.y = Math.atan2(-dz, dx)
+      }
+      // 导航箭头沿路线流动
+      for (const a of navArrows) {
+        a.t = (a.t + 0.004) % 1
+        a.mesh.position.copy(a.curve.getPoint(a.t))
+        const tan = a.curve.getTangent(a.t)
+        a.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tan.normalize())
+      }
+      // 必须每帧重绘：只更新 Object3D 位置不会自动刷新画面。
+      // intro 过场由 fly() 自行驱镜渲染，此处跳过避免抢占。
+      if (!props.intro) renderer.render(scene, camera)
+      moverRaf = requestAnimationFrame(animateMovers)
+    }
+    moverRaf = requestAnimationFrame(animateMovers)
+
     let labelRaf = 0
     let loopRaf = 0
     let loopOn = false
@@ -1557,14 +1756,18 @@ onMounted(async () => {
       sky.dispose()
       sky = skyTexture(dark, on)
       scene.background = sky
+      domeTex.dispose()
+      domeTex = skyTexture(dark, on, false)
+      skyDomeMat.map = domeTex
+      skyDomeMat.needsUpdate = true
       hemi.color.set(on ? 0x546da8 : dark ? 0x9fb6dd : 0xdfeeff)
       hemi.groundColor.set(on ? 0x1b2a44 : dark ? 0x2a3346 : 0x8fac6a)
-      hemi.intensity = on ? 0.3 : 0.46
-      sun.color.set(on ? 0x93aee0 : dark ? 0xbcd0ff : 0xffeecb)
-      sun.intensity = on ? 0.5 : dark ? 2.0 : 2.5
-      fill.intensity = on ? 0.2 : dark ? 0.3 : 0.22
-      renderer.toneMappingExposure = on ? 0.94 : 1.06
-      ;(scene as any).environmentIntensity = on ? 0.08 : 0.22
+      hemi.intensity = on ? 0.26 : (dark ? 0.42 : 0.38)
+      sun.color.set(on ? 0x93aee0 : dark ? 0xbcd0ff : 0xffedcc)
+      sun.intensity = on ? 0.42 : dark ? 2.0 : 2.9
+      fill.intensity = on ? 0.16 : (dark ? 0.3 : 0.32)
+      renderer.toneMappingExposure = on ? 0.92 : 1.04
+      ;(scene as any).environmentIntensity = on ? 0.08 : 0.38
       // 草地单独压暗（贴图 × 颜色），夜景下不再是一整块亮绿
       groundMat.color.set(on ? 0x607a52 : 0xffffff)
       for (const w of wallMats) {
@@ -1583,6 +1786,50 @@ onMounted(async () => {
     const mo = new MutationObserver(() => applyLighting(darkMode(), night.value))
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
+    /* ---------- 建筑导航路线：选中楼 → 目标楼，沿主路折线 + 流动箭头 ---------- */
+    const navGroup = new THREE.Group()
+    scene.add(navGroup)
+    function clearNavScene() {
+      navGroup.traverse((o: any) => { o.geometry?.dispose?.(); o.material?.dispose?.() })
+      navGroup.clear()
+      navArrows.length = 0
+    }
+    drawNavFn = (toName: string) => {
+      clearNavScene()
+      if (!selected.value) return
+      const from = CAMPUS_BUILDINGS.find(b => b.name === selected.value)
+      const to = CAMPUS_BUILDINGS.find(b => b.name === toName)
+      if (!from || !to) return
+      const fx = (from.gx + from.w / 2) * G, fz = (from.gy + from.d / 2) * G
+      const tx = (to.gx + to.w / 2) * G, tz = (to.gy + to.d / 2) * G
+      // 折线：起点 → 主路入口(中部横路 z=7.9G) → 主路交点(x=9.4G) → 终点
+      const midZ = 7.9 * G, mainX = 9.4 * G
+      const pts = [
+        new THREE.Vector3(fx, 0.34, fz),
+        new THREE.Vector3(fx, 0.34, midZ),
+        new THREE.Vector3(mainX, 0.34, midZ),
+        new THREE.Vector3(mainX, 0.34, tz),
+        new THREE.Vector3(tx, 0.34, tz),
+      ]
+      const curve: any = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.1)
+      const tube = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, 80, 0.11, 6, false),
+        new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.9 })
+      )
+      navGroup.add(tube)
+      // 流动箭头
+      for (let i = 0; i < 6; i++) {
+        const a = new THREE.Mesh(
+          new THREE.ConeGeometry(0.24, 0.6, 6),
+          new THREE.MeshBasicMaterial({ color: 0xecfeff })
+        )
+        a.rotation.x = Math.PI / 2
+        navGroup.add(a)
+        navArrows.push({ mesh: a, t: i / 6, pts, curve })
+      }
+      render()
+    }
+    clearNavFn = clearNavScene
     ready.value = true
     emit('ready')
     await nextTick()
@@ -1704,6 +1951,7 @@ onMounted(async () => {
       applyNight = null
       cancelAnimationFrame(labelRaf)
       cancelAnimationFrame(loopRaf)
+      cancelAnimationFrame(moverRaf)
       ro.disconnect()
       mo.disconnect()
       renderer.domElement.removeEventListener('pointerdown', onDown)
@@ -1825,4 +2073,12 @@ onBeforeUnmount(() => dispose?.())
 .c3d-course b { display: block; font-size: 12.5px; color: var(--text); }
 .c3d-course span { font-size: 12px; color: var(--text-light); }
 .c3d-nodata { font-size: 12px; color: var(--text-light); opacity: .8; }
+.c3d-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); }
+.c3d-nav span { font-size: 11px; color: var(--text-light); }
+.c3d-nav select {
+  flex: 1; min-width: 96px; padding: 4px 7px; border-radius: 6px; font-size: 11px;
+  border: 1px solid var(--border); background: var(--card-bg); color: var(--text); font-family: inherit;
+}
+.c3d-nav button { padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  border: 1px solid rgba(34,211,238,.5); background: rgba(34,211,238,.12); color: #22d3ee; }
 </style>

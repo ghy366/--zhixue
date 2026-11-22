@@ -27,6 +27,6 @@ export default defineConfig({
   },
   build: {
     outDir: path.resolve(import.meta.dirname, '../src/main/resources/static-vue'),
-    emptyOutDir: true
+    emptyOutDir: true    // 每次构建清空 outDir（目录在 frontend 根之外，vite 默认不清空）：旧 hash 资源残留会让 jar 随构建次数无限膨胀
   }
 })

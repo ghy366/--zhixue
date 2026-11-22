@@ -103,7 +103,17 @@
 .an-live-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--green-text);
-  
+
+}
+/* 轮次未开启：徽标整体转灰 */
+.an-round-live:has(.an-live-dot.off) {
+  color: var(--text-lighter);
+  background: color-mix(in srgb, var(--text-lighter) 9%, transparent);
+  border-color: color-mix(in srgb, var(--text-lighter) 22%, transparent);
+}
+.an-live-dot.off {
+  background: var(--text-lighter);
+  animation: none;
 }
 .an-head-mini { margin-top: 7px; font-size: 12px; color: var(--text-lighter); }
 
@@ -1114,25 +1124,46 @@ html[data-theme="dark"] .an-history-fill { opacity: .35; }
 .analysis-page .stat-label { margin-top: 3px; }
 .analysis-page .stat-sub { font-size: 12px; color: var(--text-lighter); margin-top: 2px; }
 
+/* --- 总览 7 张指标卡：按容器宽度自动排成一行，收窄图标与字号 --- */
+.analysis-page .an-pane .stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.analysis-page .an-pane .stats-grid .stat-card {
+  min-height: 84px;
+  padding: 11px 12px;
+  gap: 9px;
+}
+.analysis-page .an-pane .stats-grid .stat-icon {
+  width: 34px; height: 34px; border-radius: 10px; flex: 0 0 34px;
+}
+.analysis-page .an-pane .stats-grid .stat-icon svg { width: 17px; height: 17px; }
+.analysis-page .an-pane .stats-grid .stat-value { font-size: 21px; }
+.analysis-page .an-pane .stats-grid .stat-label { font-size: 12px; margin-top: 2px; }
+.analysis-page .an-pane .stats-grid .stat-sub { font-size: 10.5px; line-height: 1.35; margin-top: 1px; }
+
 /* --- 区块：紧凑间距，让趋势图进入首屏 --- */
-.analysis-page .section { padding: 16px 18px; margin-bottom: 14px; }
-.analysis-page .stats-two { gap: 14px; }
-.analysis-page .section-header { margin-bottom: 10px; }
-.analysis-page .section-note { margin-left: 8px; font-size: 12px; font-weight: 400; color: var(--text-lighter); }
+.analysis-page .section { padding: 12px 14px; margin-bottom: 10px; }
+.analysis-page .stats-two { gap: 10px; }
+.analysis-page .section-header { margin-bottom: 8px; }
+.analysis-page .section-title { font-size: 15px; gap: 6px; }
+.analysis-page .section-title svg { width: 15px; height: 15px; }
+.analysis-page .section-note { margin-left: 8px; font-size: 11.5px; font-weight: 400; color: var(--text-lighter); }
 
 /* --- 排行榜：名次突出 + 数值列固定宽（右对齐两行：主值 + 副值） --- */
-.analysis-page .rank-row { gap: 12px; margin: 8px 0; }
-.analysis-page .rank-name { width: 210px; }
-.analysis-page .rank-idx { width: 20px; height: 20px; font-weight: 600; }
+.analysis-page .rank-row { gap: 10px; margin: 5px 0; }
+.analysis-page .rank-name { width: 180px; font-size: 12.5px; }
+.analysis-page .rank-idx { width: 18px; height: 18px; font-size: 11px; font-weight: 600; }
 .analysis-page .rank-idx.top { box-shadow: 0 2px 8px rgba(0,0,0,.2); }
-.analysis-page .rank-bar-wrap { height: 12px; }
+.analysis-page .rank-bar-wrap { height: 9px; }
 .analysis-page .rank-val {
-  width: 128px; min-width: 128px;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+  width: 118px; min-width: 118px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 0;
   font-variant-numeric: tabular-nums;
 }
-.analysis-page .rank-val b { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
-.analysis-page .rank-val small { font-size: 11.5px; color: var(--text-lighter); white-space: nowrap; }
+.analysis-page .rank-val b { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.analysis-page .rank-val small { font-size: 10.5px; color: var(--text-lighter); white-space: nowrap; }
 
 /* --- 满员率柔和配色：满员=琥珀、80+ =浅橙、其余=青绿（不再整列红） --- */
 .analysis-page .rank-bar.fill { background: linear-gradient(90deg, #0ea5a4, #2dd4bf); }

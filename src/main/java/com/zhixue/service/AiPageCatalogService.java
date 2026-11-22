@@ -45,15 +45,21 @@ public class AiPageCatalogService {
         add("grades", "成绩档案", "grades", "/api/grades/mine",
                 "我的成绩、总评、GPA、挂科记录", "成绩|分数|绩点|GPA|挂科|总评", "student");
         add("reviews", "课程评价", "reviews", "/api/reviews/mine",
-                "课程评分与我提交的评价", "评价|评分|口碑|评课", "student,teacher");
+                "我提交的课程评分与评价", "评价|评分|口碑|评课|我的评价", "student");
+        add("reviews-teacher", "课程评价", "reviews", "/api/reviews/teacher/{uid}",
+                "我任教课程收到的学生评价", "评价|评分|口碑|评课|学生评价", "teacher");
         add("graduation", "毕业进度", "graduation", "/api/graduation/summary",
                 "四大学分缺口、完成度、推荐补修课程", "毕业|学分|缺口|毕业进度|培养方案|达标", "student");
         add("suggestions", "意见反馈", "suggestions", "/api/suggestions/mine",
-                "我提交的反馈与管理员回复", "反馈|建议|意见|投诉|建议箱", "student,admin");
+                "我提交的反馈与管理员回复", "反馈|建议|意见|投诉|建议箱|我的反馈", "student");
+        add("suggestions-admin", "意见反馈", "suggestions", "/api/suggestions",
+                "全部学生反馈与处理状态", "反馈|建议|意见|投诉|建议箱|处理反馈|反馈处理", "admin");
         add("advisor-apply", "导师匹配", "advisor-apply", "/api/advisor/topics",
                 "毕业设计课题库与双选状态", "导师|课题|双选|毕业设计|毕设", "student,teacher");
-        add("workspace", "课题工作台", "workspace", "/api/workspace/milestones",
-                "毕设里程碑、论文与进度", "工作台|里程碑|论文|毕设|进度", "student,teacher");
+        add("workspace", "课题工作台", "workspace", "/api/workspace/my",
+                "我的毕设里程碑、论文与进度", "工作台|里程碑|论文|毕设|进度", "student");
+        add("workspace-teacher", "课题工作台", "workspace", "/api/workspace/teacher/students",
+                "我指导学生的毕设进度与里程碑", "工作台|里程碑|论文|毕设|进度|指导学生", "teacher");
         add("announcements", "公告列表", "announcements", "/api/announcements",
                 "我可见的公告与通知", "公告|通知|消息|未读", "student,teacher,admin");
         add("profile", "个人档案", "profile", "/api/auth/me",
@@ -72,8 +78,8 @@ public class AiPageCatalogService {
         // ===== 管理员 =====
         add("rounds", "选课轮次", "rounds", "/api/system/round-schedule",
                 "三轮时间窗口、自动排班与当前开关", "轮次|开放|关闭|排期|时间窗|选课开关", "admin");
-        add("semesters", "学期设置", "semesters", "/api/semesters/current",
-                "当前学期与学期偏移", "学期|学期设置|学期推进", "admin");
+        add("semesters", "学期设置", "semesters", "/api/semesters",
+                "全部学期、当前学期与状态", "学期|学期设置|学期推进|当前学期", "admin");
         add("classrooms", "教室管理", "classrooms", "/api/classrooms",
                 "教室、容量与校区", "教室|场地|教室容量|楼", "admin");
         add("course-mgr", "课程总库", "course-mgr", "/api/courses",
@@ -82,16 +88,20 @@ public class AiPageCatalogService {
                 "全部用户账号、角色与年级", "用户|账号|角色|学生名单|教师名单|用户管理", "admin");
         add("announce", "公告管理", "announce", "/api/announcements?all=1",
                 "全部公告、已读统计", "公告管理|发公告|通知管理|已读统计", "admin");
+        add("makeup-mgr", "补考管理", "makeup-mgr", "/api/makeup",
+                "补考册生成、排考、弃考与名单导出", "补考|补考册|排考|补考名单|补考管理", "admin");
+        add("retake-mgr", "重修管理", "retake-mgr", "/api/retake/summary",
+                "重修报名汇总、定形式与跟班指定", "重修|重修报名|组班|跟班|重修管理", "admin");
         add("stats", "统计报表", "stats", "/api/stats/report",
                 "全校选课、容量、成绩等统计", "统计|报表|数据|概览|分析|全校", "admin");
         add("graduation-audit", "毕业审核", "graduation-audit", "/api/graduation/applications",
                 "学生毕业申请与审核状态", "毕业审核|毕业申请|审核", "admin");
         add("advise-mgr", "导师管理", "advise-mgr", "/api/advisor/admin/overview",
                 "导师双选总览与容量配置", "导师管理|双选总览|导师容量", "admin");
-        add("logs", "操作日志", "logs", "/api/logs/stats",
-                "操作日志统计与活跃度", "日志|操作记录|审计|活跃", "admin");
-        add("training-plans", "培养方案", "training-plans", "/api/system/grade-reqs",
-                "各年级毕业学分要求", "培养方案|毕业要求|学分要求|年级方案", "admin");
+        add("logs", "操作日志", "logs", "/api/logs?page=1&size=20",
+                "最新操作日志与日志统计", "日志|操作记录|审计|活跃", "admin");
+        add("training-plans", "培养方案", "training-plans", "/api/training-plan/items",
+                "按专业+年级+学期排定必修课程，一键批量排定学生课表；含毕业学分要求配置", "培养方案|必修课|批量排定|排课|毕业要求|学分要求|年级方案", "admin");
         add("ai-channels", "AI 通道", "ai-channels", "/api/ai/channels",
                 "自定义 AI 通道、Base URL 与模型清单（密钥仅掩码）", "AI通道|通道配置|模型通道|自定义通道|API通道", "admin");
         // AI 助手自身：只作跳转入口，不取数
@@ -129,11 +139,11 @@ public class AiPageCatalogService {
     public List<Page> select(String question, String role, String intent) {
         String q = (question == null ? "" : question).toLowerCase(Locale.ROOT);
         List<Page> visible = forRole(role).stream().filter(p -> !"chat".equals(p.id())).toList();
-        // 显式「全览」指令：一次打开本角色全部可取数页面（最多 10 个），用于「把整个系统看一遍」类问题
+        // 显式「全览」指令：一次打开本角色全部可取数页面，用于「把整个系统看一遍」类问题
         if (q.contains("所有页面") || q.contains("全部页面") || q.contains("每个页面")
                 || q.contains("各个页面") || q.contains("整个系统") || q.contains("都看一遍")
                 || q.contains("所有入口") || q.contains("遍历")) {
-            return visible.stream().filter(p -> !p.api().isBlank()).limit(10).toList();
+            return visible.stream().filter(p -> !p.api().isBlank()).toList();
         }
         Map<String, Integer> score = new LinkedHashMap<>();
         for (Page p : visible) {
@@ -171,9 +181,10 @@ public class AiPageCatalogService {
         if (intent == null) return "dashboard";
         boolean admin = "admin".equals(role);
         return switch (intent) {
-            case "GRADES" -> admin ? "stats" : "grades";
-            case "GRADUATION" -> admin ? "graduation-audit" : "graduation";
-            case "MY_ENROLL" -> "my-enrollments";
+            case "GRADES" -> "admin".equals(role) ? "stats" : ("teacher".equals(role) ? "grade-mgr" : "grades");
+            case "GRADUATION" -> "admin".equals(role) ? "graduation-audit"
+                    : ("teacher".equals(role) ? "advise" : "graduation");
+            case "MY_ENROLL" -> "teacher".equals(role) ? "teach-courses" : "my-enrollments";
             case "MY_INTENT" -> "intents";
             case "WAITLIST" -> "waitlist";
             case "CONFLICT" -> "schedule";

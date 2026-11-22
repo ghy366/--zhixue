@@ -26,7 +26,7 @@
     </header>
 
     <!-- ============ 主区 ============ -->
-    <main class="atlas-main" :class="{ 'is-reg': tab === 'register' }">
+    <main class="atlas-main">
 
       <!-- 左：系统识别 + 星图读数 -->
       <section class="intro">
@@ -56,7 +56,6 @@
           <div class="card-busy" aria-hidden="true"><i></i></div>
 
           <!-- ===== 登录 ===== -->
-          <template v-if="tab === 'login'">
             <div class="card-head">
               <div class="card-kicker">{{ t('统一身份认证') }}</div>
               <h2 class="card-title">{{ t('欢迎回来') }}</h2>
@@ -126,60 +125,10 @@
               </div>
 
               <div class="auth-alt">
-                <span>{{ t('首次使用？') }}</span>
-                <button type="button" class="alt-link" @click="tab = 'register'">{{ t('注册账号') }}<span class="alt-arrow">→</span></button>
+                <span>{{ t('没有账号？') }}</span>
+                <span class="alt-hint">{{ t('账号由教务处统一开户，请联系辅导员或管理员') }}</span>
               </div>
             </form>
-          </template>
-
-          <!-- ===== 注册 ===== -->
-          <form v-else class="auth-form reg-form" @submit.prevent="doRegister">
-            <div class="card-head">
-              <div class="card-kicker">{{ t('建立选课档案') }}</div>
-              <h2 class="card-title">{{ t('注册账号') }}</h2>
-              <p class="card-sub">{{ t('录入你的信息，建立选课档案') }}</p>
-            </div>
-
-            <div class="reg-grid">
-              <div class="reg-item"><label>{{ t('姓名') }}</label><div class="field slim"><input type="text" v-model="reg.name" required></div></div>
-              <div class="reg-item"><label>{{ t('学号') }}</label><div class="field slim"><input type="text" v-model="reg.no" :placeholder="t('请输入学号')" required></div></div>
-              <div class="reg-item span2"><label>{{ t('密码') }}</label>
-                <div class="field slim">
-                  <input :type="regPwdVisible ? 'text' : 'password'" v-model="reg.password" required>
-                  <button type="button" class="eye-btn" :aria-label="regPwdVisible ? t('隐藏密码') : t('显示密码')" @click="regPwdVisible = !regPwdVisible">
-                    <svg class="glyph" aria-hidden="true"><use :href="regPwdVisible ? '#i-eye' : '#i-eye-off'"/></svg>
-                  </button>
-                </div>
-              </div>
-              <div class="reg-item"><label>{{ t('学院') }}</label>
-                <div class="field slim"><select v-model="reg.college"><option v-for="c in collegeOptions" :key="c" :value="c">{{ c }}</option></select></div>
-              </div>
-              <div class="reg-item"><label>{{ t('年级') }}</label>
-                <div class="field slim"><select v-model="reg.grade"><option v-for="g in GRADES" :key="g" :value="g">{{ g }}</option></select></div>
-              </div>
-              <div class="reg-item"><label>{{ t('专业') }}</label><div class="field slim">
-                <select v-if="optsLoaded" v-model="reg.major" :disabled="!majorOptions.length">
-                  <option value="" disabled>{{ majorOptions.length ? t('请选择专业') : t('该学院暂无可选专业') }}</option>
-                  <option v-for="m in majorOptions" :key="m" :value="m">{{ m }}</option>
-                </select>
-                <input v-else type="text" v-model="reg.major" :placeholder="t('如：软件工程')">
-              </div></div>
-              <div class="reg-item"><label>{{ t('班级') }}</label><div class="field slim">
-                <select v-if="optsLoaded" v-model="reg.classNo" :disabled="!classOptions.length">
-                  <option value="" disabled>{{ classOptions.length ? t('请选择班级') : t('请先选择专业') }}</option>
-                  <option v-for="c in classOptions" :key="c" :value="c">{{ c }}</option>
-                </select>
-                <input v-else type="text" v-model="reg.classNo" :placeholder="t('如：软工2301班')">
-              </div></div>
-              <div class="reg-item span2"><label>{{ t('联系电话') }}</label><div class="field slim"><input type="text" v-model="reg.phone" :placeholder="t('请输入手机号')"></div></div>
-            </div>
-
-            <button type="submit" class="btn-enter"><span class="btn-txt">{{ t('提交注册') }}</span><span class="btn-arrow">→</span></button>
-            <div class="auth-alt">
-              <span>{{ t('已有账号？') }}</span>
-              <button type="button" class="alt-link" @click="tab = 'login'">{{ t('返回登录') }}<span class="alt-arrow">→</span></button>
-            </div>
-          </form>
 
           <div class="card-foot"><span>{{ t('智学选课 · 学域星图') }}</span><span>{{ t('安全连接') }}</span></div>
         </section>
@@ -227,7 +176,6 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import api from '../api'
 import { encryptPassword } from '../utils/rsa'
-import { COLLEGES } from '../utils/colleges'
 import { t, getLocale, setLocale } from '@/i18n'
 import { homePath } from '@/utils/home'
 import AtlasScene from '@/components/AtlasScene.vue'
@@ -236,10 +184,8 @@ const router = useRouter()
 const auth = useAuthStore()
 const { proxy } = getCurrentInstance()!
 
-const tab = ref<'login' | 'register'>('login')
 const showRecovery = ref(false)
 const pwdVisible = ref(false)
-const regPwdVisible = ref(false)
 const globing = ref(false)
 const loginOk = ref(false)
 const loginErr = ref('')
@@ -252,36 +198,6 @@ const lang = ref<'zh' | 'en'>(getLocale())
 function switchLang(l: 'zh' | 'en') { lang.value = l; setLocale(l); loginErr.value = ''; errField.value = '' }
 
 const form = reactive({ no: '', password: '', captcha: '', role: 'student' })
-const reg = reactive({ name: '', no: '', password: '', college: '计算机学院', grade: '2026', major: '', classNo: '', phone: '' })
-const GRADES = ['2021', '2022', '2023', '2024', '2025', '2026']
-
-// 注册下拉：学院 → 专业 → 班级 三级联动，选项聚合自数据库学生档案 + 专业字典（只能选已有值）
-const optsLoaded = ref(false)
-const regOpts = ref<{ colleges: string[]; majors: Record<string, string[]>; classes: Record<string, string[]> }>({ colleges: [], majors: {}, classes: {} })
-const collegeOptions = computed(() => (optsLoaded.value && regOpts.value.colleges.length ? regOpts.value.colleges : COLLEGES))
-const majorOptions = computed(() => regOpts.value.majors[reg.college] || [])
-const classOptions = computed(() => {
-  const all = regOpts.value.classes[`${reg.college}|${reg.major}`] || []
-  // 班名自带入学年份(如 软工202601班),按所选年级过滤;该年级暂无班名时回退全量
-  const inGrade = all.filter(c => c.includes(reg.grade))
-  return inGrade.length ? inGrade : all
-})
-watch(() => reg.college, () => { reg.major = ''; reg.classNo = '' })
-watch(() => reg.major, () => { reg.classNo = '' })
-watch(() => reg.grade, () => { reg.classNo = '' })
-
-// 学号自动推断年级:前 4 位为完整年份(2023010101 → 2023),否则前 2 位为年级尾数(250391209 → 2025)
-watch(() => reg.no, (no) => {
-  const digits = (no || '').replace(/\D/g, '')
-  if (digits.length < 2) return
-  let g: string | null = null
-  if (digits.length >= 4 && GRADES.includes(digits.slice(0, 4))) g = digits.slice(0, 4)
-  if (!g) {
-    const y2 = '20' + digits.slice(0, 2)
-    if (GRADES.includes(y2)) g = y2
-  }
-  if (g && g !== reg.grade) reg.grade = g
-})
 
 const roleIndex = computed(() => ({ student: 0, teacher: 1, admin: 2 }[form.role as 'student' | 'teacher' | 'admin'] ?? 0))
 
@@ -437,7 +353,9 @@ const flowTimers: number[] = []
 const isDev = !!import.meta.env.DEV
 const quickLogin: ((role: 'student' | 'teacher' | 'admin') => void) | null = import.meta.env.DEV
   ? (role) => {
-      const map = { student: '2023010101', teacher: 'T001', admin: 'admin' }
+      // 老师用 T1065（何俊杰，马克思主义学院）：数据丰富——6 门课、8291 名学生、3.4 万选课记录，
+      // 且任教快捷学生郭鸿裕的「习概/形势与政策/毛概/马原」，老师端各页面均有数据可看
+      const map = { student: '2025002643', teacher: 'T1065', admin: 'admin' }
       form.no = map[role]
       form.password = role === 'admin' ? 'admin' : '123456'
       form.captcha = ''
@@ -448,24 +366,7 @@ const quickLogin: ((role: 'student' | 'teacher' | 'admin') => void) | null = imp
     }
   : null
 
-async function doRegister() {
-  try {
-    const payload = { ...reg, password: await encryptPassword(reg.password) }
-    const r = await api.post('/auth/register', payload)
-    if (r.success) {
-      ;(proxy as any).$message?.success(t('注册成功，请登录'))
-      tab.value = 'login'
-      form.no = reg.no
-      form.password = ''
-    } else {
-      ;(proxy as any).$message?.error(r.message || t('注册失败'))
-    }
-  } catch (e: any) {
-    ;(proxy as any).$message?.error(e?.response?.data?.message || t('注册失败'))
-  }
-}
 
-// === 数据带：真实接口聚合（/courses 匿名可访问） ===
 const statsState = ref<'loading' | 'ok' | 'err'>('loading')
 const platStats = reactive({ courses: 0, applied: 0, teachers: 0 })
 const dataBand = computed(() => [
@@ -505,16 +406,14 @@ onMounted(() => {
   drawCaptcha()
   loadPlatformStats()
   tickClock()
-  /* 注册下拉选项:学院→专业→班级聚合自学生档案+专业字典;失败时降级回常量/文本输入 */
-  api.get('/auth/register-options').then((r: any) => {
-    if (r?.success && r.data) {
-      regOpts.value = { colleges: r.data.colleges || [], majors: r.data.majors || {}, classes: r.data.classes || {} }
-      optsLoaded.value = true
-    }
-  }).catch(() => {})
   clockTimer = window.setInterval(tickClock, 1000)
+  // 学号重排后旧号失效：记住的账号若不符合新学号格式（10位且前4位为2021-2026），自动清除
   const rem = localStorage.getItem('zhixue_remember')
-  if (rem) { form.no = rem; remember.value = true }
+  if (rem) {
+    const freshNo = /^20(2[1-6])\d{6}$/.test(rem) || /^[A-Z]\d+$/.test(rem) || rem === 'admin'
+    if (freshNo) { form.no = rem; remember.value = true }
+    else localStorage.removeItem('zhixue_remember')
+  }
 })
 onUnmounted(() => {
   document.body.classList.remove('atlas-login')
@@ -771,6 +670,8 @@ onUnmounted(() => {
 .card-foot { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 10px; letter-spacing: .14em; color: #8aa5ad; }
 
 /* ---- 注册双列 ---- */
+.reg-err { margin: -8px 0 14px; }
+.btn-enter.is-busy { opacity: .72; pointer-events: none; }
 .reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; margin-bottom: 20px; }
 .reg-item { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .reg-item label { font-size: 11px; letter-spacing: .1em; color: var(--mist); }

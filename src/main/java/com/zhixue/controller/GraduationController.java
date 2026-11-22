@@ -80,8 +80,9 @@ public class GraduationController {
         a.setCreditsEarned((Integer) total.get("earned"));
         a.setCreditsRequired((Integer) total.get("required"));
         a.setCourseCount((Integer) courses.get("earned"));
-        a.setGpaSnapshot(gradeService.gpaOfStudent(userId) != null
-                ? Double.valueOf(String.valueOf(((Map<String, Object>) gradeService.gpaOfStudent(userId)).get("gpa"))) : null);
+        Map<String, Object> gpaInfo = gradeService.gpaOfStudent(userId);
+        a.setGpaSnapshot(gpaInfo.get("gpa") == null ? null
+                : Double.valueOf(String.valueOf(gpaInfo.get("gpa"))));
         // 毕设总评快照（导师评分 40% + 答辩组评分 60%）
         a.setThesisScore(wsService.studentThesisScore(userId));
         a.setStatus("PENDING");

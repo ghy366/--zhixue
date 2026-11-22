@@ -48,6 +48,8 @@ public class AiPageBrowserService {
         String port = env.getProperty("local.server.port", env.getProperty("server.port", "8080"));
         String configured = env.getProperty("ai.page-base-url", "");
         String base = configured.isBlank() ? "http://127.0.0.1:" + port : configured;
+        // 全览时页面多，逐页压缩体积，避免提示词过大
+        int pageLimit = pages.size() > 12 ? 2000 : 4500;
 
         for (AiPageCatalogService.Page p : pages) {
             if (p.api() == null || p.api().isBlank()) continue;
@@ -68,7 +70,7 @@ public class AiPageBrowserService {
                 Object data = parsed instanceof Map<?, ?> m ? m.get("data") : parsed;
                 if (data == null) data = parsed;
                 String text = om.writeValueAsString(slim(data, 0));
-                if (text.length() > 4500) text = text.substring(0, 4500) + "…（已截断）";
+                if (text.length() > pageLimit) text = text.substring(0, pageLimit) + "…（已截断）";
                 sb.append(text).append("\n");
                 visited.add(p.name());
             } catch (Exception e) {

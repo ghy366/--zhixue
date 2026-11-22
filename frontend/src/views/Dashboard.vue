@@ -243,11 +243,6 @@
                   <b>{{ gradPct }}<small>%</small></b>
                   <span>{{ t('已获得 {n} 学分', { n: (gradSummary?.total?.earned ?? 0) + ' / ' + (gradSummary?.total?.required ?? 0) }) }}</span>
                   <em :class="{ ok: !gradSummary?.total?.gap }">{{ gradSummary?.total?.gap ? t('距离目标还差 {n} 学分', { n: gradSummary.total.gap }) : t('已达标') }}</em>
-                  <small v-if="gradSummary?.courses?.required > 0" class="cp-ring-courses"
-                    :class="{ ok: gradSummary.courses.done }">
-                    {{ t('课程 {a}/{b} 门', { a: gradSummary.courses.earned, b: gradSummary.courses.required }) }}
-                    {{ gradSummary.courses.done ? '· ' + t('达标') : '· ' + t('还差 {n} 门', { n: gradSummary.courses.gap }) }}
-                  </small>
                 </div>
               </template>
             </div>
@@ -367,7 +362,7 @@ const POINTS_PER_ROUND = 50
 
 const studentApproved = ref<any[]>([])
 const studentPending = ref<any[]>([])
-// 已获学分：只统计已通过（总评 ≥ 60）的课程，与毕业进度口径一致
+// 已获学分：统一取毕业进度接口（有效成绩 + 已录取 + 模块上限），接口异常时回退本地统计
 const studentCredits = ref(0)
 // 已选学分：已录取课程的全部学分（含未通过/未出成绩）
 const studentCreditsEnrolled = ref(0)
@@ -944,13 +939,15 @@ async function loadData() {
       studentEnrollments.value = mine
       studentApproved.value = mine.filter(e => e.status === 'approved')
       studentPending.value = mine.filter(e => e.status === 'pending')
-      // 已获学分：只计已通过（总评 ≥ 60，成绩未出不算通过），与毕业进度口径一致
+      // 已获学分：统一取毕业进度接口（有效成绩 + 已录取 + 模块上限），与毕业页一致
       const passed = (e: any) => e.grade != null && e.grade !== '' && !isNaN(Number(e.grade)) && Number(e.grade) >= 60
-      studentCredits.value = studentApproved.value.filter(passed).reduce((s: number, e: any) => s + (e.credit || 0), 0)
-      // 已选学分：已录取课程的全部学分（含未通过 / 未出成绩）
-      studentCreditsEnrolled.value = studentApproved.value.reduce((s: number, e: any) => s + (e.credit || 0), 0)
       coursesAll.value = cR?.data || []
       gradSummary.value = gR?.data || null
+      studentCredits.value = gradSummary.value?.total?.earned != null
+        ? Number(gradSummary.value.total.earned)
+        : studentApproved.value.filter(passed).reduce((s: number, e: any) => s + (e.credit || 0), 0)
+      // 已选学分：已录取课程的全部学分（含未通过 / 未出成绩）
+      studentCreditsEnrolled.value = studentApproved.value.reduce((s: number, e: any) => s + (e.credit || 0), 0)
     } catch {}
   } else if (isTeacher.value) {
     try {
@@ -967,7 +964,10 @@ async function loadData() {
         http.get('/logs', { params: { page: 1, size: 6 } }).catch(() => ({ data: null })),
         http.get('/stats/report').catch(() => null),
       ])
-      adminUsers.value = uR?.data || []
+      // /admin/users 带分页参数时返回 {items,total}，不带参数返回裸数组：统一归一为数组，
+      // 防止未来该接口默认分页化后下方 filter/length 静默失效
+      const ud: any = uR?.data
+      adminUsers.value = Array.isArray(ud) ? ud : (ud?.items || [])
       adminCourses.value = cR?.data || []
       const logData: any = lR?.data
       const logRows: any[] = Array.isArray(logData) ? logData : (logData?.items || [])

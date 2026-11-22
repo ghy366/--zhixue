@@ -88,7 +88,7 @@ export const dict: Record<string, string> = {
   '三轮选课制': 'Three-Round Enrollment',
   '第 1、2 轮为积分报名：每轮积分池 50 分，单门课程可投 0-50 分（0 分表示不投入），轮次截止后按投分从高到低录取，同分随机抽签。第 3 轮为先到先得，不使用积分，即时录取。': "Rounds 1-2 use point-based bidding: each round has a 50-point pool per student; bid 0-50 points per course (0 means no bid). When a round closes, seats go to the highest bids, with ties broken randomly. Round 3 is first come, first served — no points, instant enrollment.",
   '门数与学分上限': 'Course & Credit Limits',
-  '每轮最多选中 {n} 门非必修课程{credit}。公共必修 / 专业必修由系统自动排课，不占用选课额度。': "Up to {n} elective courses per round{credit}. Public / major required courses are auto-scheduled and do not count toward your quota.",
+  '每轮最多选中 {n} 门通识选修{credit}。必修与专业选修由培养方案排定，不占用选课额度。': "Up to {n} general elective courses per round{credit}. Required and major-elective courses are plan-scheduled and do not count toward your quota.",
   '，总学分不超过 {n} 分': ', total credits ≤ {n}',
   '候补与递补': 'Waitlist & Auto-Promotion',
   '课程报满后可进入候补队列；有人退选或轮次结算后系统按候补顺序自动递补，全程无需手动抢课。': 'If a course fills up, you can join the waitlist. When someone drops or a round settles, the system promotes in waitlist order automatically — no manual course-grabbing needed.',

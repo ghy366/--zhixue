@@ -7,7 +7,7 @@
       </div>
       <div class="an-head-side">
         <span v-if="bigScreen" class="bs-clock">{{ nowText }}</span>
-        <div class="an-round-live"><span class="an-live-dot" />{{ t('第 {n} 轮 · 选课进行中', { n: ov.round }) }}</div>
+        <div class="an-round-live"><span class="an-live-dot" :class="{ off: !ov.roundOpen }" />{{ t('第 {n} 轮 · {state}', { n: ov.round, state: ov.roundOpen ? '选课进行中' : '选课未开启' }) }}</div>
         <div class="an-head-mini">{{ t('数据更新于 {time} · 共 {n} 门课程', { time: updatedAt, n: ov.totalCourses }) }}</div>
         <button class="bs-screen-btn" @click="toggleBigScreen">
           {{ bigScreen ? t('退出大屏') : t('进入大屏模式') }}
@@ -30,6 +30,12 @@
 
     <!-- ================= 总览 ================= -->
     <div v-if="tab === 'overview'" class="an-pane">
+      <!-- 加载失败横幅：替代"静默全 0" -->
+      <div v-if="loadError" class="an-loaderr">
+        <span class="an-loaderr-ico" v-html="svgIcon('alert-triangle')" />
+        <span class="an-loaderr-text">{{ t('数据加载失败：{msg}。若是登录已过期，请重新登录后再试。', { msg: loadError }) }}</span>
+        <button class="an-loaderr-btn" @click="load">{{ t('重试') }}</button>
+      </div>
       <!-- ===== 原版 stats-grid + stat-card：统一高度/字号/图标 + 口径说明 ===== -->
       <div class="stats-grid">
         <div class="stat-card"><div class="stat-icon blue"   v-html="svgIcon('clipboard')" />
@@ -40,6 +46,12 @@
           <div><div class="stat-value">{{ animFillRate }}%</div><div class="stat-label">{{ t('总满员率') }}</div><div class="stat-sub">{{ t('总录取 ÷ 总容量（选修）') }}</div></div></div>
         <div class="stat-card"><div class="stat-icon amber"  v-html="svgIcon('hourglass')" />
           <div><div class="stat-value">{{ animFullCount }}</div><div class="stat-label">{{ t('满员课程数') }}</div><div class="stat-sub">{{ t('候补 {n} 人在队', { n: animWaiting }) }}</div></div></div>
+        <div class="stat-card"><div class="stat-icon amber" v-html="svgIcon('clipboard')" />
+          <div><div class="stat-value">{{ mr.failRate }}%</div><div class="stat-label">{{ t('挂科率') }}</div><div class="stat-sub">{{ t('{n} 人次不及格', { n: mr.failCount }) }}</div></div></div>
+        <div class="stat-card"><div class="stat-icon green" v-html="svgIcon('check-circle')" />
+          <div><div class="stat-value">{{ mr.makeupPassRate }}%</div><div class="stat-label">{{ t('补考通过率') }}</div><div class="stat-sub">{{ t('已通过 {a} / 已结束 {b}', { a: mr.makeupPassed, b: mr.makeupFinished }) }}</div></div></div>
+        <div class="stat-card"><div class="stat-icon purple" v-html="svgIcon('refresh')" />
+          <div><div class="stat-value">{{ mr.retakeRate }}%</div><div class="stat-label">{{ t('重修率') }}</div><div class="stat-sub">{{ t('重修 {a} 人 · 进行中 {b}', { a: mr.retakeStudents, b: mr.retakeOpen }) }}</div></div></div>
       </div>
 
       <!-- ===== 轮次趋势：上移进首屏 ===== -->
@@ -183,10 +195,17 @@ const ov = reactive<any>({ round: 1, totalCourses: 0, totalUsers: 0, applied: 0,
 const hot = ref<any[]>([])
 const fill = ref<any[]>([])
 const rounds = ref<any[]>([])
+/** 补考/重修三项指标 */
+const mr = reactive<any>({
+  failRate: 0, failCount: 0, makeupPassRate: 0, makeupPassed: 0, makeupFinished: 0,
+  retakeRate: 0, retakeTotal: 0, retakeStudents: 0, retakeOpen: 0,
+})
 
 const round = ref(1)
 const roundOptions = ref<number[]>([1])
 const updatedAt = ref('—')
+/** 主数据加载失败原因：后端重启 token 失效 / 服务不可用等，显示重试横幅而非静默全 0 */
+const loadError = ref('')
 
 const points = ref<any>(null)
 const waitlist = ref<any>(null)
@@ -222,11 +241,16 @@ function fillCls(x: any) {
 async function load() {
   try {
     const r: any = await http.get('/stats/report')
+    loadError.value = ''
     const d = r?.data || {}
     if (d.overview) Object.assign(ov, d.overview)
     hot.value = d.hot || []
     fill.value = d.fill || []
     rounds.value = d.rounds || []
+    try {
+      const m: any = await http.get('/stats/makeup-retake')
+      Object.assign(mr, m?.data || {})
+    } catch {}
 
     const list = Array.from(new Set<number>([
       Number(ov.round) || 1,
@@ -246,7 +270,10 @@ async function load() {
     loadAnalysis('intents')
     loadAnalysis('reviews')
     loadAnalysis('fairness')
-  } catch {}
+  } catch (e: any) {
+    // 不再静默吞错：渲染全 0 会让管理员误以为数据丢失；横幅给出原因 + 重试入口
+    loadError.value = e?.message || t('加载失败')
+  }
 }
 
 type AnalysisKey = 'points' | 'waitlist' | 'classroom' | 'grades' | 'intents' | 'reviews' | 'fairness' | 'risk' | 'operation'
@@ -351,4 +378,23 @@ onBeforeUnmount(() => {
 <style scoped>
 /* 排行副文字提到可读下限以上（原浏览器 small 默认 ~11.5px） */
 .rank-val small { font-size: 12px; }
+
+/* 加载失败横幅：红色警示 + 重试 */
+.an-loaderr {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 16px; border-radius: 12px;
+  border: 1px solid rgba(225, 29, 72, .35);
+  background: rgba(244, 63, 94, .06);
+  color: #e11d48; font-size: 13px; font-weight: 600;
+}
+.an-loaderr-ico { width: 16px; height: 16px; display: inline-flex; flex-shrink: 0; }
+.an-loaderr-ico :deep(.icon) { width: 16px; height: 16px; }
+.an-loaderr-text { flex: 1; min-width: 200px; line-height: 1.5; }
+.an-loaderr-btn {
+  padding: 5px 16px; border-radius: 8px; border: none; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff;
+  background: #e11d48; transition: opacity .2s;
+}
+.an-loaderr-btn:hover { opacity: .85; }
+html.dark .an-loaderr { border-color: rgba(244, 63, 94, .4); background: rgba(244, 63, 94, .08); color: #fb7185; }
 </style>

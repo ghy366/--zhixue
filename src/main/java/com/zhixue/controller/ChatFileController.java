@@ -1,6 +1,13 @@
 package com.zhixue.controller;
 
 import com.zhixue.dto.ApiResponse;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,8 +20,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -22,7 +32,8 @@ import java.util.zip.ZipInputStream;
 /**
  * AI 助手通用文件上传（+ 按钮 / 粘贴附件）：落盘到 zhixue.chat.file-path
  * （E:/ai文件 图片缓存/chat-files），消息里保存 /files/chat/xxx 直链。
- * 纯文本/代码类与 docx 顺带抽取正文片段，由前端注入 AI 上下文 —— 纯 JDK 实现，不引 POI。
+ * 纯文本/代码类与 docx / pptx / pdf / xlsx 抽取正文片段，由前端注入 AI 上下文；
+ * docx 与 pptx 纯 JDK 解析，pdf 用 PDFBox、xlsx 用 POI（均为既有依赖）。
  */
 @RestController
 @RequestMapping("/api/ai")
@@ -97,16 +108,95 @@ public class ChatFileController {
                         String xml = bos.toString(StandardCharsets.UTF_8);
                         xml = xml.replaceAll("(?i)</w:p>", "\n");
                         xml = xml.replaceAll("<[^>]+>", "");
-                        xml = xml.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-                                .replace("&quot;", "\"").replace("&apos;", "'");
-                        return cap(xml.replaceAll("\\n{3,}", "\n\n").trim());
+                        xml = unescape(xml);
+                        return cap(xml.replaceAll("\n{3,}", "\n\n").trim());
                     }
                 }
+            }
+            if ("pptx".equals(ext)) {
+                return cap(extractPptx(p));
+            }
+            if ("pdf".equals(ext)) {
+                return cap(extractPdf(p));
+            }
+            if ("xlsx".equals(ext)) {
+                return cap(extractXlsx(p));
             }
         } catch (Exception ignore) {
             // 抽取失败不影响文件存储，仅不注入 AI
         }
         return null;
+    }
+
+    /** pptx = zip：ppt/slides/slideN.xml 里正文在 <a:t>，段落按 </a:p> 换行，按页码顺序输出 */
+    private String extractPptx(Path p) throws Exception {
+        TreeMap<Integer, String> slides = new TreeMap<>();
+        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(p))) {
+            ZipEntry e;
+            while ((e = zip.getNextEntry()) != null) {
+                String n = e.getName();
+                if (!n.startsWith("ppt/slides/slide") || !n.endsWith(".xml")) continue;
+                int num = Integer.parseInt(n.replaceAll("\\D", ""));
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int k; long total = 0;
+                while ((k = zip.read(buf)) > 0 && total < 2_000_000L) {
+                    bos.write(buf, 0, k); total += k;
+                }
+                String xml = bos.toString(StandardCharsets.UTF_8);
+                xml = xml.replaceAll("(?i)</a:p>", "\n");
+                xml = xml.replaceAll("<[^>]+>", "");
+                xml = unescape(xml);
+                slides.put(num, xml.replaceAll("\n{3,}", "\n\n").trim());
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (var en : slides.entrySet()) {
+            sb.append("〔第 ").append(en.getKey()).append(" 页〕\n")
+              .append(en.getValue().isBlank() ? "（本页无文字）" : en.getValue()).append("\n\n");
+        }
+        return sb.toString().trim();
+    }
+
+    /** pdf 用 PDFBox 按页抽取 */
+    private String extractPdf(Path p) throws Exception {
+        try (PDDocument doc = PDDocument.load(Files.newInputStream(p))) {
+            if (doc.isEncrypted()) doc.setAllSecurityToBeRemoved(true);
+            PDFTextStripper ts = new PDFTextStripper();
+            ts.setStartPage(1);
+            ts.setEndPage(doc.getNumberOfPages());
+            return cap(ts.getText(doc).trim());
+        }
+    }
+
+    /** xlsx = POI：逐个工作表按行拼接（DataFormatter 规避科学计数法） */
+    private String extractXlsx(Path p) throws Exception {
+        DataFormatter fmt = new DataFormatter();
+        StringBuilder sb = new StringBuilder();
+        try (Workbook wb = WorkbookFactory.create(Files.newInputStream(p))) {
+            for (int i = 0; i < wb.getNumberOfSheets(); i++) {
+                Sheet sheet = wb.getSheetAt(i);
+                sb.append("〔工作表 ").append(sheet.getSheetName()).append("〕\n");
+                for (Row row : sheet) {
+                    List<String> cells = new ArrayList<>();
+                    for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
+                        var cell = row.getCell(c);
+                        cells.add(cell == null ? "" : fmt.formatCellValue(cell));
+                    }
+                    String line = String.join(" | ", cells);
+                    if (!line.isBlank()) sb.append(line).append('\n');
+                }
+                sb.append('\n');
+            }
+        }
+        return cap(sb.toString().trim());
+    }
+
+    /** XML 实体反转义（docx/pptx 剥标签后的收尾处理） */
+    private String unescape(String s) {
+        return s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&apos;", "'")
+                .replace("&#160;", " ");
     }
 
     private String cap(String s) {

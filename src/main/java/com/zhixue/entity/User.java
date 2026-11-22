@@ -25,6 +25,7 @@ public class User {
     private String major;
     private Integer grade;
     private String classNo;
+    private String gender;      // 性别：男 / 女（学籍导入字段，可为空——历史数据兼容）
     private String phone;
 
     @Column(columnDefinition = "TEXT")
@@ -50,6 +51,8 @@ public class User {
     public void setGrade(Integer grade) { this.grade = grade; }
     public String getClassNo() { return classNo; }
     public void setClassNo(String classNo) { this.classNo = classNo; }
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
     public String getAvatar() { return avatar; }

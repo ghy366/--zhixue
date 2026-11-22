@@ -99,7 +99,9 @@
 
             <div class="ai-cards">
               <button v-for="f in features" :key="f.title" class="ai-card" @click="fillQuestion(f.q)">
-                <div class="ai-card-icon" :style="{ background: f.bg, color: f.color }">{{ f.icon }}</div>
+                <div class="ai-card-icon" :style="{ background: f.bg, color: f.color }">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS[f.icon]" />
+                </div>
                 <div class="ai-card-title">{{ f.title }}</div>
                 <div class="ai-card-desc">{{ f.desc }}</div>
                 <div class="ai-card-arrow">→</div>
@@ -117,7 +119,10 @@
           <template v-for="(m, i) in messages" :key="i">
             <div v-if="m.role === 'day'" class="chat-day-sep">{{ m.content }}</div>
             <div v-else class="chat-msg" :class="m.role">
-              <div class="chat-avatar">{{ m.role === 'user' ? avatarText : '智' }}</div>
+              <div class="chat-avatar" :class="m.role === 'assistant' ? { 'is-bot': true, 'is-live': i === lastAssistantIdx, ['is-' + botState]: i === lastAssistantIdx } : {}">
+                <img v-if="m.role === 'assistant'" src="/models/ai-avatar-v13.png" alt="AI" />
+                <template v-else>{{ avatarText }}</template>
+              </div>
               <div class="chat-bubble-wrap">
                 <div class="chat-sender">{{ m.role === 'user' ? t('我') : t('智能导航') }}</div>
                 <div class="chat-bubble" :class="m.role">
@@ -277,7 +282,7 @@
           <div class="kb-sec-title">{{ t('选课机制说明') }}</div>
           <div class="kb-faq">
             <div class="kb-qa"><b>{{ t('三轮选课制') }}</b><p>{{ t('第 1、2 轮为积分报名：每轮积分池 50 分，单门课程可投 0-50 分（0 分表示不投入），轮次截止后按投分从高到低录取，同分随机抽签。第 3 轮为先到先得，不使用积分，即时录取。') }}</p></div>
-            <div class="kb-qa" v-if="kbCfg && kbCfg.maxCoursesPerSemester"><b>{{ t('门数与学分上限') }}</b><p>{{ t('每轮最多选中 {n} 门非必修课程{credit}。公共必修 / 专业必修由系统自动排课，不占用选课额度。', { n: kbCfg.maxCoursesPerSemester, credit: kbCfg.maxCredit ? t('，总学分不超过 {n} 分', { n: kbCfg.maxCredit }) : '' }) }}</p></div>
+            <div class="kb-qa" v-if="kbCfg && kbCfg.maxCoursesPerSemester"><b>{{ t('门数与学分上限') }}</b><p>{{ t('每轮最多选中 {n} 门通识选修{credit}。必修与专业选修由培养方案排定，不占用选课额度。', { n: kbCfg.maxCoursesPerSemester, credit: kbCfg.maxCredit ? t('，总学分不超过 {n} 分', { n: kbCfg.maxCredit }) : '' }) }}</p></div>
             <div class="kb-qa"><b>{{ t('候补与递补') }}</b><p>{{ t('课程报满后可进入候补队列；有人退选或轮次结算后系统按候补顺序自动递补，全程无需手动抢课。') }}</p></div>
             <div class="kb-qa" v-if="kbCfg && kbCfg.confirmMinutes"><b>{{ t('结算与确认') }}</b><p>{{ t('每轮截止后系统统一结算录取结果，并在 {n} 分钟确认时限内保留名额，请及时查看「我的课程」确认录取情况。', { n: kbCfg.confirmMinutes }) }}</p></div>
           </div>
@@ -302,32 +307,44 @@
         <!-- 工具选择 -->
         <div v-if="!activeTool" class="tool-grid">
           <button class="tool-card" @click="activeTool = 'bids'">
-            <div class="tool-icon" style="background: rgba(43,177,135,0.14)">📊</div>
+            <div class="tool-icon" style="background: rgba(43,177,135,0.14); color: #2bb187">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.calculator" />
+            </div>
             <div class="tool-name">{{ t('投分策略计算器') }}</div>
             <div class="tool-desc">{{ t('50 分积分池怎么分：按竞争线自动分配，实时算出每门课的录取概率') }}</div>
           </button>
           <button class="tool-card" @click="activeTool = 'plan'">
-            <div class="tool-icon" style="background: rgba(47,159,224,0.14)">🧩</div>
+            <div class="tool-icon" style="background: rgba(47,159,224,0.14); color: #2f9fe0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.layout" />
+            </div>
             <div class="tool-name">{{ t('选课方案预演') }}</div>
             <div class="tool-desc">{{ t('勾选一组课程，一次校验时间冲突、学分门数上限、先修课与名额，并预览周课表') }}</div>
           </button>
           <button class="tool-card" @click="activeTool = 'gradplan'">
-            <div class="tool-icon" style="background: rgba(167,139,250,0.14)">🎓</div>
+            <div class="tool-icon" style="background: rgba(167,139,250,0.14); color: #7c3aed">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.cap" />
+            </div>
             <div class="tool-name">{{ t('毕业缺口排期') }}</div>
             <div class="tool-desc">{{ t('按剩余学期把四大类学分缺口拆成每学期目标，并排出推荐课程') }}</div>
           </button>
           <button class="tool-card" @click="activeTool = 'gpa'">
-            <div class="tool-icon" style="background: rgba(64,150,255,0.12)">🎯</div>
+            <div class="tool-icon" style="background: rgba(64,150,255,0.12); color: #4096ff">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.sigma" />
+            </div>
             <div class="tool-name">{{ t('GPA 计算器') }}</div>
             <div class="tool-desc">{{ t('输入课程、学分与分数，实时计算加权平均分与绩点，支持按目标绩点反推') }}</div>
           </button>
           <button class="tool-card" @click="activeTool = 'countdown'">
-            <div class="tool-icon" style="background: rgba(47,159,224,0.12)">⏳</div>
+            <div class="tool-icon" style="background: rgba(47,159,224,0.12); color: #2f9fe0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.hourglass" />
+            </div>
             <div class="tool-name">{{ t('倒计时板') }}</div>
             <div class="tool-desc">{{ t('期末考试、四六级、考研…… 重要日期倒计时，本地保存自动刷新') }}</div>
           </button>
           <button class="tool-card" @click="activeTool = 'focus'">
-            <div class="tool-icon" style="background: rgba(167,139,250,0.14)">🍅</div>
+            <div class="tool-icon" style="background: rgba(167,139,250,0.14); color: #7c3aed">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" v-html="ICONS.timer" />
+            </div>
             <div class="tool-name">{{ t('专注番茄钟') }}</div>
             <div class="tool-desc">{{ t('专注与休息循环，圆环进度实时显示，完成时提示音提醒') }}</div>
           </button>
@@ -454,6 +471,8 @@
                         :placeholder="t('输入你的问题... Enter 发送，Shift+Enter 换行，可粘贴截图或文件')"
                         @keydown.enter.exact.prevent="send()"
                         @paste="onPaste"
+                        @focus="inputFocused = true"
+                        @blur="inputFocused = false"
                         :rows="1" @input="autoResize" />
               <el-select v-model="selectedKey" class="ai-model-select" popper-class="ai-model-popper"
                          placement="top-end" :fit-input-width="false" filterable
@@ -813,28 +832,50 @@ const quickQuestions = computed(() => {
 // ===== 功能卡片（仅展示后端真实具备的能力，点击填入输入框可修改后发送） =====
 // 依据：AiContextService.recognize 的意图识别 + 各意图真实数据块
 // （毕业进度/成绩绩点/我的选课/意向单/候补/课程详情/时间冲突计算/缺口推荐/选课规则）
+/** 卡片图标：Lucide 风格线性 SVG（24×24，stroke 用卡片配色，替代 emoji 去除"AI 味"） */
+const ICONS: Record<string, string> = {
+  cap: '<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
+  calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/>',
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  conflict: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m10 16 4 4"/><path d="m14 16-4 4"/>',
+  compass: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
+  chart: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+  chat: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+  route: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+  clipboard: '<rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  book: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  trend: '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>',
+  layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+  calculator: '<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>',
+  layout: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  sigma: '<path d="M18 7V4H6l6 8-6 8h12v-3"/>',
+  hourglass: '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+  timer: '<line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/>',
+}
 const features = computed(() => {
   if (auth.user?.role === 'teacher') return [
-    { icon: '👨‍🏫', color: '#0284c7', bg: 'rgba(2,132,199,0.10)', title: t('我的课程'), desc: t('查询我讲授的课程与时间地点'), q: '我教哪些课？' },
-    { icon: '👥', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('报名情况'), desc: t('查看我课程的本轮报名人数'), q: '我的课程选了多少人？' },
-    { icon: '📋', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('选课规则'), desc: t('三轮积分制、候补与录取规则'), q: '选课规则是怎样的？' },
-    { icon: '⏰', color: '#d97706', bg: 'rgba(217,119,6,0.10)', title: t('选课状态'), desc: t('当前轮次与开放状态'), q: '当前选课状态如何？' },
+    { icon: 'book', color: '#0284c7', bg: 'rgba(2,132,199,0.10)', title: t('我的课程'), desc: t('查询我讲授的课程与时间地点'), q: '我教哪些课？' },
+    { icon: 'users', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('报名情况'), desc: t('查看我课程的本轮报名人数'), q: '我的课程选了多少人？' },
+    { icon: 'clipboard', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('选课规则'), desc: t('三轮积分制、候补与录取规则'), q: '选课规则是怎样的？' },
+    { icon: 'clock', color: '#d97706', bg: 'rgba(217,119,6,0.10)', title: t('选课状态'), desc: t('当前轮次与开放状态'), q: '当前选课状态如何？' },
   ]
   if (auth.user?.role === 'admin') return [
-    { icon: '📈', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('系统概览'), desc: t('学生/教师/课程整体统计'), q: '平台的整体选课统计情况如何？' },
-    { icon: '⏰', color: '#d97706', bg: 'rgba(217,119,6,0.10)', title: t('选课状态'), desc: t('当前轮次、阶段与开放状态'), q: '当前选课状态如何？' },
-    { icon: '📋', color: '#0284c7', bg: 'rgba(2,132,199,0.10)', title: t('选课规则'), desc: t('三轮积分制与毕业学分要求'), q: '选课规则是怎样的？' },
-    { icon: '📚', color: '#0d9488', bg: 'rgba(13,148,136,0.10)', title: t('课程目录'), desc: t('全部课程的容量与报名情况'), q: '课程容量和报名情况怎样？' },
+    { icon: 'trend', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('系统概览'), desc: t('学生/教师/课程整体统计'), q: '平台的整体选课统计情况如何？' },
+    { icon: 'clock', color: '#d97706', bg: 'rgba(217,119,6,0.10)', title: t('选课状态'), desc: t('当前轮次、阶段与开放状态'), q: '当前选课状态如何？' },
+    { icon: 'clipboard', color: '#0284c7', bg: 'rgba(2,132,199,0.10)', title: t('选课规则'), desc: t('三轮积分制与毕业学分要求'), q: '选课规则是怎样的？' },
+    { icon: 'layers', color: '#0d9488', bg: 'rgba(13,148,136,0.10)', title: t('课程目录'), desc: t('全部课程的容量与报名情况'), q: '课程容量和报名情况怎样？' },
   ]
   return [
-    { icon: '🎓', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('毕业进度'), desc: t('四大类学分已修/要求/缺口'), q: '我还差多少学分毕业？' },
-    { icon: '📋', color: '#0284c7', bg: 'rgba(2,132,199,0.10)', title: t('我的选课'), desc: t('已录取课程、时间与课表'), q: '我的已选课程和课表是什么？' },
-    { icon: '🎯', color: '#d97706', bg: 'rgba(217,119,6,0.10)', title: t('意向投分'), desc: t('分析意向单与积分投入策略'), q: '帮我分析我的意向单和投分策略。' },
-    { icon: '⚔️', color: '#dc2626', bg: 'rgba(220,38,38,0.10)', title: t('时间冲突'), desc: t('意向课程与已录取课真实核对'), q: '我的意向课程和已录取课程有时间冲突吗？' },
-    { icon: '🧭', color: '#0d9488', bg: 'rgba(13,148,136,0.10)', title: t('选课推荐'), desc: t('按学分缺口推荐可补修课程'), q: '根据我的学分缺口，推荐我可以补修的课程。' },
-    { icon: '📊', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('成绩绩点'), desc: t('总评、学分加权均分与 GPA'), q: '帮我分析我的成绩和 GPA。' },
-    { icon: '💬', color: '#0284c7', bg: 'rgba(2,132,199,0.10)', title: t('智能问答'), desc: t('三轮积分制、候补等选课规则'), q: '学校的选课规则是什么？三轮怎么投分？' },
-    { icon: '🗺️', color: '#7c3aed', bg: 'rgba(124,58,237,0.10)', title: t('修读路线规划'), desc: t('按剩余学期规划每学期修什么、修多少'), q: '请结合我的年级、毕业要求、按学期的必修进度和已修课程成绩，帮我规划剩余每个学期应该修读哪些课程（含挂科必修的重修安排与选修补缺），直到满足毕业要求。' },
+    { icon: 'cap', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('毕业进度'), desc: t('四大类学分已修/要求/缺口'), q: '我还差多少学分毕业？' },
+    { icon: 'calendar', color: '#0284c7', bg: 'rgba(2,132,199,0.10)', title: t('我的选课'), desc: t('已录取课程、时间与课表'), q: '我的已选课程和课表是什么？' },
+    { icon: 'target', color: '#d97706', bg: 'rgba(217,119,6,0.10)', title: t('意向投分'), desc: t('分析意向单与积分投入策略'), q: '帮我分析我的意向单和投分策略。' },
+    { icon: 'conflict', color: '#dc2626', bg: 'rgba(220,38,38,0.10)', title: t('时间冲突'), desc: t('意向课程与已录取课真实核对'), q: '我的意向课程和已录取课程有时间冲突吗？' },
+    { icon: 'compass', color: '#0d9488', bg: 'rgba(13,148,136,0.10)', title: t('选课推荐'), desc: t('按学分缺口推荐可补修课程'), q: '根据我的学分缺口，推荐我可以补修的课程。' },
+    { icon: 'chart', color: '#2f9fe0', bg: 'rgba(47,159,224,0.12)', title: t('成绩绩点'), desc: t('总评、学分加权均分与 GPA'), q: '帮我分析我的成绩和 GPA。' },
+    { icon: 'chat', color: '#0284c7', bg: 'rgba(2,132,199,0.10)', title: t('智能问答'), desc: t('三轮积分制、候补等选课规则'), q: '学校的选课规则是什么？三轮怎么投分？' },
+    { icon: 'route', color: '#7c3aed', bg: 'rgba(124,58,237,0.10)', title: t('修读路线规划'), desc: t('按剩余学期规划每学期修什么、修多少'), q: '请结合我的年级、毕业要求、按学期的必修进度和已修课程成绩，帮我规划剩余每个学期应该修读哪些课程（含挂科必修的重修安排与选修补缺），直到满足毕业要求。' },
   ]
 })
 
@@ -1109,17 +1150,27 @@ const loading = ref(false)
 const streamingNow = ref(false)
 const error = ref('')
 
-/** 3D 机器人状态：把 AI 运行阶段映射为可视反馈，而非纯装饰 */
+/** 输入框是否聚焦（用于 LISTENING 状态） */
+const inputFocused = ref(false)
+/** 一次回复刚结束的确认窗口（用于 SUCCESS 状态） */
+const successFlash = ref(false)
+let successTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 3D 机器人状态：把 AI 运行阶段映射为五态可视反馈，而非纯装饰 */
 const botState = computed(() => {
   if (error.value) return 'error' as const
-  if (streamingNow.value) return 'streaming' as const
+  if (streamingNow.value) return 'responding' as const
   if (loading.value) return 'thinking' as const
+  if (successFlash.value) return 'success' as const
+  if (inputFocused.value) return 'listening' as const
   return 'idle' as const
 })
 const botStateText = computed(() => ({
   idle: 'CORE / 待机',
+  listening: 'CORE / 聆听',
   thinking: 'CORE / 分析中',
-  streaming: 'CORE / 生成中',
+  responding: 'CORE / 生成中',
+  success: 'CORE / 已完成',
   error: 'CORE / 连接异常',
 })[botState.value])
 
@@ -1314,6 +1365,12 @@ async function send(text?: any) {
   } finally {
     tail.loading = false; tail.streaming = false; loading.value = false; streamingNow.value = false
     abortCtrl = null
+    // 正常完成时点亮 CORE 的 SUCCESS 确认（2.4s 后回落）
+    if (!error.value && tail.content) {
+      successFlash.value = true
+      if (successTimer) clearTimeout(successTimer)
+      successTimer = setTimeout(() => { successFlash.value = false }, 2400)
+    }
     scroll(); persistCurrent()
   }
 }
@@ -1342,6 +1399,7 @@ onMounted(() => {
   setTimeout(() => taRef.value?.focus(), 100)
 })
 onBeforeUnmount(() => {
+  if (successTimer) clearTimeout(successTimer)
   abortCtrl?.abort()
   window.removeEventListener('resize', onResize)
 })
@@ -1459,6 +1517,7 @@ html:not([data-theme="dark"]) .ai-home-glow { opacity: .5; }
 .ai-card:hover { transform: translateY(-3px); border-color: rgba(116,228,196,.45); box-shadow: 0 10px 24px rgba(116,228,196,.10); }
 .ai-card:hover .ai-card-arrow { opacity: 1; transform: translateX(0); }
 .ai-card-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 19px; margin-bottom: 2px; }
+.ai-card-icon svg { width: 20px; height: 20px; flex: none; }
 .ai-card-title { font-size: 14.5px; font-weight: 700; color: var(--text); }
 .ai-card-desc { font-size: 12.5px; color: var(--text-light); line-height: 1.5; }
 .ai-card-arrow { position: absolute; right: 14px; bottom: 12px; font-size: 15px; color: var(--primary, #74e4c4); opacity: 0; transform: translateX(-6px); transition: all .18s ease; }
@@ -1534,6 +1593,15 @@ html:not([data-theme="dark"]) .ai-home-glow { opacity: .5; }
 .chat-msg.user { flex-direction: row-reverse; }
 @keyframes msgIn { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 .chat-avatar { width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; background: linear-gradient(135deg, #16a34a, #22c55e); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px; }
+.chat-avatar.is-bot { background: transparent; overflow: hidden; }
+.chat-avatar.is-bot img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+/* 消息头像动态：轻微呼吸浮动；最新一条随 AI 状态发光 */
+.chat-avatar.is-bot img { animation: avatarBreath 3.2s ease-in-out infinite; }
+.chat-avatar.is-live { box-shadow: 0 0 0 1px rgba(56,189,248,.35), 0 2px 10px rgba(56,189,248,.25); }
+.chat-msg.assistant .chat-avatar.is-live.is-thinking { box-shadow: 0 0 0 1px rgba(245,158,66,.5), 0 2px 12px rgba(245,158,66,.4); }
+.chat-msg.assistant .chat-avatar.is-live.is-responding { box-shadow: 0 0 0 1px rgba(56,189,248,.5), 0 2px 12px rgba(56,189,248,.4); animation: avatarPulse 1s ease-in-out infinite; }
+@keyframes avatarBreath { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-1px) scale(1.03); } }
+@keyframes avatarPulse { 0%,100% { box-shadow: 0 0 0 1px rgba(56,189,248,.4), 0 2px 8px rgba(56,189,248,.25); } 50% { box-shadow: 0 0 0 3px rgba(56,189,248,.25), 0 2px 16px rgba(56,189,248,.5); } }
 .chat-msg.user .chat-avatar { background: linear-gradient(135deg, #2bb187, #38bdf8); }
 .chat-bubble-wrap { max-width: 72%; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .chat-msg.user .chat-bubble-wrap { align-items: flex-end; }
@@ -1663,6 +1731,7 @@ html[data-theme="dark"] .chat-md :deep(.md-table tr:nth-child(even) td) { backgr
 .tool-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); cursor: pointer; font-family: inherit; text-align: left; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
 .tool-card:hover { transform: translateY(-3px); border-color: rgba(43,177,135,0.4); box-shadow: 0 10px 24px rgba(43,177,135,0.12); }
 .tool-icon { width: 42px; height: 42px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 21px; }
+.tool-icon svg { width: 22px; height: 22px; flex: none; }
 .tool-name { font-size: 15px; font-weight: 700; color: var(--text); }
 .tool-desc { font-size: 12.5px; color: var(--text-light); line-height: 1.55; }
 .tool-body { animation: tool-fade .25s ease; }
@@ -1839,11 +1908,46 @@ html[data-theme="dark"] .ai-home-glow,
 html:not([data-theme="dark"]) .ai-home-glow { opacity: 1; }
 .chat-page .ai-home-brand { color: #1c7fc0; background: rgba(47,159,224,.10); border-left-color: #2f9fe0; border-radius: 999px; }
 .chat-page .mascot-corner { border-color: rgba(47,159,224,.4); }
-.chat-page .bot-state-tag { color: #1c7fc0; background: rgba(255,255,255,.94); border: 1px solid rgba(47,159,224,.35); border-radius: 999px; box-shadow: 0 4px 14px rgba(47,159,224,.14); }
-.chat-page .bot-state-tag i { background: #2f9fe0; box-shadow: 0 0 8px rgba(47,159,224,.7); }
-.chat-page .bot-state-tag.is-thinking { color: #1870ad; border-color: rgba(47,159,224,.6); }
+/* CORE 状态标识：青蓝科技主题 */
+.chat-page .bot-state-tag {
+  left: auto; right: 0; bottom: 2px; transform: none;
+  color: #1c7fc0;
+  padding: 4px 11px 4px 9px;
+  gap: 7px;
+  font: 600 9.5px/1 var(--ark-mono, monospace);
+  letter-spacing: 1.1px;
+  background: linear-gradient(180deg, rgba(255,255,255,.97), rgba(233,246,255,.94));
+  border: 1px solid rgba(47,159,224,.26);
+  border-radius: 999px;
+  box-shadow: 0 5px 16px rgba(47,159,224,.16), inset 0 1px 0 rgba(255,255,255,.95);
+  backdrop-filter: blur(8px);
+  transition: color .35s ease, border-color .35s ease, box-shadow .35s ease;
+}
+.chat-page .bot-state-tag::after {
+  content: "";
+  position: absolute; left: 11px; right: 11px; bottom: 2px; height: 1px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  opacity: .35;
+}
+.chat-page .bot-state-tag i {
+  width: 5px; height: 5px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(47,159,224,.14), 0 0 9px currentColor;
+  animation-duration: 2.4s;
+}
+.chat-page .bot-state-tag.is-listening { color: #0e9bbd; border-color: rgba(14,155,189,.32); }
+.chat-page .bot-state-tag.is-listening i { animation-duration: 1.5s; }
+.chat-page .bot-state-tag.is-thinking { color: #1c6fd0; border-color: rgba(28,111,208,.34); }
+.chat-page .bot-state-tag.is-thinking i { animation-duration: .6s; }
+.chat-page .bot-state-tag.is-responding { color: #0b8fb0; border-color: rgba(11,143,176,.34); }
+.chat-page .bot-state-tag.is-responding i { animation-duration: 1s; }
+.chat-page .bot-state-tag.is-success {
+  color: #1f9d6b; border-color: rgba(31,157,107,.38);
+  box-shadow: 0 5px 18px rgba(31,157,107,.22), inset 0 1px 0 rgba(255,255,255,.95);
+}
+.chat-page .bot-state-tag.is-success i { animation-duration: 1.2s; }
 .chat-page .bot-state-tag.is-error { color: #ef5b6b; border-color: rgba(239,91,107,.5); }
-.chat-page .bot-state-tag.is-error i { background: #ef5b6b; box-shadow: 0 0 8px rgba(239,91,107,.6); }
+.chat-page .bot-state-tag.is-error i { box-shadow: 0 0 0 3px rgba(239,91,107,.16), 0 0 9px currentColor; }
 .chat-page .bot-mini { border: 1px solid rgba(47,159,224,.3); border-radius: 50%; background: radial-gradient(circle at 50% 40%, rgba(140,215,250,.28), rgba(255,255,255,.7) 72%); }
 .chat-page .bot-mini::after { background: linear-gradient(90deg, transparent, #4ec5f1, transparent); }
 .chat-page .ai-card { box-shadow: 0 2px 10px rgba(38,104,150,.04); }
@@ -1867,9 +1971,18 @@ html[data-theme="dark"] .chat-page .ai-home-glow.g2 { background: radial-gradien
 html[data-theme="dark"] .chat-page .ai-home-glow.g3 { background: radial-gradient(circle, rgba(60,190,180,.18), transparent 65%); }
 html[data-theme="dark"] .chat-page .ai-home-brand { color: #9fe0ff; background: rgba(94,200,242,.14); border-left-color: #5ec8f2; }
 html[data-theme="dark"] .chat-page .mascot-corner { border-color: rgba(94,200,242,.5); }
-html[data-theme="dark"] .chat-page .ai-mascot { background: radial-gradient(circle at 50% 45%, rgba(94,200,242,.13), transparent 68%); border-radius: 50%; }
-html[data-theme="dark"] .chat-page .bot-state-tag { color: #9fe0ff; background: rgba(14,28,41,.92); border-color: rgba(94,200,242,.4); box-shadow: 0 4px 16px rgba(0,0,0,.3); }
+html[data-theme="dark"] .chat-page .ai-mascot { background: radial-gradient(ellipse 70% 60% at 50% 42%, rgba(94,200,242,.10), transparent 72%); }
+html[data-theme="dark"] .chat-page .bot-state-tag {
+  color: #9fe0ff;
+  background: linear-gradient(180deg, rgba(16,32,46,.94), rgba(11,23,34,.92));
+  border-color: rgba(94,200,242,.34);
+  box-shadow: 0 5px 18px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.06);
+}
+html[data-theme="dark"] .chat-page .bot-state-tag i { box-shadow: 0 0 0 3px rgba(94,200,242,.14), 0 0 9px currentColor; }
+html[data-theme="dark"] .chat-page .bot-state-tag.is-listening { color: #7fe4f5; border-color: rgba(127,228,245,.34); }
 html[data-theme="dark"] .chat-page .bot-state-tag.is-thinking { color: #bff0ff; }
+html[data-theme="dark"] .chat-page .bot-state-tag.is-responding { color: #8ce8ff; }
+html[data-theme="dark"] .chat-page .bot-state-tag.is-success { color: #7ff0bf; border-color: rgba(127,240,191,.36); }
 html[data-theme="dark"] .chat-page .bot-state-tag.is-error { color: #ff8b98; }
 html[data-theme="dark"] .chat-page .bot-mini { background: radial-gradient(circle at 50% 40%, rgba(94,200,242,.22), rgba(14,28,41,.8) 74%); border-color: rgba(94,200,242,.4); }
 html[data-theme="dark"] .chat-page .ai-card { box-shadow: 0 2px 12px rgba(0,0,0,.16); }

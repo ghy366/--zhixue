@@ -76,7 +76,7 @@ export const dict: Record<string, string> = {
   '专业': 'Major',
   '班级': 'Class',
   '联系电话': 'Phone',
-  '如：软件工程': 'e.g. Software Engineering',
+  '如：数据科学与大数据技术': 'e.g. Data Science and Big Data Technology',
   '如：软工2301班': 'e.g. SE 2301',
   '请选择专业': 'Select major',
   '请选择班级': 'Select class',

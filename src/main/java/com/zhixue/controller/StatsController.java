@@ -23,12 +23,14 @@ public class StatsController {
     @Autowired private StatsService statsService;
     @Autowired private UserRepository userRepo;
     @Autowired private ExcelService excelService;
+    @Autowired private com.zhixue.service.MakeupRetakeService makeupRetakeService;
 
     private static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     @GetMapping("/report")
     public ApiResponse<Map<String, Object>> report(@RequestHeader(value = "Authorization", required = false) String token) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.report());
     }
 
@@ -37,7 +39,8 @@ public class StatsController {
     public ApiResponse<Map<String, Object>> points(
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestParam(value = "round", required = false) Integer round) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.pointsAnalysis(round));
     }
 
@@ -46,7 +49,8 @@ public class StatsController {
     public ApiResponse<Map<String, Object>> waitlist(
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestParam(value = "round", required = false) Integer round) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.waitlistAnalysis(round));
     }
 
@@ -54,15 +58,26 @@ public class StatsController {
     @GetMapping("/classroom")
     public ApiResponse<Map<String, Object>> classroom(
             @RequestHeader(value = "Authorization", required = false) String token) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.classroomAnalysis());
+    }
+
+    /** 补考/重修分析：挂科率、补考通过率、重修率与流程积压 */
+    @GetMapping("/makeup-retake")
+    public ApiResponse<Map<String, Object>> makeupRetake(
+            @RequestHeader(value = "Authorization", required = false) String token) {
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
+        return ApiResponse.ok(makeupRetakeService.stats());
     }
 
     /** 成绩分析：总分分布 + 课程均分对比 + 平时/期末相关性 */
     @GetMapping("/grades")
     public ApiResponse<Map<String, Object>> grades(
             @RequestHeader(value = "Authorization", required = false) String token) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.gradeAnalysis());
     }
 
@@ -71,7 +86,8 @@ public class StatsController {
     public ApiResponse<Map<String, Object>> intents(
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestParam(value = "round", required = false) Integer round) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.intentAnalysis(round));
     }
 
@@ -79,7 +95,8 @@ public class StatsController {
     @GetMapping("/live")
     public ApiResponse<Map<String, Object>> live(
             @RequestHeader(value = "Authorization", required = false) String token) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.liveAnalysis());
     }
 
@@ -87,7 +104,8 @@ public class StatsController {
     @GetMapping("/reviews")
     public ApiResponse<Map<String, Object>> reviews(
             @RequestHeader(value = "Authorization", required = false) String token) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.reviewAnalysis());
     }
 
@@ -96,7 +114,8 @@ public class StatsController {
     public ApiResponse<Map<String, Object>> fairness(
             @RequestHeader(value = "Authorization", required = false) String token,
             @RequestParam(value = "round", required = false) Integer round) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.fairnessAnalysis(round));
     }
 
@@ -104,7 +123,8 @@ public class StatsController {
     @GetMapping("/risk")
     public ApiResponse<Map<String, Object>> risk(
             @RequestHeader(value = "Authorization", required = false) String token) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.riskAnalysis());
     }
 
@@ -112,14 +132,22 @@ public class StatsController {
     @GetMapping("/operation")
     public ApiResponse<Map<String, Object>> operation(
             @RequestHeader(value = "Authorization", required = false) String token) {
-        if (!isAdmin(token)) return ApiResponse.fail("仅管理员可查看统计报表");
+        String authErr = adminError(token);
+        if (authErr != null) return ApiResponse.fail(authErr);
         return ApiResponse.ok(statsService.operationAnalysis());
     }
 
-    private boolean isAdmin(String token) {
+    /**
+     * 管理员校验：区分「未登录 / token 失效」与「已登录但非管理员」。
+     * token 失效时返回"登录已过期，请重新登录"——前端拦截器匹配该文案会清理会话并跳登录页，
+     * 避免出现"页面静默渲染全 0、不提示也不跳转"的假象（后端重启会清空内存 SessionStore）。
+     */
+    private String adminError(String token) {
         Long userId = token == null ? null : SessionStore.getUserId(token.replace("Bearer ", ""));
         User u = userId == null ? null : userRepo.findById(userId).orElse(null);
-        return u != null && "admin".equals(u.getRole());
+        if (u == null) return "登录已过期，请重新登录";
+        if (!"admin".equals(u.getRole())) return "仅管理员可查看统计报表";
+        return null;
     }
 
     @GetMapping("/export/xlsx")

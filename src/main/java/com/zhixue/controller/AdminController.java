@@ -17,6 +17,7 @@ public class AdminController {
 
     @Autowired private UserRepository userRepo;
     @Autowired private com.zhixue.util.PasswordUtil passwordEncoder;
+    @Autowired private com.zhixue.service.ExcelService excelService;
 
     /**
      * 用户列表（全校账号，服务端分页）。传 page/size 时返回
@@ -33,7 +34,8 @@ public class AdminController {
             @RequestParam(required = false) String college,
             @RequestParam(required = false) String major,
             @RequestParam(required = false) Integer grade,
-            @RequestParam(required = false) String classNo) {
+            @RequestParam(required = false) String classNo,
+            @RequestParam(required = false) Boolean zsbOnly) {
         List<User> allUsers = userRepo.findAll();
 
         // 聚合数据基于全库，不随筛选变化：角色 Tab 人数 + 班级下拉选项
@@ -49,9 +51,11 @@ public class AdminController {
                 .filter(u -> u.getClassNo() != null && !u.getClassNo().isBlank())
                 .collect(Collectors.groupingBy(User::getClassNo, LinkedHashMap::new, Collectors.counting()));
 
-        // 左侧组织树：学院 → 专业 → 班级，每级带人数；无班级的用户归入「未分班」(__none__)
+        // 左侧组织树：只统计学生（学院 → 专业 → 班级）。教师/管理员不在此树中，
+        // 否则他们没有专业和班级，会生成「未填写专业 / 未分班」这类噪音节点。
         Map<String, Map<String, Map<String, Long>>> grouped = new LinkedHashMap<>();
         for (User u : allUsers) {
+            if (!"student".equals(u.getRole())) continue;
             String c = str(u.getCollege()).isEmpty() ? "未填写学院" : u.getCollege();
             String m = str(u.getMajor()).isEmpty() ? "未填写专业" : u.getMajor();
             String k = str(u.getClassNo()).isEmpty() ? "__none__" : u.getClassNo();
@@ -111,6 +115,10 @@ public class AdminController {
                 all = all.stream().filter(u -> classNo.equals(u.getClassNo())).toList();
             }
         }
+        // 专升本标签筛选：true=仅专升本学生，false=排除专升本（null=不筛选）
+        if (zsbOnly != null) {
+            all = all.stream().filter(u -> zsbOnly == str(u.getMajor()).contains("专升本")).toList();
+        }
         if (keyword != null && !keyword.isBlank()) {
             String k = keyword.toLowerCase();
             all = all.stream().filter(u -> (str(u.getNo()) + " " + str(u.getName()) + " "
@@ -134,6 +142,7 @@ public class AdminController {
             m.put("major", u.getMajor());
             m.put("grade", u.getGrade());
             m.put("classNo", u.getClassNo());
+            m.put("gender", u.getGender());
             m.put("phone", u.getPhone());
             m.put("avatar", u.getAvatar());
             return m;
@@ -155,6 +164,86 @@ public class AdminController {
         return ApiResponse.ok(data);
     }
 
+    /**
+     * 学院 → 专业 → 年级 聚合（学生档案真实值），供用户管理的筛选级联使用。
+     * 原先复用注册下拉的 /auth/register-options；自助注册按真实高校口径移除后，
+     * 该聚合成为管理端独立接口，只聚合学生档案里真实存在的值（不再合并注册字典）。
+     */
+    @GetMapping("/major-dict")
+    public ApiResponse<Map<String, Object>> majorDict() {
+        java.util.Set<String> colleges = new java.util.LinkedHashSet<>();
+        Map<String, java.util.Set<String>> majorsByCollege = new java.util.LinkedHashMap<>();
+        java.util.Set<Integer> grades = new java.util.TreeSet<>();
+        for (User u : userRepo.findByRole("student")) {
+            String college = u.getCollege(), major = u.getMajor();
+            if (college == null || college.isBlank()) continue;
+            colleges.add(college);
+            if (major == null || major.isBlank()) continue;
+            majorsByCollege.computeIfAbsent(college, k -> new java.util.LinkedHashSet<>()).add(major);
+            if (u.getGrade() != null) grades.add(u.getGrade());
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("colleges", colleges.stream().sorted().toList());
+        data.put("majors", majorsByCollege.entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                Map.Entry::getKey, e -> e.getValue().stream().sorted().toList(),
+                (a, b) -> a, java.util.LinkedHashMap::new)));
+        data.put("grades", new java.util.ArrayList<>(grades));
+        return ApiResponse.ok(data);
+    }
+
+    /**
+     * 用户导出为真正的 .xlsx（Excel）。筛选参数与 /admin/users 完全一致，
+     * 导出的是当前筛选范围的全量结果（不受分页影响）。
+     */
+    @GetMapping("/users/export")
+    public org.springframework.http.ResponseEntity<byte[]> exportUsers(
+            @RequestParam(required = false) String role,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String college,
+            @RequestParam(required = false) String major,
+            @RequestParam(required = false) Integer grade,
+            @RequestParam(required = false) String classNo,
+            @RequestParam(required = false) Boolean zsbOnly) {
+        List<User> all = userRepo.findAll();
+        if (role != null && !role.isBlank()) all = all.stream().filter(u -> role.equals(u.getRole())).toList();
+        if (college != null && !college.isBlank()) all = all.stream().filter(u -> college.equals(u.getCollege())).toList();
+        if (major != null && !major.isBlank()) all = all.stream().filter(u -> major.equals(u.getMajor())).toList();
+        if (grade != null) all = all.stream().filter(u -> grade.equals(u.getGrade())).toList();
+        if (classNo != null && !classNo.isBlank()) {
+            all = "__none__".equals(classNo)
+                    ? all.stream().filter(u -> str(u.getClassNo()).isEmpty()).toList()
+                    : all.stream().filter(u -> classNo.equals(u.getClassNo())).toList();
+        }
+        if (zsbOnly != null) all = all.stream().filter(u -> zsbOnly == str(u.getMajor()).contains("专升本")).toList();
+        if (keyword != null && !keyword.isBlank()) {
+            String k = keyword.toLowerCase();
+            all = all.stream().filter(u -> (str(u.getNo()) + " " + str(u.getName()) + " "
+                    + str(u.getCollege()) + " " + str(u.getMajor()) + " "
+                    + str(u.getClassNo()) + " " + str(u.getPhone())).toLowerCase().contains(k)).toList();
+        }
+        all = all.stream().sorted(java.util.Comparator
+                .comparing((User u) -> str(u.getClassNo()).isEmpty() ? 1 : 0)
+                .thenComparing((User u) -> str(u.getClassNo()))
+                .thenComparing((User u) -> str(u.getNo())))
+                .collect(Collectors.toList());
+
+        java.util.List<java.util.List<String>> rows = new java.util.ArrayList<>();
+        rows.add(java.util.List.of("学号/工号", "姓名", "角色", "性别", "年级", "学院", "专业", "班级", "手机号"));
+        for (User u : all) {
+            String roleCn = "student".equals(u.getRole()) ? "学生" : "teacher".equals(u.getRole()) ? "教师" : "管理员";
+            rows.add(java.util.List.of(str(u.getNo()), str(u.getName()), roleCn, str(u.getGender()),
+                    u.getGrade() == null ? "" : String.valueOf(u.getGrade()),
+                    str(u.getCollege()), str(u.getMajor()), str(u.getClassNo()), str(u.getPhone())));
+        }
+        byte[] bytes = excelService.toXlsx("用户列表", rows);
+        org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+        h.set(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"users-export.xlsx\"");
+        h.set(org.springframework.http.HttpHeaders.CONTENT_TYPE,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        return new org.springframework.http.ResponseEntity<>(bytes, h, org.springframework.http.HttpStatus.OK);
+    }
+
     private String str(Object v) { return v == null ? "" : v.toString(); }
 
     // 管理员新增任意角色用户（教师/管理员/学生）
@@ -169,6 +258,7 @@ public class AdminController {
         u.setRole(body.getOrDefault("role", "teacher"));
         u.setCollege(body.get("college"));
         u.setMajor(body.get("major"));
+        u.setGender(body.get("gender"));
         String g = body.get("grade");
         if (g != null && !g.isEmpty()) u.setGrade(Integer.parseInt(g));
         u.setClassNo(body.get("classNo"));
@@ -184,6 +274,7 @@ public class AdminController {
         if (body.containsKey("name")) u.setName(body.get("name"));
         if (body.containsKey("college")) u.setCollege(body.get("college"));
         if (body.containsKey("major")) u.setMajor(body.get("major"));
+        if (body.containsKey("gender")) u.setGender(body.get("gender"));
         if (body.containsKey("classNo")) u.setClassNo(body.get("classNo"));
         if (body.containsKey("phone")) u.setPhone(body.get("phone"));
         if (body.containsKey("avatar")) u.setAvatar(body.get("avatar"));

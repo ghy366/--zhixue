@@ -59,6 +59,8 @@ public class WebConfig implements WebMvcConfigurer {
         String[] spaPaths = {
                 "/login", "/login/**",
                 "/dashboard", "/dashboard/**",
+                // 角色分端首页：登录后跳转的 URL，刷新时必须回退到 index.html
+                "/student/dashboard", "/teacher/dashboard", "/admin/dashboard",
                 "/courses", "/courses/**",
                 "/intents", "/intents/**",
                 "/my-enrollments", "/my-enrollments/**",
@@ -83,6 +85,8 @@ public class WebConfig implements WebMvcConfigurer {
                 "/announce", "/announce/**",
                 "/announcements", "/announcements/**",
                 "/stats", "/stats/**",
+                "/makeup-mgr", "/makeup-mgr/**",
+                "/retake-mgr", "/retake-mgr/**",
                 "/advise-mgr", "/advise-mgr/**",
                 "/logs", "/logs/**",
                 "/profile", "/profile/**",

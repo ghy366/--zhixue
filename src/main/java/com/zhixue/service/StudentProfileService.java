@@ -22,6 +22,7 @@ public class StudentProfileService {
     @Autowired private GradeRepository gradeRepo;
     @Autowired private CourseService courseService;
     @Autowired private GraduationService graduationService;
+    @Autowired private GradeService gradeService;
     @Autowired private WaitlistRepository waitlistRepo;
     @Autowired private EnrollmentService enrollmentService;
 
@@ -89,7 +90,8 @@ public class StudentProfileService {
         }
 
         int waitlistCount = waitCourses.size();
-        double gpa = calcGpa(courses);
+        // GPA 与个人成绩页、毕业判定共用后端成绩流水有效记录口径
+        Map<String, Object> gpaInfo = gradeService.gpaOfStudent(studentId);
 
         // 成绩分布（10 分一段）
         int[] buckets = new int[10];
@@ -109,7 +111,8 @@ public class StudentProfileService {
         stat.put("avgScore", scored.isEmpty() ? null : r1(scored.stream().mapToDouble(Double::doubleValue).average().orElse(0)));
         stat.put("maxScore", scored.isEmpty() ? null : Collections.max(scored));
         stat.put("minScore", scored.isEmpty() ? null : Collections.min(scored));
-        stat.put("gpa", scored.isEmpty() ? null : gpa);
+        Object gpaCount = gpaInfo.get("courseCount");
+        stat.put("gpa", gpaCount instanceof Number && ((Number) gpaCount).intValue() > 0 ? gpaInfo.get("gpa") : null);
         stat.put("dropped", dropped);
         stat.put("waitlist", waitlistCount);
 
@@ -131,22 +134,5 @@ public class StudentProfileService {
         out.put("graduation", grad);
         out.put("warnings", warnings);
         return out;
-    }
-
-    /** 与前端 Grades.vue 一致的 4.0 制换算 */
-    private double calcGpa(List<Map<String, Object>> courses) {
-        double weighted = 0;
-        int credits = 0;
-        for (Map<String, Object> c : courses) {
-            Object t = c.get("totalScore");
-            int credit = nz((Integer) c.get("credit"));
-            if (t == null || credit <= 0) continue;
-            double s = Double.parseDouble(t.toString());
-            double gpa = s >= 90 ? 4.0 : s >= 85 ? 3.7 : s >= 80 ? 3.3 : s >= 75 ? 3.0
-                    : s >= 70 ? 2.7 : s >= 65 ? 2.3 : s >= 60 ? 2.0 : 0.0;
-            weighted += gpa * credit;
-            credits += credit;
-        }
-        return credits > 0 ? r1(weighted / credits) : 0;
     }
 }

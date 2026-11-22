@@ -5,6 +5,7 @@ import com.zhixue.entity.CourseIntent;
 import com.zhixue.entity.CourseReview;
 import com.zhixue.entity.Enrollment;
 import com.zhixue.entity.Grade;
+import com.zhixue.entity.GradeRecord;
 import com.zhixue.entity.OperationLog;
 import com.zhixue.entity.SystemConfig;
 import com.zhixue.entity.User;
@@ -41,6 +42,7 @@ public class StatsService {
     @Autowired private SystemConfigRepository sysRepo;
     @Autowired private CourseService courseService;
     @Autowired private GradeRepository gradeRepo;
+    @Autowired private GradeLedgerService ledger;
     @Autowired private CourseIntentRepository intentRepo;
     @Autowired private OperationLogRepository logRepo;
 
@@ -57,9 +59,49 @@ public class StatsService {
     private double pct(int a, int b) { return b <= 0 ? 0.0 : Math.round(a * 1000.0 / b) / 10.0; }
 
     public Map<String, Object> report() {
-        int round = sysRepo.findById(1L).map(c -> c.getCurrentRound() == null ? 1 : c.getCurrentRound()).orElse(1);
+        com.zhixue.entity.SystemConfig cfg = sysRepo.findById(1L).orElse(null);
+        int round = cfg == null || cfg.getCurrentRound() == null ? 1 : cfg.getCurrentRound();
         List<Course> courses = courseRepo.findAll();
         List<Enrollment> all = enrollmentRepo.findAll();
+
+        // ===== 单次遍历预聚合 =====
+        // 逐课对全量选课做流式过滤在数据量增长后不可行：4025 门课 × 31 万条选课 ≈ 12 亿次比较，
+        // 曾把 /stats/report 拖到分钟级超时（前端 30s 断开 → 报表卡片全空）。
+        // 现在一遍分组：按课程（本轮未退课 → 热度/满员率）、按课程（本轮已录取 → 教师工作量）、按轮次（趋势计数）。
+        Map<Long, List<Enrollment>> byCourseRound = new HashMap<>();
+        Map<Long, Integer> approvedByCourse = new HashMap<>();
+        Map<Integer, int[]> roundStats = new HashMap<>();   // round -> [applied, approved, rejected, dropped]
+        for (Enrollment e : all) {
+            Integer r = e.getRound();
+            if (r == null) continue;
+            String status = e.getStatus();
+            boolean dropped = "dropped".equals(status);
+            boolean approved = "approved".equals(status);
+            int[] st = roundStats.computeIfAbsent(r, k -> new int[4]);
+            if (!dropped) st[0]++;
+            if (approved) st[1]++;
+            if ("rejected".equals(status)) st[2]++;
+            if (dropped) st[3]++;
+            if (r != round) continue;
+            if (!dropped) byCourseRound.computeIfAbsent(e.getCourseId(), k -> new ArrayList<>()).add(e);
+            if (approved) approvedByCourse.merge(e.getCourseId(), 1, Integer::sum);
+        }
+
+        // 候补一次拉全按课程计数，替代逐课查询
+        Map<Long, Integer> waitByCourse = new HashMap<>();
+        for (Waitlist w : waitlistRepo.findByRound(round)) {
+            if (!WaitlistService.ACTIVE.contains(w.getStatus())) continue;
+            waitByCourse.merge(w.getCourseId(), 1, Integer::sum);
+        }
+
+        // 教师名 / 课程评价一次拉全，替代逐课 findById / findByCourseId 的 N+1
+        Map<Long, String> nameMap = courseService.userNameMap();
+        Map<Long, int[]> reviewByCourse = new HashMap<>();   // courseId -> [评价数, 评分总和]
+        for (CourseReview rev : reviewRepo.findAll()) {
+            int[] rv = reviewByCourse.computeIfAbsent(rev.getCourseId(), k -> new int[2]);
+            rv[0]++;
+            rv[1] += nz(rev.getRating());
+        }
 
         // 课程热度 + 满员率（本轮，未退课）
         List<Map<String, Object>> hot = new ArrayList<>();
@@ -67,19 +109,16 @@ public class StatsService {
         int capSum = 0, approvedSum = 0, appliedSum = 0, fullCount = 0, waitSum = 0;
         for (Course c : courses) {
             boolean req = c.getCategory() != null && c.getCategory().contains("必修");
-            List<Enrollment> ce = all.stream()
-                    .filter(e -> c.getId().equals(e.getCourseId()) && e.getRound() != null && e.getRound() == round
-                            && !"dropped".equals(e.getStatus()))
-                    .toList();
+            List<Enrollment> ce = byCourseRound.getOrDefault(c.getId(), List.of());
             int applied = ce.size();
             int approved = (int) ce.stream().filter(e -> "approved".equals(e.getStatus())).count();
             int cap = nz(c.getCapacity());
-            int wait = waitlistRepo.findByCourseIdAndRoundAndStatusInOrderByJoinTimeAsc(c.getId(), round, WaitlistService.ACTIVE).size();
+            int wait = waitByCourse.getOrDefault(c.getId(), 0);
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("courseId", c.getId());
             m.put("courseName", c.getName());
             m.put("category", c.getCategory());
-            m.put("teacherName", courseService.teacherName(c.getTeacherId()));
+            m.put("teacherName", nameMap.getOrDefault(c.getTeacherId(), "未分配"));
             m.put("capacity", cap);
             m.put("applied", applied);
             m.put("approved", approved);
@@ -88,7 +127,9 @@ public class StatsService {
             m.put("required", req);
             hot.add(m);
             fill.add(m);
-            if (!req) {
+            // 全校概览只统计本轮有报名的课程（毕业学期多为必修课，口径随实际开课走，
+            // 避免出现"全校 650 门容量 vs 17 条选修报名"造成的 0.1% 假满员率）
+            if (applied > 0) {
                 capSum += cap; approvedSum += approved; appliedSum += applied; waitSum += wait;
                 if (cap > 0 && approved >= cap) fullCount++;
             }
@@ -97,18 +138,17 @@ public class StatsService {
         fill.sort((a, b) -> Double.compare((double) b.get("fillRate"), (double) a.get("fillRate")));
 
         // 轮次报名趋势
-        int maxRound = all.stream().filter(e -> e.getRound() != null).mapToInt(Enrollment::getRound).max().orElse(round);
+        int maxRound = roundStats.keySet().stream().max(Integer::compare).orElse(round);
         maxRound = Math.max(maxRound, round);
         List<Map<String, Object>> rounds = new ArrayList<>();
         for (int r = 1; r <= maxRound; r++) {
-            final int rr = r;
-            List<Enrollment> re = all.stream().filter(e -> e.getRound() != null && e.getRound() == rr).toList();
+            int[] st = roundStats.getOrDefault(r, new int[4]);
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("round", r);
-            m.put("applied", (int) re.stream().filter(e -> !"dropped".equals(e.getStatus())).count());
-            m.put("approved", (int) re.stream().filter(e -> "approved".equals(e.getStatus())).count());
-            m.put("rejected", (int) re.stream().filter(e -> "rejected".equals(e.getStatus())).count());
-            m.put("dropped", (int) re.stream().filter(e -> "dropped".equals(e.getStatus())).count());
+            m.put("applied", st[0]);
+            m.put("approved", st[1]);
+            m.put("rejected", st[2]);
+            m.put("dropped", st[3]);
             rounds.add(m);
         }
 
@@ -117,18 +157,12 @@ public class StatsService {
         for (User u : userRepo.findAll()) {
             if (!"teacher".equals(u.getRole())) continue;
             List<Course> tc = courseService.findByTeacher(u.getId());
-            Set<Long> tcIds = new HashSet<>();
-            for (Course c : tc) tcIds.add(c.getId());
-            int students = (int) all.stream()
-                    .filter(e -> e.getRound() != null && e.getRound() == round && "approved".equals(e.getStatus())
-                            && tcIds.contains(e.getCourseId()))
-                    .count();
-            int rc = 0, rs = 0;
+            int students = 0, rc = 0, rs = 0;
             for (Course c : tc) {
-                for (CourseReview rev : reviewRepo.findByCourseIdOrderByCreatedAtDesc(c.getId())) {
-                    rs += nz(rev.getRating());
-                    rc++;
-                }
+                students += approvedByCourse.getOrDefault(c.getId(), 0);
+                int[] rv = reviewByCourse.getOrDefault(c.getId(), new int[2]);
+                rs += rv[1];
+                rc += rv[0];
             }
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("teacherId", u.getId());
@@ -144,6 +178,8 @@ public class StatsService {
 
         Map<String, Object> overview = new LinkedHashMap<>();
         overview.put("round", round);
+        // 轮次开关状态随报表下发：前端头部徽标按真实状态显示"进行中/未开启"，不再写死
+        overview.put("roundOpen", cfg != null && Boolean.TRUE.equals(cfg.getRoundOpen()));
         overview.put("totalCourses", courses.size());
         overview.put("totalUsers", userRepo.count());
         overview.put("applied", appliedSum);
@@ -1637,15 +1673,21 @@ public class StatsService {
         SystemConfig cfg = sysRepo.findById(1L).orElse(null);
         Map<String, Integer> reqMap = new LinkedHashMap<>();
         reqMap.put("必修", nz(cfg == null ? 0 : cfg.getGradReqRequired()));
-        reqMap.put("选修", nz(cfg == null ? 0 : cfg.getGradReqElective()));
-        reqMap.put("通识", nz(cfg == null ? 0 : cfg.getGradReqGeneral()));
-        reqMap.put("实践", nz(cfg == null ? 0 : cfg.getGradReqPractice()));
-        String[] KEYS = {"必修", "选修", "通识", "实践"};
+        int pubElec = cfg != null && cfg.getGradReqGeneral() != null && cfg.getGradReqGeneral() > 0
+                ? cfg.getGradReqGeneral() : 8;
+        reqMap.put("公共选修", pubElec);   // 华厦公选 8 学分硬指标
+        reqMap.put("专业选修", nz(cfg == null ? 0 : cfg.getGradReqElective()));
+        String[] KEYS = com.zhixue.util.CourseGroup.KEYS;   // 必修 / 公共选修 / 专业选修
 
         Map<Long, Map<Long, Double>> passedScore = new HashMap<>();    // studentId -> courseId -> score
-        for (Grade g : gradeRepo.findAll()) {
-            if (g.getTotalScore() == null || g.getTotalScore() < 60) continue;
-            passedScore.computeIfAbsent(g.getStudentId(), k -> new HashMap<>()).put(g.getCourseId(), g.getTotalScore());
+        // 毕业预警与毕业/GPA 同口径：按成绩流水有效记录（最新一次通过优先）
+        for (Map.Entry<Long, Map<Long, GradeRecord>> se : ledger.effectiveRecordsAll().entrySet()) {
+            for (Map.Entry<Long, GradeRecord> ce : se.getValue().entrySet()) {
+                Double sc = ce.getValue().getTotalScore();
+                if (sc != null && sc >= GradeService.PASS_LINE) {
+                    passedScore.computeIfAbsent(se.getKey(), k -> new HashMap<>()).put(ce.getKey(), sc);
+                }
+            }
         }
         Map<Long, Set<Long>> approvedIds = new HashMap<>();
         for (Enrollment e : enrollmentRepo.findAll()) {
@@ -1669,6 +1711,7 @@ public class StatsService {
             for (Long cid : approved) {
                 Course c = cm.get(cid);
                 if (c == null) continue;
+                if (!com.zhixue.util.CourseGroup.countsForGraduation(c.getCourseCode())) continue;
                 String g = com.zhixue.util.CourseGroup.groupOf(c.getCategory());
                 if (ps.containsKey(cid)) {
                     // 已通过：计入已获学分

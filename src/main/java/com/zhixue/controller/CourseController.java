@@ -2,7 +2,10 @@ package com.zhixue.controller;
 
 import com.zhixue.dto.ApiResponse;
 import com.zhixue.entity.Course;
+import com.zhixue.entity.CourseIntent;
+import com.zhixue.entity.Enrollment;
 import com.zhixue.entity.User;
+import com.zhixue.entity.Waitlist;
 import com.zhixue.service.CourseService;
 import com.zhixue.service.EnrollmentService;
 import com.zhixue.service.IntentService;
@@ -43,17 +46,42 @@ public class CourseController {
         int round = enrollmentService.getSystemConfig().getCurrentRound();
         List<Course> courses = courseService.search(keyword, category);
         if (Boolean.TRUE.equals(electiveOnly)) {
-            // 必修课由教学计划自动安排，不参与选课浏览
+            // 厦门华厦学院：学生自选的只有公共选修课（通识选修）；
+            // 必修与专业选修都由教务按培养方案自动排入课表，不出现在选课浏览。
             courses = courses.stream()
-                    .filter(c -> c.getCategory() == null || !c.getCategory().contains("必修"))
+                    .filter(c -> c.getCategory() != null && c.getCategory().contains("公共选修"))
                     .toList();
         }
         Map<String, Object> ratings = reviewService.allRatings();
         // 学生视角按「本学期」统计报名/余量：历史学期的报名记录保留但不挤占新学期名额
         Integer semesterNo = enrollmentService.currentSemesterOf(userId);
+        // —— 批量预取：此前逐门课查库（整轮/候补/竞争线/教师名每课各查一次，一次请求数千条 SQL，
+        //    课表页切换学期明显卡顿），改为一次性加载后内存分组，课程列表由 3~4 秒降至毫秒级 ——
+        Prefetch pf = new Prefetch();
+        pf.userId = userId;
+        pf.byCourse = enrollmentService.byCourseOfRound(round);
+        pf.prevByCourse = enrollmentService.byCourseOfRounds(round);
+        pf.stats = enrollmentService.courseStatsBulk(pf.byCourse, semesterNo);
+        Integer studentSemForFull = enrollmentService.isStudentUser(userId) ? semesterNo : null;
+        pf.fullMap = waitlistService.fullMap(courses, round, studentSemForFull,
+                pf.byCourse, enrollmentService.byCourseOfSemester(studentSemForFull),
+                waitlistService.activeByCourseOfRound(round));
+        pf.teachers = courseService.userNameMap();
+        pf.courseNames = courseService.courseNameMap();
+        if (userId != null) {
+            for (Enrollment e : enrollmentService.listByStudentAndRound(userId, round)) {
+                pf.myEnr.merge(e.getCourseId(), e, (a, b) -> a.getId() >= b.getId() ? a : b);
+            }
+            for (Waitlist w : waitlistService.activeForStudent(userId, round)) {
+                pf.myWl.putIfAbsent(w.getCourseId(), w);
+            }
+            for (CourseIntent it : intentService.listByStudent(userId)) {
+                pf.myIntent.putIfAbsent(it.getCourseId(), it);
+            }
+        }
         List<Map<String, Object>> all = new ArrayList<>();
         for (Course c : courses) {
-            all.add(courseToMap(c, userId, round, ratings, semesterNo));
+            all.add(courseToMap(c, round, ratings, semesterNo, pf));
         }
         // 排序口径与前端本地排序一致（迁移到服务端后跨页排序才正确）
         if ("competition".equals(sort)) {
@@ -131,9 +159,14 @@ public class CourseController {
 
     @PutMapping("/{id}")
     public ApiResponse<Course> update(@PathVariable Long id, @RequestBody Course c) {
-        if (courseService.findById(id) == null) return ApiResponse.fail("课程不存在");
-        String err = teacherLoadError(c.getTeacherId(), id);
-        if (err != null) return ApiResponse.fail(err);
+        Course old = courseService.findById(id);
+        if (old == null) return ApiResponse.fail("课程不存在");
+        // 教师课时上限只在「更换任课教师」时校验：仅改地点/时间等信息时教师未变，
+        // 若教师本就超额（历史数据），每次更新都会被误拦（如教室冲突重排全部失败）
+        if (c.getTeacherId() != null && !c.getTeacherId().equals(old.getTeacherId())) {
+            String err = teacherLoadError(c.getTeacherId(), id);
+            if (err != null) return ApiResponse.fail(err);
+        }
         c.setId(id);
         return ApiResponse.ok("更新成功", courseService.save(c));
     }
@@ -197,14 +230,17 @@ public class CourseController {
         return courseToMap(c, userId, round, ratings, enrollmentService.currentSemesterOf(userId));
     }
 
-    private Map<String, Object> courseToMap(Course c, Long userId, int round, Map<String, Object> ratings, Integer semesterNo) {
+    /** 公共展示字段（含教师名/先修课名）：批量映射非空走预取数据，为 null 逐课查库（单课程路径） */
+    private Map<String, Object> baseMap(Course c, Map<Long, String> pfCourseNames, Map<Long, String> pfTeachers) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", c.getId());
         m.put("name", c.getName());
         m.put("courseCode", c.getCourseCode());
         m.put("hours", c.getHours());
         m.put("teacherId", c.getTeacherId());
-        m.put("teacherName", courseService.teacherName(c.getTeacherId()));
+        m.put("teacherName", pfTeachers != null
+                ? pfTeachers.getOrDefault(c.getTeacherId(), "未分配")
+                : courseService.teacherName(c.getTeacherId()));
         m.put("credit", c.getCredit());
         m.put("capacity", c.getCapacity());
         m.put("category", c.getCategory());
@@ -214,11 +250,23 @@ public class CourseController {
         m.put("examTime", c.getExamTime());
         m.put("intro", c.getIntro());
         m.put("semesterNo", c.getSemesterNo());
+        m.put("targetCollege", c.getTargetCollege());
+        m.put("targetMajor", c.getTargetMajor());
         if (c.getPrereqId() != null) {
-            Course pre = courseService.findById(c.getPrereqId());
             m.put("prereqId", c.getPrereqId());
-            m.put("prereqName", pre != null ? pre.getName() : null);
+            if (pfCourseNames != null) {
+                m.put("prereqName", pfCourseNames.get(c.getPrereqId()));
+            } else {
+                Course pre = courseService.findById(c.getPrereqId());
+                m.put("prereqName", pre != null ? pre.getName() : null);
+            }
         }
+        return m;
+    }
+
+    /** 单课程路径（详情/热门榜等小列表）：逐课查库，条数少无妨 */
+    private Map<String, Object> courseToMap(Course c, Long userId, int round, Map<String, Object> ratings, Integer semesterNo) {
+        Map<String, Object> m = baseMap(c, null, null);
         m.put("stat", enrollmentService.courseStat(c.getId(), round, semesterNo));
         m.put("oversubscribed", enrollmentService.isOversubscribed(c.getId(), round, semesterNo));
         m.put("full", waitlistService.isFull(c.getId(), round, userId));
@@ -240,5 +288,52 @@ public class CourseController {
         m.put("rating", rt != null ? rt.get("avg") : null);
         m.put("ratingCount", rt != null ? rt.get("count") : 0);
         return m;
+    }
+
+    /** 课程列表路径：全部逐课数据取自批量预取，消除每门课 10 余条 SQL 的 N+1 */
+    private Map<String, Object> courseToMap(Course c, int round, Map<String, Object> ratings, Integer semesterNo, Prefetch pf) {
+        Map<String, Object> m = baseMap(c, pf.courseNames, pf.teachers);
+        Map<String, Integer> st = pf.stats.get(c.getId());
+        if (st == null) {
+            st = new LinkedHashMap<>();
+            st.put("total", 0); st.put("pending", 0); st.put("approved", 0); st.put("rejected", 0);
+        }
+        m.put("stat", st);
+        int cap = c.getCapacity() == null ? 0 : c.getCapacity();
+        m.put("oversubscribed", st.get("total") > cap);
+        m.put("full", pf.fullMap.getOrDefault(c.getId(), false));
+        m.put("guide", enrollmentService.pointsGuideFrom(c.getId(), round, cap,
+                pf.byCourse.getOrDefault(c.getId(), List.of()), pf.prevByCourse, semesterNo));
+        if (pf.userId != null) {
+            Enrollment enr = pf.myEnr.get(c.getId());
+            m.put("myStatus", enr != null ? enr.getStatus() : null);
+            m.put("myPoints", enr != null ? enr.getPoints() : null);
+            Waitlist wl = pf.myWl.get(c.getId());
+            m.put("myWaitStatus", wl != null ? wl.getStatus() : null);
+            m.put("myWaitPosition", wl != null ? waitlistService.position(wl) : null);
+            m.put("myWaitId", wl != null ? wl.getId() : null);
+            CourseIntent it = pf.myIntent.get(c.getId());
+            m.put("myIntent", it != null);
+            m.put("myIntentPoints", it != null ? it.getDesiredPoints() : null);
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> rt = ratings == null ? null : (Map<String, Object>) ratings.get(String.valueOf(c.getId()));
+        m.put("rating", rt != null ? rt.get("avg") : null);
+        m.put("ratingCount", rt != null ? rt.get("count") : 0);
+        return m;
+    }
+
+    /** 课程列表批量预取上下文：list() 一次装配，courseToMap 逐课取用 */
+    private static class Prefetch {
+        Long userId;
+        Map<Long, List<Enrollment>> byCourse;
+        Map<Integer, Map<Long, List<Enrollment>>> prevByCourse;
+        Map<Long, Map<String, Integer>> stats;
+        Map<Long, Boolean> fullMap;
+        Map<Long, String> teachers;
+        Map<Long, String> courseNames;
+        final Map<Long, Enrollment> myEnr = new HashMap<>();
+        final Map<Long, Waitlist> myWl = new HashMap<>();
+        final Map<Long, CourseIntent> myIntent = new HashMap<>();
     }
 }

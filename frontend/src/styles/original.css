@@ -358,6 +358,8 @@ html[data-theme="dark"] .nav-divider { background: #334155; }
   margin-bottom: 16px;
 }
 .section-title { font-size: 16px; font-weight: 600; color: var(--text); }
+/* 单标题的 section-header：space-between 会把唯一子元素推到最右，强制靠左 */
+.section-header > .section-title:only-child { margin-right: auto; }
 .section-link { font-size: 13px; color: var(--primary); cursor: pointer; }
 .section-link:hover { text-decoration: underline; }
 
@@ -1740,7 +1742,6 @@ html[data-theme="dark"] .card.glow-corner::before {
 }
 .wk-opt:hover { background: var(--bg); }
 .wk-opt.active { background: var(--primary-bg); color: var(--primary); font-weight: 600; }
-.wk-opt.active::after { content: '?'; font-weight: 700; }
 .wk-now {
   font-size: 12px; color: var(--accent);
   border: 1px solid var(--accent);
@@ -1961,25 +1962,29 @@ html[data-theme="dark"] .card.glow-corner::before {
 
 /* ===== 毕业设计工作台 ===== */
 .ws-header-card {
-  display: flex; gap: 16px; padding: 20px; border-radius: 12px;
-  background: linear-gradient(135deg, rgba(31,166,122,.08), rgba(56,189,248,.08));
+  display: flex; gap: 18px; padding: 20px 24px; border-radius: 16px;
+  background: linear-gradient(135deg, rgba(31,166,122,.10), rgba(56,189,248,.06)), var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 28px -22px rgba(0, 0, 0, .45);
   align-items: center; margin-bottom: 16px;
 }
 .ws-header-card .ws-avatar {
-  width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+  width: 58px; height: 58px; border-radius: 50%; flex-shrink: 0;
   background: linear-gradient(135deg, #2bb187, #38bdf8);
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 22px; font-weight: 600;
+  color: #fff; font-size: 23px; font-weight: 600;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #2bb187 16%, transparent), 0 6px 16px -6px rgba(43, 177, 135, .6);
 }
 .ws-header-card .ws-info { flex: 1; min-width: 0; }
 .ws-header-card .ws-name { font-weight: 600; font-size: 16px; }
 .ws-header-card .ws-sub { font-size: 12px; color: var(--text-light); margin-top: 4px; }
 .ws-header-card .ws-bar { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
 .ws-header-card .ws-bar-fill { height: 4px; background: #22c55e; border-radius: 2px; }
-.ws-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
-.ws-tab { padding: 8px 16px; cursor: pointer; font-size: 14px; color: var(--text-light); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; }
-.ws-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.ws-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 13px; background: color-mix(in srgb, var(--text-light) 8%, transparent); margin-bottom: 16px; overflow-x: auto; }
+.ws-tab { padding: 8px 15px; cursor: pointer; font-size: 13.5px; color: var(--text-light); border-radius: 10px; transition: all .18s; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.ws-tab.active { color: var(--primary); background: var(--card); font-weight: 700; box-shadow: 0 2px 8px -3px rgba(0,0,0,.28), inset 0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent); }
 .ws-tab:hover:not(.active) { color: var(--text); }
+.ws-tab .icon { width: 15px; height: 15px; }
 .ws-requirement-card {
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
   padding: 18px; margin-bottom: 14px;

@@ -153,6 +153,8 @@ export const dict: Record<string, string> = {
   '补「{n}」缺口': 'Fill gap of "{n}"',
   '加入中…': 'Joining…',
   '去修读': 'Enroll',
+  '第 {n} 学期自动排入': 'Auto-scheduled in semester {n}',
+  '由教务排入课表': 'Scheduled by the registrar',
   '暂无毕业进度数据': 'No graduation data yet',
   '毕业进度加载失败（服务可能刚重启），请刷新页面重试': 'Failed to load graduation progress (server may have just restarted). Please refresh and retry',
   '已加入意向：{name}（投入 {n} 分）': 'Added to intents: {name} ({n} pts invested)',

@@ -42,6 +42,33 @@ public class SystemController {
         return ApiResponse.ok(systemService.getConfig());
     }
 
+    /**
+     * 全校当前学期（教务端统一口径）。
+     * 教师/管理员没有 grade，无法按个人推算；以「在读学生人数最多的年级」为基准，
+     * 套用与学生端相同的学期公式并叠加学期偏移，保证教务端看到的学期 = 大多数学生所处学期。
+     */
+    @GetMapping("/current-semester")
+    public ApiResponse<Map<String, Object>> currentSemester() {
+        SystemConfig cfg = systemService.getConfig();
+        int offset = cfg.getSemesterOffset() == null ? 0 : cfg.getSemesterOffset();
+        int grade = 0;
+        long best = -1;
+        for (Object[] row : userRepository.countStudentsByGrade()) {
+            if (row[0] == null) continue;
+            int g = ((Number) row[0]).intValue();
+            long c = ((Number) row[1]).longValue();
+            if (c > best) { best = c; grade = g; }
+        }
+        int sem = com.zhixue.service.GraduationService.currentSemesterNo(
+                grade > 0 ? grade : null, java.time.LocalDate.now(), offset);
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("semesterNo", sem);
+        r.put("grade", grade);
+        r.put("semesterOffset", offset);
+        r.put("students", Math.max(0, best));
+        return ApiResponse.ok(r);
+    }
+
     /** 读取三轮时间窗口 + 当前自动推导出的状态 */
     @GetMapping("/round-schedule")
     public ApiResponse<Map<String, Object>> getRoundSchedule() {
@@ -212,6 +239,32 @@ public class SystemController {
         return ApiResponse.ok("每学期选课门数上限已设为 " + v, systemService.setMaxCourses(v));
     }
 
+    /** 补考/重修参数（封顶分、次数、组班门槛、报名窗口） */
+    @PostMapping("/makeup-config")
+    public ApiResponse<SystemConfig> setMakeupConfig(@RequestBody Map<String, Object> body) {
+        Integer cap = intOrNull(body.get("makeupScoreCap"));
+        Integer makeupMax = intOrNull(body.get("makeupMaxAttempts"));
+        Integer retakeMax = intOrNull(body.get("maxRetakeAttempts"));
+        Integer threshold = intOrNull(body.get("retakeGroupThreshold"));
+        LocalDateTime openAt = timeOrNull(body.get("makeupOpenAt"));
+        LocalDateTime closeAt = timeOrNull(body.get("makeupCloseAt"));
+        SystemConfig c = systemService.setMakeupConfig(cap, makeupMax, retakeMax, threshold, openAt, closeAt);
+        return ApiResponse.ok("补考/重修参数已保存", c);
+    }
+
+    private static Integer intOrNull(Object v) {
+        if (v == null || v.toString().isBlank()) return null;
+        try { return Integer.valueOf(v.toString()); } catch (NumberFormatException e) { return null; }
+    }
+
+    /** 支持 "2026-12-01T09:00" 或 "2026-12-01 09:00"；空串表示清除 */
+    private static LocalDateTime timeOrNull(Object v) {
+        if (v == null) return null;
+        String s = v.toString().trim();
+        if (s.isEmpty()) return null;
+        return LocalDateTime.parse(s.replace(' ', 'T'));
+    }
+
     @PostMapping("/graduation-reqs")
     public ApiResponse<SystemConfig> setGraduationReqs(@RequestBody SystemConfig body) {
         SystemConfig c = systemService.setGraduationReqs(
@@ -233,7 +286,9 @@ public class SystemController {
         Object itemsObj = body.get("items");
         java.util.List<GradeRequirement> items = new java.util.ArrayList<>();
         if (itemsObj instanceof List<?> list) {
-            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            // 列表行可能附带供给核对等展示字段（planBxMin/warnings…），反序列化需忽略未知键
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
             for (Object o : list) {
                 try { items.add(om.convertValue(o, GradeRequirement.class)); } catch (Exception ignored) {}
             }

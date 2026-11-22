@@ -21,4 +21,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")
     Optional<User> findByIdForUpdate(@Param("id") Long id);
+
+    /** 按年级统计在读学生数：教务端「全校当前学期」以人数最多的年级为基准 */
+    @Query("select u.grade, count(u) from User u where u.role = 'student' and u.grade is not null group by u.grade")
+    List<Object[]> countStudentsByGrade();
 }

@@ -37,12 +37,18 @@
       <h4>{{ t('基本信息') }}</h4>
       <el-form :model="form" label-position="top" size="default" @submit.prevent>
         <div class="pp-grid">
-          <el-form-item :label="t('姓名')"><el-input v-model="form.name" :placeholder="t('请输入姓名')" /></el-form-item>
+          <el-form-item :label="t('姓名')">
+            <el-input v-model="form.name" disabled><template #suffix><el-icon><Lock /></el-icon></template></el-input>
+          </el-form-item>
           <el-form-item :label="t('学号/工号')">
             <el-input v-model="form.no" disabled><template #suffix><el-icon><Lock /></el-icon></template></el-input>
           </el-form-item>
-          <el-form-item :label="t('学院')"><el-input v-model="form.college" :placeholder="t('如：计算机学院')" /></el-form-item>
-          <el-form-item :label="t('专业/年级')"><el-input v-model="form.major" :placeholder="t('如：软件工程 2023')" /></el-form-item>
+          <el-form-item :label="t('学院')">
+            <el-input v-model="form.college" disabled><template #suffix><el-icon><Lock /></el-icon></template></el-input>
+          </el-form-item>
+          <el-form-item :label="t('专业/年级')">
+            <el-input v-model="form.majorGrade" disabled><template #suffix><el-icon><Lock /></el-icon></template></el-input>
+          </el-form-item>
           <el-form-item :label="t('手机号')"><el-input v-model="form.phone" :placeholder="t('选填')" maxlength="11" /></el-form-item>
         </div>
       </el-form>
@@ -97,7 +103,7 @@ import { t } from '@/i18n'
 const emit = defineEmits<{ (e: 'logout'): void }>()
 
 const auth = useAuthStore()
-const form = reactive({ name: '', no: '', college: '', major: '', phone: '', avatar: '' })
+const form = reactive({ name: '', no: '', college: '', major: '', majorGrade: '', phone: '', avatar: '' })
 const pwd = reactive({ old: '', new: '', confirm: '' })
 const saving = ref(false)
 const pwdLoading = ref(false)
@@ -121,13 +127,12 @@ const roleText = computed(() => ({ student: t('学生'), teacher: t('教师'), a
 const roleTag = computed(() => ({ student: 'primary', teacher: 'success', admin: 'warning' } as any)[auth.user?.role] || 'info')
 
 /* 表单脏检查：与最近一次加载/保存的快照比较，未修改时禁用保存按钮 */
-let snap = { name: '', college: '', major: '', phone: '' }
-const dirty = computed(() =>
-  form.name !== snap.name || form.college !== snap.college ||
-  form.major !== snap.major || form.phone !== snap.phone)
+// 姓名/学院/专业/年级由教务维护、学生不可改，不参与脏检查
+let snap = { phone: '' }
+const dirty = computed(() => form.phone !== snap.phone)
 
 function takeSnap() {
-  snap = { name: form.name, college: form.college, major: form.major, phone: form.phone }
+  snap = { phone: form.phone }
 }
 
 function triggerUpload() { fileInput.value?.click() }
@@ -182,10 +187,15 @@ async function load() {
     if (u) Object.assign(form, {
       name: u.name || '', no: u.no || '',
       college: u.college || '', major: u.major || '',
+      majorGrade: [u.major, u.grade].filter(Boolean).join(' ') || '',
       phone: u.phone || '', avatar: u.avatar || ''
     })
   } catch {
-    if (auth.user) Object.assign(form, { name: auth.user.name || '', no: auth.user.no || '', avatar: auth.user.avatar || '' })
+    if (auth.user) Object.assign(form, {
+      name: auth.user.name || '', no: auth.user.no || '', avatar: auth.user.avatar || '',
+      college: (auth.user as any).college || '', major: (auth.user as any).major || '',
+      majorGrade: [(auth.user as any).major, (auth.user as any).grade].filter(Boolean).join(' ') || ''
+    })
   }
   takeSnap()
 }
@@ -193,7 +203,7 @@ async function load() {
 async function save() {
   saving.value = true
   try {
-    const payload: any = { name: form.name, college: form.college, major: form.major, phone: form.phone }
+    const payload: any = { phone: form.phone }
     await http.put('/auth/profile', payload)
     auth.setUser({ ...(auth.user as any), name: form.name })
     takeSnap()

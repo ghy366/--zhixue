@@ -35,7 +35,14 @@ export function useCountUp(source: Ref<number> | (() => number), options: CountU
   function animate() {
     cancelAnimationFrame(raf)
     const to = targetOf()
-    if (reduced) { current = to; display.value = fmt(to); return }
+    // 后台标签页里浏览器会暂停 requestAnimationFrame：若仍走动画路径，
+    // 展示值会永久冻结在旧值（典型症状：后台打开首页 → 切回来数字全是 0）。
+    // 页面不可见时直接落定目标值；切回前台时由 visibilitychange 补一次滚动。
+    if (reduced || (typeof document !== 'undefined' && document.hidden)) {
+      current = to
+      display.value = fmt(to)
+      return
+    }
     const from = current
     if (from === to) { display.value = fmt(to); return }
     const t0 = performance.now()
@@ -50,7 +57,13 @@ export function useCountUp(source: Ref<number> | (() => number), options: CountU
   }
 
   watch(targetOf, animate, { immediate: true })
-  onUnmounted(() => cancelAnimationFrame(raf))
+  // 半程冻结恢复：动画中途切后台 → rAF 暂停 → 值停在半路；切回前台时补齐
+  const onVisChange = () => { if (document.visibilityState === 'visible') animate() }
+  document.addEventListener('visibilitychange', onVisChange)
+  onUnmounted(() => {
+    document.removeEventListener('visibilitychange', onVisChange)
+    cancelAnimationFrame(raf)
+  })
 
   return display
 }

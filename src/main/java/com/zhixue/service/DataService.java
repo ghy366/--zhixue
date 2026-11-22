@@ -27,6 +27,12 @@ public class DataService {
     // ================= CSV 工具 =================
     private static String esc(String s) {
         if (s == null) return "";
+        // CSV 公式注入防护：姓名/课程名等用户可控字段若以 = + - @ 或制表/回车开头，
+        // Excel/WPS 打开时会被当成公式执行（如 =HYPERLINK(...)），前置单引号强制按文本解析。
+        if (!s.isEmpty()) {
+            char c = s.charAt(0);
+            if (c == '=' || c == '+' || c == '-' || c == '@' || c == '\t' || c == '\r') s = "'" + s;
+        }
         if (s.contains(",") || s.contains("\"") || s.contains("\n")) {
             return "\"" + s.replace("\"", "\"\"") + "\"";
         }
@@ -216,29 +222,38 @@ public class DataService {
 
     /** Excel 导入模板：第一行表头（列名用于自动映射字段），第二行示例 */
     public List<List<String>> studentTemplateRows() {
+        // 表头带 * 的列为必填（数据库 NOT NULL 或导入识别键），导入时会归一化去掉 * 再匹配列名。
+        // 列集合对齐高校学籍导入口径（学号/姓名/性别/学院/专业/年级/班级/联系电话）：
+        // 密码不填时统一默认 123456（真实教务由学校统一初始密码，不在名册里逐个指定）。
         return List.of(
-            Arrays.asList("学号", "姓名", "密码", "学院", "专业", "年级", "班级", "手机号"),
-            Arrays.asList("2023090101", "张三", "123456", "计算机学院", "软件工程", "2023", "软工2301班", "13800000000")
+            Arrays.asList("学号*", "姓名*", "性别", "密码", "学院", "专业", "年级", "班级", "手机号"),
+            Arrays.asList("2023090101", "张三", "男", "", "信息与智能机电学院", "数据科学与大数据技术", "2023", "数据科学2301班", "13800000000")
         );
     }
 
     public List<List<String>> courseTemplateRows() {
         return List.of(
-            Arrays.asList("课程代码", "课程名称", "教师工号", "学分", "学时", "容量", "类别", "上课时间", "上课地点"),
+            Arrays.asList("课程代码*", "课程名称*", "教师工号", "学分", "学时", "容量", "类别", "上课时间", "上课地点"),
             Arrays.asList("CS501", "分布式系统", "T002", "3", "48", "60", "专业选修", "周三 08:00-09:40", "明志楼-403")
         );
     }
 
     // ================= Excel(.xlsx) 导入 =================
-    private static final String[] STUDENT_HEADERS = {"学号", "姓名", "密码", "学院", "专业", "年级", "班级", "手机号"};
+    private static final String[] STUDENT_HEADERS = {"学号", "姓名", "性别", "密码", "学院", "专业", "年级", "班级", "手机号"};
     private static final String[] COURSE_HEADERS = {"课程代码", "课程名称", "教师工号", "学分", "学时", "容量", "类别", "上课时间", "上课地点"};
+
+    /** 表头归一化：去掉必填标记 * / ＊ 与首尾空白，使模板带星号、用户手填不带星号都能按列名匹配 */
+    private static String normHeader(String s) {
+        if (s == null) return "";
+        return s.replace("*", "").replace("＊", "").trim();
+    }
 
     /** 首行是否表头；按列名建立映射，支持用户调整列顺序或加多余列 */
     private static int[] headerMap(List<String> head, String[] names) {
         int[] idx = new int[names.length];
         Arrays.fill(idx, -1);
         for (int i = 0; i < head.size(); i++) {
-            String h = head.get(i) == null ? "" : head.get(i).trim();
+            String h = normHeader(head.get(i));
             for (int j = 0; j < names.length; j++) if (h.equals(names[j])) idx[j] = i;
         }
         return idx;
@@ -246,7 +261,7 @@ public class DataService {
 
     private static boolean isHeaderRow(List<String> f, String[] names) {
         if (f.isEmpty() || f.get(0) == null) return false;
-        String first = f.get(0).trim();
+        String first = normHeader(f.get(0));
         for (String n : names) if (first.equals(n)) return true;
         return false;
     }
@@ -267,10 +282,24 @@ public class DataService {
             if (lineNo == 1 && isHeaderRow(f, STUDENT_HEADERS)) { map = headerMap(f, STUDENT_HEADERS); continue; }
             String no = cell(f, map, 0), name = cell(f, map, 1);
             if (no.isEmpty() || name.isEmpty()) { skipped++; errors.add("第 " + lineNo + " 行：学号或姓名为空，已跳过"); continue; }
-            String pwd = cell(f, map, 2).isEmpty() ? "123456" : cell(f, map, 2);
+            String gender = cell(f, map, 2);
+            // 性别值域校验（学籍核心字段口径：男/女）；留空兼容历史名册，填错则整行拦下
+            if (!gender.isEmpty() && !"男".equals(gender) && !"女".equals(gender)) {
+                skipped++; errors.add("第 " + lineNo + " 行：性别只能填 男 / 女（当前为「" + gender + "」），已跳过"); continue;
+            }
+            String pwd = cell(f, map, 3).isEmpty() ? "123456" : cell(f, map, 3);
             User u = userRepo.findByNo(no).orElse(null);
             if (u != null && !"student".equals(u.getRole())) {
                 skipped++; errors.add("第 " + lineNo + " 行：" + no + " 已存在且不是学生，已跳过"); continue;
+            }
+            // 全字段校验前置：任一字段非法即整行拦下，不产生半截账号（created 计数才与真实入库一致）
+            String grade = cell(f, map, 6);
+            if (!grade.isEmpty() && !grade.matches("\\d{4}")) {
+                skipped++; errors.add("第 " + lineNo + " 行：年级「" + grade + "」不是数字（应为入学年份如 2023），已跳过"); continue;
+            }
+            String phone = cell(f, map, 8);
+            if (!phone.isEmpty() && !phone.matches("1\\d{10}")) {
+                skipped++; errors.add("第 " + lineNo + " 行：手机号「" + phone + "」不是 11 位手机号，已跳过"); continue;
             }
             if (u == null) {
                 u = new User();
@@ -281,12 +310,12 @@ public class DataService {
                 created++;
             } else updated++;
             u.setName(name);
-            String college = cell(f, map, 3); if (!college.isEmpty()) u.setCollege(college);
-            String major = cell(f, map, 4); if (!major.isEmpty()) u.setMajor(major);
-            String grade = cell(f, map, 5);
-            if (!grade.isEmpty()) { try { u.setGrade(Integer.parseInt(grade)); } catch (NumberFormatException ignored) {} }
-            String classNo = cell(f, map, 6); if (!classNo.isEmpty()) u.setClassNo(classNo);
-            String phone = cell(f, map, 7); if (!phone.isEmpty()) u.setPhone(phone);
+            if (!gender.isEmpty()) u.setGender(gender);
+            String college = cell(f, map, 4); if (!college.isEmpty()) u.setCollege(college);
+            String major = cell(f, map, 5); if (!major.isEmpty()) u.setMajor(major);
+            if (!grade.isEmpty()) u.setGrade(Integer.parseInt(grade));
+            String classNo = cell(f, map, 7); if (!classNo.isEmpty()) u.setClassNo(classNo);
+            if (!phone.isEmpty()) u.setPhone(phone);
             userRepo.save(u);
         }
         Map<String, Object> r = new LinkedHashMap<>();

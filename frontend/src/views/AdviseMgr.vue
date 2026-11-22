@@ -1,5 +1,23 @@
 <template>
   <div class="page-wrap stats-page liquid">
+    <!-- ===== 顶部 sticky 导航栏 ===== -->
+    <header class="ad-topbar">
+      <div class="ad-brand">
+        <div class="ad-brand-icon">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        </div>
+        <div class="ad-brand-text">
+          <div class="ad-title">{{ t('导师配对管理') }}</div>
+          <div class="ad-subtitle">{{ t('共 {n} 位导师 · {c} 个学院', { n: caps.length, c: treeCols.length }) }}</div>
+        </div>
+      </div>
+      <button class="ad-search-trigger" @click="openCommand" :aria-label="t('打开搜索')">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span class="ad-search-ph">{{ filters.keyword || t('搜索导师 / 工号 / 学院，支持拼音首字母…') }}</span>
+        <kbd class="ad-kbd">{{ isMac ? '⌘' : 'Ctrl+' }} K</kbd>
+      </button>
+    </header>
+
     <!-- 概览统计 -->
     <div class="stats-grid">
       <div class="stat-card">
@@ -46,6 +64,29 @@
         <span class="um-count-tip">{{ t('共 {n} 位导师 · {c} 个学院', { n: caps.length, c: treeCols.length }) }}</span>
       </div>
 
+      <!-- 筛选轨道 chips：学院 / 状态，读写同一个 filters -->
+      <div class="ad-filtercard">
+        <div class="ad-chip-row">
+          <div v-for="chip in chipDefs" :key="chip.key" class="ad-chip-wrap">
+            <button class="ad-chip" :class="{ on: chip.active }" @click="toggleChip(chip.key)">
+              <span class="ad-chip-label">{{ chip.label }}</span>
+              <span v-if="chip.value" class="ad-chip-value">{{ chip.value }}</span>
+              <svg class="ic ad-chip-arrow" :class="{ open: openChip === chip.key }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div v-if="openChip === chip.key" class="ad-dropdown" @click.stop>
+              <button class="ad-opt" :class="{ on: !chip.current }" @click="chip.clear(); openChip = null">
+                <span>{{ t('全部') }}{{ chip.label }}</span><span v-if="!chip.current" class="ad-opt-check">✓</span>
+              </button>
+              <button v-for="o in chip.options" :key="String(o.value)" class="ad-opt" :class="{ on: chip.current === o.value }" @click="chip.set(o.value); openChip = null">
+                <span>{{ o.label }}<span v-if="o.count !== undefined" class="ad-opt-n">{{ o.count }}</span></span>
+                <span v-if="chip.current === o.value" class="ad-opt-check">✓</span>
+              </button>
+            </div>
+          </div>
+          <button v-if="hasFilter" class="ad-reset" @click="clearFilters">{{ t('清空') }}</button>
+        </div>
+      </div>
+
       <div class="um-split">
         <aside class="um-tree">
           <div class="um-tree-h"><b>{{ t('按学院检索') }}</b><span>{{ treeCols.length }} {{ t('个学院') }}</span></div>
@@ -53,16 +94,16 @@
             <el-input v-model="treeKw" :placeholder="t('搜索学院 / 导师 / 工号')" size="small" clearable />
           </div>
           <div class="um-tree-body">
-            <button class="um-root" :class="{ on: !collegeFilter && !teacherIdFilter }" @click="selectCollege(null)">
+            <button class="um-root" :class="{ on: !filters.college && !filters.teacherId }" @click="selectCollege(null)">
               {{ t('全部导师') }}<span class="um-n">{{ caps.length }}</span>
             </button>
             <div v-for="col in treeCols" :key="col.name" class="um-col">
-              <button class="um-node" :class="{ on: collegeFilter === col.name }" @click="selectCollege(col.name)">
+              <button class="um-node" :class="{ on: filters.college === col.name }" @click="selectCollege(col.name)">
                 <span class="um-caret" @click.stop="toggleCol(col.name)">{{ isOpen(col.name) ? '▾' : '▸' }}</span>{{ col.name }}<span class="um-n">{{ col.list.length }}</span>
               </button>
               <div v-if="isOpen(col.name)">
                 <button v-for="a in col.list" :key="a.teacherId" class="um-leaf"
-                        :class="{ on: teacherIdFilter === a.teacherId }" @click="selectTeacher(a)">
+                        :class="{ on: filters.teacherId === a.teacherId }" @click="selectTeacher(a)">
                   {{ a.teacherName }}<span class="um-n">{{ a.teacherNo }}</span>
                 </button>
               </div>
@@ -75,10 +116,9 @@
           <div class="um-list-h">
             <div class="um-list-title"><span class="um-dot"></span><b>{{ scopeLabel }}</b><span class="um-scope-n">{{ filteredCaps.length }} {{ t('位') }}</span></div>
             <div class="um-list-actions">
-              <el-input v-model="kw" :placeholder="t('搜索导师 / 工号')" size="small" clearable style="width:170px" />
+              <el-input v-model="filters.keyword" :placeholder="t('搜索导师 / 工号')" size="small" clearable style="width:170px" />
               <span class="um-per-label">{{ t('每页') }}</span>
               <select v-model.number="pageSize" class="um-per"><option v-for="n in [10, 20, 50, 100]" :key="n" :value="n">{{ n }}</option></select>
-              <button v-if="collegeFilter || teacherIdFilter || kw" class="um-clear" @click="clearFilters">{{ t('清空筛选') }}</button>
             </div>
           </div>
           <div class="um-hint">{{ t('点击左侧学院或导师快速定位，点击任意一行查看完整档案并调整容量') }}</div>
@@ -105,7 +145,16 @@
                   </td>
                   <td><button class="um-detail" @click.stop="openCap(a)">{{ t('详情') }} ›</button></td>
                 </tr>
-                <tr v-if="!paged.length"><td colspan="7" style="text-align:center;padding:28px;color:var(--text-light)">{{ t('没有符合条件的导师') }}</td></tr>
+                <tr v-if="!paged.length"><td colspan="7">
+                  <div class="ad-empty">
+                    <div class="ad-empty-title">{{ t('没有符合条件的导师') }}</div>
+                    <div v-if="suggestChips.length" class="ad-suggest">
+                      <span class="ad-suggest-label">{{ t('是不是想找') }}</span>
+                      <button v-for="s in suggestChips" :key="s" class="ad-suggest-chip" @click="filters.keyword = s">{{ s }}</button>
+                    </div>
+                    <button v-if="hasFilter" class="ad-empty-reset" @click="clearFilters">{{ t('清空筛选') }}</button>
+                  </div>
+                </td></tr>
               </tbody>
             </table>
           </div>
@@ -157,15 +206,57 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- ================= 命令面板 ================= -->
+    <Teleport to="body">
+      <div v-if="cmdOpen" class="cmd-overlay" @click="closeCommand(false)">
+        <div class="cmd-panel" @click.stop>
+          <div class="cmd-input-row">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input ref="cmdInput" v-model="cmdTerm" :placeholder="t('搜索导师 / 工号 / 学院，支持拼音首字母…')" />
+            <kbd class="ad-kbd">esc</kbd>
+          </div>
+          <div class="cmd-results">
+            <template v-if="cmdItems.length">
+              <div v-if="cmdTeachers.length" class="cmd-group">
+                <div class="cmd-group-h">{{ t('导师') }} <span>{{ cmdTeachers.length }}</span></div>
+                <button v-for="(a, i) in cmdTeachers" :key="a.teacherId" class="cmd-item" :class="{ active: cmdCursor === i }" @mouseenter="cmdCursor = i" @click="selectCmd(cmdItems[i])">
+                  <span class="cmd-item-ico user"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
+                  <span class="cmd-item-main"><b>{{ a.teacherName }}</b><small>{{ a.teacherNo }} · {{ a.teacherCollege || '—' }} · {{ t('容量 {n}', { n: a.capacity ?? 0 }) }}</small></span>
+                  <span class="cmd-enter" v-if="cmdCursor === i">↵</span>
+                </button>
+              </div>
+              <div v-if="cmdColleges.length" class="cmd-group">
+                <div class="cmd-group-h">{{ t('学院') }} <span>{{ cmdColleges.length }}</span></div>
+                <button v-for="(o, j) in cmdColleges" :key="o.name" class="cmd-item" :class="{ active: cmdCursor === cmdTeachers.length + j }" @mouseenter="cmdCursor = cmdTeachers.length + j" @click="selectCmd(cmdItems[cmdTeachers.length + j])">
+                  <span class="cmd-item-ico org"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg></span>
+                  <span class="cmd-item-main"><b>{{ o.name }}</b><small>{{ o.count }} {{ t('位导师') }}</small></span>
+                  <span class="cmd-enter" v-if="cmdCursor === cmdTeachers.length + j">↵</span>
+                </button>
+              </div>
+            </template>
+            <div v-else class="cmd-empty">{{ t('没有联想结果，试试导师姓名 / 工号 / 拼音首字母') }}</div>
+          </div>
+          <div class="cmd-footer">
+            <span><kbd class="ad-kbd">↑</kbd><kbd class="ad-kbd">↓</kbd> {{ t('导航') }}</span>
+            <span><kbd class="ad-kbd">↵</kbd> {{ t('选中') }}</span>
+            <span class="cmd-footer-tip">{{ t('选中导师看档案 · 选中学院即筛选') }}</span>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, toRefs, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '@/api'
 import { t } from '@/i18n'
+import { diceCoefficient } from '@/utils/similarity'
+import { initialsOf } from '@/utils/pinyin'
 
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
 
 const overview = reactive<any>({
@@ -177,11 +268,10 @@ const list = ref<any[]>([])
 const savingId = ref<number | null>(null)
 const cfgSaving = ref(false)
 
-// —— 左侧学院树 + 右侧范围检索 / 分页（与用户管理一致）——
+// —— 单一状态源：筛选 chips / 左侧学院树 / 命令面板 / 搜索框读写同一 filters ——
+const filters = reactive({ keyword: '' as string, college: null as string | null, teacherId: null as number | null, capacity: '' as string })
+const { keyword: kw, college: collegeFilter, teacherId: teacherIdFilter } = toRefs(filters)
 const treeKw = ref('')
-const kw = ref('')
-const collegeFilter = ref<string | null>(null)
-const teacherIdFilter = ref<number | null>(null)
 const openCols = ref<Record<string, boolean>>({})
 const page = ref(1)
 const pageSize = ref(20)
@@ -218,12 +308,17 @@ function selectTeacher(a: any) {
   collegeFilter.value = null; teacherIdFilter.value = a.teacherId; page.value = 1
   openCap(a)   // 树里点导师直接打开档案抽屉
 }
-function clearFilters() { collegeFilter.value = null; teacherIdFilter.value = null; kw.value = ''; treeKw.value = ''; page.value = 1 }
+function clearFilters() {
+  filters.keyword = ''; filters.college = null; filters.teacherId = null; filters.capacity = ''
+  treeKw.value = ''; page.value = 1
+}
 
 const q = () => kw.value.trim().toLowerCase()
 const filteredCaps = computed(() => caps.value.filter(a => {
   if (teacherIdFilter.value != null && a.teacherId !== teacherIdFilter.value) return false
   if (collegeFilter.value && (a.teacherCollege || t('未分配学院')) !== collegeFilter.value) return false
+  if (filters.capacity === 'full' && (a.approved ?? 0) < (a.capacity ?? 999)) return false
+  if (filters.capacity === 'available' && (a.approved ?? 0) >= (a.capacity ?? 999)) return false
   const s = q()
   if (s && !((a.teacherName || '').toLowerCase().includes(s) || (a.teacherNo || '').toLowerCase().includes(s) || (a.teacherCollege || '').toLowerCase().includes(s))) return false
   return true
@@ -240,7 +335,7 @@ const pageItems = computed<(number | '…')[]>(() => {
   for (const p of arr) { if (p - prev > 1) out.push('…'); out.push(p); prev = p }
   return out
 })
-watch([collegeFilter, teacherIdFilter, kw, pageSize], () => { page.value = 1 })
+watch([collegeFilter, teacherIdFilter, kw, () => filters.capacity, pageSize], () => { page.value = 1 })
 watch(totalPages, (v) => { if (page.value > v) page.value = v })
 
 const scopeLabel = computed(() => {
@@ -351,7 +446,106 @@ async function saveCfg() {
   }
 }
 
-onMounted(load)
+/* ===== 筛选轨道 chips ===== */
+type ChipKey = 'college' | 'capacity'
+const openChip = ref<ChipKey | null>(null)
+function toggleChip(k: ChipKey) { openChip.value = openChip.value === k ? null : k }
+const collegeOptions = computed(() => [...new Set(caps.value.map(a => a.teacherCollege || t('未分配学院')))].sort((a, b) => a.localeCompare(b, 'zh')))
+const chipDefs = computed(() => [
+  {
+    key: 'college' as ChipKey, label: t('学院'), active: !!filters.college, value: filters.college || '', current: filters.college,
+    options: collegeOptions.value.map(c => ({ value: c, label: c, count: caps.value.filter(a => (a.teacherCollege || t('未分配学院')) === c).length })),
+    clear: () => { filters.college = null; filters.teacherId = null }, set: (v: any) => { filters.college = v as string; filters.teacherId = null },
+  },
+  {
+    key: 'capacity' as ChipKey, label: t('容量'), active: !!filters.capacity,
+    value: filters.capacity === 'full' ? t('已满') : filters.capacity === 'available' ? t('可接受') : '', current: filters.capacity,
+    options: [
+      { value: 'full', label: t('已满'), count: caps.value.filter(a => (a.approved ?? 0) >= (a.capacity ?? 999)).length },
+      { value: 'available', label: t('可接受'), count: caps.value.filter(a => (a.approved ?? 0) < (a.capacity ?? 999)).length },
+    ],
+    clear: () => { filters.capacity = '' }, set: (v: any) => { filters.capacity = v as string },
+  },
+])
+const hasFilter = computed(() => !!(kw.value || filters.college || filters.teacherId != null || filters.capacity))
+
+/* ===== 空结果 Dice 纠错 ===== */
+function charDice(a: string, b: string): number {
+  const A = new Set(Array.from(a.toLowerCase().replace(/\s+/g, '')))
+  const B = new Set(Array.from(b.toLowerCase().replace(/\s+/g, '')))
+  if (!A.size || !B.size) return 0
+  let inter = 0
+  for (const c of A) if (B.has(c)) inter++
+  return (2 * inter) / (A.size + B.size)
+}
+const suggestChips = computed(() => {
+  const k = kw.value.trim()
+  if (!k) return []
+  const names = new Set<string>()
+  for (const a of caps.value) { names.add(a.teacherName); if (a.teacherNo) names.add(a.teacherNo) }
+  for (const c of collegeOptions.value) names.add(c)
+  const scored = new Map<string, number>()
+  for (const n of names) {
+    const score = Math.max(diceCoefficient(k, n), charDice(k, n))
+    if (score >= 0.34) scored.set(n, score)
+  }
+  return [...scored.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([n]) => n)
+})
+
+/* ===== 命令面板 ===== */
+const cmdOpen = ref(false)
+const cmdTerm = ref('')
+const cmdCursor = ref(0)
+const cmdInput = ref<HTMLInputElement | null>(null)
+function pyOf(a: any) { return initialsOf(`${a.teacherName || ''} ${a.teacherNo || ''} ${a.teacherCollege || ''}`) }
+function matchText(haystack: string, py: string, qq: string): boolean {
+  const ql = qq.toLowerCase().replace(/\s+/g, '')
+  if (!ql) return true
+  if ((haystack || '').toLowerCase().replace(/\s+/g, '').includes(ql)) return true
+  return !!py && py.includes(ql)
+}
+function openCommand() { cmdTerm.value = kw.value; cmdCursor.value = 0; cmdOpen.value = true; nextTick(() => cmdInput.value?.focus()) }
+function closeCommand(clear: boolean) {
+  cmdOpen.value = false
+  if (clear) { cmdTerm.value = ''; kw.value = '' }
+  else { cmdTerm.value = kw.value }
+}
+watch(cmdTerm, v => { if (cmdOpen.value) kw.value = v })
+const cmdTeachers = computed(() => {
+  const qq = cmdTerm.value.trim()
+  const arr = !qq ? caps.value.slice(0, 8)
+    : caps.value.filter(a => matchText(`${a.teacherName || ''} ${a.teacherNo || ''} ${a.teacherCollege || ''}`, pyOf(a), qq)).slice(0, 8)
+  return arr
+})
+const cmdColleges = computed(() => {
+  const qq = cmdTerm.value.trim()
+  if (!qq) return []
+  return collegeOptions.value.filter(c => matchText(c, initialsOf(c), qq))
+    .map(c => ({ name: c, count: caps.value.filter(a => (a.teacherCollege || t('未分配学院')) === c).length })).slice(0, 6)
+})
+type CmdItem = { kind: 'teacher' | 'college'; raw: any }
+const cmdItems = computed<CmdItem[]>(() => [
+  ...cmdTeachers.value.map(a => ({ kind: 'teacher' as const, raw: a })),
+  ...cmdColleges.value.map(c => ({ kind: 'college' as const, raw: c })),
+])
+watch(cmdItems, () => { if (cmdCursor.value >= cmdItems.value.length) cmdCursor.value = 0 })
+function selectCmd(item: CmdItem | undefined) {
+  if (!item) return
+  if (item.kind === 'teacher') { openCap(item.raw); cmdOpen.value = false; cmdTerm.value = ''; kw.value = '' }
+  else { filters.college = item.raw.name; filters.teacherId = null; cmdOpen.value = false; cmdTerm.value = ''; kw.value = ''; ElMessage.success(t('已按学院筛选：{n}', { n: item.raw.name })) }
+}
+function onGlobalKey(e: KeyboardEvent) {
+  const meta = e.metaKey || e.ctrlKey
+  if (meta && e.key.toLowerCase() === 'k') { e.preventDefault(); cmdOpen.value ? closeCommand(false) : openCommand(); return }
+  if (!cmdOpen.value) return
+  if (e.key === 'Escape') { e.preventDefault(); closeCommand(false) }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); if (cmdItems.value.length) cmdCursor.value = (cmdCursor.value + 1) % cmdItems.value.length }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (cmdItems.value.length) cmdCursor.value = (cmdCursor.value - 1 + cmdItems.value.length) % cmdItems.value.length }
+  else if (e.key === 'Enter') { e.preventDefault(); selectCmd(cmdItems.value[cmdCursor.value]) }
+}
+
+onMounted(() => { load(); window.addEventListener('keydown', onGlobalKey) })
+onBeforeUnmount(() => { window.removeEventListener('keydown', onGlobalKey) })
 </script>
 
 <style scoped>
@@ -415,4 +609,78 @@ onMounted(load)
 .um-apply { position: relative; padding: 10px 0; border-bottom: 0.5px solid var(--border); font-size: 12.5px; color: var(--text); }
 .um-apply .um-apply-topic { margin: 4px 0 6px; font-size: 12px; color: var(--text-light); }
 .um-apply .status-tag { display: inline-block; }
+
+/* ================= 检索体验升级：顶栏 / 筛选 chips / 命令面板 / 空结果 ================= */
+.page-wrap { --g: #10b981; --g-dark: #059669; --g-soft: rgba(16,185,129,.10); }
+.ic { display: block; }
+.ad-topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 16px; background: color-mix(in srgb, var(--card, #fff) 86%, transparent); backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); border: 0.5px solid var(--border, #e5e7eb); border-radius: 16px; box-shadow: 0 1px 2px rgba(16,24,40,.03), 0 8px 24px rgba(16,24,40,.04); }
+.ad-brand { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.ad-brand-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #34d399, var(--g-dark)); box-shadow: 0 4px 12px rgba(16,185,129,.32); }
+.ad-brand-icon .ic { width: 21px; height: 21px; }
+.ad-title { font-size: 17px; font-weight: 700; color: var(--text, #0f172a); line-height: 1.2; }
+.ad-subtitle { font-size: 12px; color: var(--text-lighter, #94a3b8); margin-top: 2px; }
+.ad-search-trigger { flex: 1 1 320px; max-width: 520px; min-width: 180px; height: 38px; display: flex; align-items: center; gap: 9px; padding: 0 10px 0 14px; border: 1px solid var(--border, #e5e7eb); border-radius: 999px; background: var(--card, #fff); color: var(--text-lighter, #94a3b8); cursor: pointer; transition: all .18s; font-family: inherit; }
+.ad-search-trigger:hover { border-color: var(--g); box-shadow: 0 0 0 3px var(--g-soft); }
+.ad-search-trigger .ic { width: 17px; height: 17px; flex: 0 0 auto; }
+.ad-search-ph { flex: 1; text-align: left; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ad-kbd { font-family: inherit; font-size: 11px; line-height: 1; white-space: nowrap; padding: 4px 7px; border-radius: 6px; border: 1px solid var(--border, #e5e7eb); background: color-mix(in srgb, var(--card, #fff) 92%, #000 8%); color: var(--text-light, #64748b); flex: 0 0 auto; }
+/* 筛选卡片需盖住下方树区：atlas-theme 的 `.stats-page.liquid .section > *` 会把卡片压到 z-index:1，
+   同层 DOM 靠后的树区会遮住下拉。此处用同等特异性 + !important 提到 6
+   （低于顶栏 40、抽屉 3000、命令面板 4000），让下拉浮在树之上 */
+.stats-page.liquid .section > .ad-filtercard { z-index: 6 !important; }
+.ad-filtercard { padding: 12px 14px; border: 0.5px solid var(--border); border-radius: 14px; background: var(--card); margin: 12px 0; position: relative; z-index: 6; }
+.ad-chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ad-chip-wrap { position: relative; }
+.ad-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--text-light); font-family: inherit; font-size: 12.5px; cursor: pointer; transition: all .16s; }
+.ad-chip:hover { border-color: var(--g); color: var(--g); }
+.ad-chip.on { background: var(--g-soft); border-color: var(--g); color: var(--g-dark); font-weight: 600; }
+.ad-chip-label { white-space: nowrap; }
+.ad-chip-value { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--g-dark); }
+.ad-chip-arrow { width: 13px; height: 13px; transition: transform .16s; }
+.ad-chip-arrow.open { transform: rotate(180deg); }
+.ad-reset { border: none; background: none; color: var(--text-lighter); font-family: inherit; font-size: 12.5px; cursor: pointer; padding: 6px 8px; }
+.ad-reset:hover { color: #ef4444; }
+.ad-dropdown { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 190px; max-height: 320px; overflow-y: auto; padding: 6px; border: 0.5px solid var(--border); border-radius: 12px; background: var(--card); box-shadow: 0 12px 32px rgba(16,24,40,.14); }
+.ad-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; border: none; background: none; font-family: inherit; font-size: 12.5px; color: var(--text-light); cursor: pointer; padding: 8px 10px; border-radius: 8px; text-align: left; }
+.ad-opt:hover { background: var(--g-soft); color: var(--g); }
+.ad-opt.on { background: var(--g-soft); color: var(--g-dark); font-weight: 600; }
+.ad-opt-n { margin-left: 8px; font-size: 11px; color: var(--text-lighter); font-variant-numeric: tabular-nums; }
+.ad-opt-check { color: var(--g); font-weight: 700; }
+.ad-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 32px 20px; }
+.ad-empty-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.ad-suggest { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+.ad-suggest-label { font-size: 12px; color: var(--text-light); }
+.ad-suggest-chip { border: 1px solid var(--border); background: var(--card); color: var(--g-dark); font-family: inherit; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; cursor: pointer; transition: all .15s; }
+.ad-suggest-chip:hover { border-color: var(--g); background: var(--g-soft); }
+.ad-empty-reset { margin-top: 14px; border: none; background: none; color: var(--g); font-family: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.cmd-overlay { position: fixed; inset: 0; z-index: 4000; display: flex; justify-content: center; align-items: flex-start; padding: 14vh 16px 16px; background: rgba(15,23,42,.42); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: cmdFade .16s ease; }
+.cmd-panel { width: 100%; max-width: 600px; max-height: 68vh; display: flex; flex-direction: column; border: 0.5px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--card); box-shadow: 0 24px 70px rgba(15,23,42,.34); animation: cmdUp .2s cubic-bezier(.16,1,.3,1); }
+.cmd-input-row { display: flex; align-items: center; gap: 11px; padding: 14px 16px; border-bottom: 0.5px solid var(--border); }
+.cmd-input-row .ic { width: 19px; height: 19px; color: var(--g); flex: 0 0 auto; }
+.cmd-input-row input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text); font-family: inherit; font-size: 15px; }
+.cmd-input-row input::placeholder { color: var(--text-lighter); }
+.cmd-results { flex: 1; overflow-y: auto; padding: 8px; }
+.cmd-group + .cmd-group { margin-top: 6px; }
+.cmd-group-h { display: flex; align-items: center; gap: 7px; padding: 6px 10px; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--text-lighter); text-transform: uppercase; }
+.cmd-group-h span { font-weight: 500; }
+.cmd-item { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; border: none; background: none; font-family: inherit; cursor: pointer; padding: 9px 10px; border-radius: 10px; color: var(--text); }
+.cmd-item.active { background: var(--g-soft); }
+.cmd-item-ico { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: 0 0 auto; }
+.cmd-item-ico .ic { width: 17px; height: 17px; }
+.cmd-item-ico.user { background: rgba(16,185,129,.13); color: var(--g); }
+.cmd-item-ico.org { background: rgba(59,130,246,.13); color: #3b82f6; }
+.cmd-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmd-item-main b { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-item-main small { font-size: 11px; color: var(--text-lighter); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-enter { color: var(--g); font-size: 14px; flex: 0 0 auto; }
+.cmd-empty { padding: 36px 16px; text-align: center; color: var(--text-lighter); font-size: 13px; }
+.cmd-footer { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-top: 0.5px solid var(--border); background: color-mix(in srgb, var(--card) 94%, #000 6%); font-size: 11px; color: var(--text-lighter); }
+.cmd-footer span { display: inline-flex; align-items: center; gap: 4px; }
+.cmd-footer .ad-kbd { padding: 2px 6px; }
+.cmd-footer-tip { margin-left: auto; color: var(--g); }
+@keyframes cmdFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes cmdUp { from { opacity: 0; transform: translateY(-10px) scale(.985) } to { opacity: 1; transform: none } }
+@media (max-width: 1100px) { .ad-search-trigger { order: 3; flex-basis: 100%; max-width: none; } }
+@media (max-width: 860px) { .um-split { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .ad-topbar { padding: 12px; } .ad-kbd { display: none; } }
 </style>
