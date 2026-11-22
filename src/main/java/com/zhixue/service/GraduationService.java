@@ -1,13 +1,13 @@
 package com.zhixue.service;
 
 import com.zhixue.entity.Course;
+import com.zhixue.entity.TrainingPlanCourse;
 import com.zhixue.entity.Enrollment;
-import com.zhixue.entity.Grade;
+import com.zhixue.entity.GradeRecord;
 import com.zhixue.entity.GradeRequirement;
 import com.zhixue.entity.SystemConfig;
 import com.zhixue.entity.User;
 import com.zhixue.repository.EnrollmentRepository;
-import com.zhixue.repository.GradeRepository;
 import com.zhixue.repository.GradeRequirementRepository;
 import com.zhixue.repository.UserRepository;
 import com.zhixue.util.CourseGroup;
@@ -22,16 +22,18 @@ public class GraduationService {
     @Autowired private EnrollmentService enrollmentService;
     @Autowired private CourseService courseService;
     @Autowired private EnrollmentRepository enrollmentRepo;
-    @Autowired private GradeRepository gradeRepo;
+    @Autowired private GradeLedgerService ledger;
+    @Autowired private TrainingPlanService trainingPlanService;
     @Autowired private GradeRequirementRepository gradeReqRepo;
     @Autowired private UserRepository userRepo;
 
-    private static final String[] KEYS = {"必修", "选修", "通识", "实践"};
+    /** 厦门华厦学院毕业学分只有「必修 / 选修」两类 */
+    private static final String[] KEYS = CourseGroup.KEYS;
 
     /** 及格线：总评 ≥ 60 视为「已通过」，低于或未出成绩均不计入毕业学分 */
     private static final double PASS_LINE = 60.0;
 
-    /** 课程类别 → 毕业学分大类（必修/选修/通识/实践）。统一使用 {@link CourseGroup#groupOf} */
+    /** 课程类别 → 毕业学分大类（必修/选修）。统一使用 {@link CourseGroup#groupOf} */
     public String groupOf(String category) {
         return CourseGroup.groupOf(category);
     }
@@ -45,15 +47,26 @@ public class GraduationService {
         return currentSemesterNo(grade, today, 0);
     }
 
-    /** 学期滚动：管理员推进学期后 offset>0，学生学期序随之前进（培养方案按学期滚动） */
+    /**
+     * 学期滚动：管理员推进学期后 offset>0，学生学期序随之前进（培养方案按学期滚动）。
+     * 专升本两年制：最多 4 个学期，超过封顶为 4（已到毕业学期），不按普通本科推算到第 7/8 学期。
+     */
     public static int currentSemesterNo(Integer grade, java.time.LocalDate today, int offset) {
+        return currentSemesterNo(grade, null, today, offset);
+    }
+
+    /** 带学制的学期推算：major 含「专升本」按两年制（封顶 4 学期），否则普通本科四年制 */
+    public static int currentSemesterNo(Integer grade, String major, java.time.LocalDate today, int offset) {
         if (grade == null || grade < 2000) return 1;
         int y = today.getYear(), m = today.getMonthValue();
         int sem;
         if (m >= 8) sem = (y - grade) * 2 + 1;
         else if (m == 1) sem = (y - grade) * 2 - 1;
         else sem = (y - grade) * 2;
-        return Math.max(1, sem + Math.max(0, offset));
+        sem = Math.max(1, sem + Math.max(0, offset));
+        boolean isZsb = major != null && major.contains("专升本");
+        if (isZsb) sem = Math.min(4, sem);   // 专升本两年制：第 4 学期封顶
+        return sem;
     }
 
     /** 第 sem 学期对应的学年学期名（第 7 学期 → 2026-2027学年第一学期） */
@@ -69,40 +82,61 @@ public class GraduationService {
         try { enrollmentService.ensureRequiredEnrollments(studentId); } catch (Exception ignored) {}
         SystemConfig cfg = enrollmentService.getSystemConfig();
 
-        // 按年级差异化：学生所在年级有专属培养方案（如专升本）则优先适用，否则用全校默认要求
+        // 毕业要求按学制两套（普通本科 / 专升本），不按年级分化：
+        // 专升本学生（专业名带「专升本」）套「专升本」方案，其余学生套「普通本科」方案。
         User student = userRepo.findById(studentId).orElse(null);
         Integer stuGrade = student == null ? null : student.getGrade();
-        GradeRequirement gr = null;
-        if (stuGrade != null) {
-            // 专业优先：同年级先找「年级+专业」精确匹配的培养方案，再退回该年级通用方案
-            List<GradeRequirement> gradeReqs = gradeReqRepo.findByGrade(stuGrade);
-            String major = student != null ? student.getMajor() : null;
-            gr = gradeReqs.stream().filter(g -> major != null && major.equals(g.getMajor())).findFirst()
-                    .orElseGet(() -> gradeReqs.stream()
-                            .filter(g -> g.getMajor() == null || g.getMajor().isBlank())
-                            .findFirst().orElse(null));
+        String major = student == null ? null : student.getMajor();
+        boolean isZsb = major != null && major.contains("专升本");
+        List<GradeRequirement> allReqs = gradeReqRepo.findAllByOrderByGradeAsc();
+        GradeRequirement gr;
+        if (isZsb) {
+            gr = allReqs.stream()
+                    .filter(g -> g.getLabel() != null && g.getLabel().contains("专升本")).findFirst().orElse(null);
+        } else {
+            gr = allReqs.stream()
+                    .filter(g -> g.getLabel() == null || !g.getLabel().contains("专升本")).findFirst().orElse(null);
         }
         int reqRequired = gr != null && gr.getGradReqRequired() != null ? gr.getGradReqRequired() : nz(cfg.getGradReqRequired());
-        int reqElective = gr != null && gr.getGradReqElective() != null ? gr.getGradReqElective() : nz(cfg.getGradReqElective());
-        int reqGeneral  = gr != null && gr.getGradReqGeneral()  != null ? gr.getGradReqGeneral()  : nz(cfg.getGradReqGeneral());
-        int reqPractice = gr != null && gr.getGradReqPractice() != null ? gr.getGradReqPractice() : nz(cfg.getGradReqPractice());
-        int reqCourses  = gr != null && gr.getGradReqCourses()  != null ? gr.getGradReqCourses()  : nz(cfg.getGradReqCourses());
+        int reqPublicElec = gr != null && gr.getGradReqGeneral() != null && gr.getGradReqGeneral() > 0
+                ? gr.getGradReqGeneral() : 6;   // 华厦硬指标：通识(公共)选修修满 6 学分（通识教育中心选课须知）
+        int reqMajorElec = gr != null && gr.getGradReqElective() != null ? gr.getGradReqElective() : nz(cfg.getGradReqElective());
 
         Map<String, Integer> reqMap = new LinkedHashMap<>();
         reqMap.put("必修", reqRequired);
-        reqMap.put("选修", reqElective);
-        reqMap.put("通识", reqGeneral);
-        reqMap.put("实践", reqPractice);
+        reqMap.put("公共选修", reqPublicElec);
+        reqMap.put("专业选修", reqMajorElec);
 
-        // 「已通过」= 已录取 且 总评 ≥ 60（未出成绩按未通过计，不参与学分汇总）
+        // 专业选修分母 = 培养方案排给本专业的全部专业选修课总学分——
+        // 「修满培养方案排的课 = 达标」，与必修「一门都不能缺」同一哲学。
+        // 方案未配置时回退到配置值。
+        try {
+            int planZxCredits = 0;
+            java.util.Set<String> zxCourseSeen = new java.util.HashSet<>();
+            for (TrainingPlanCourse row : trainingPlanService.resolvePlanRows(major, stuGrade)) {
+                Course c = courseService.findById(row.getCourseId());
+                if (c == null) continue;
+                if (c.getCategory() == null || !c.getCategory().contains("专业选修")) continue;
+                if (!CourseGroup.countsForGraduation(c.getCourseCode())) continue;
+                if (c.getName() == null || !zxCourseSeen.add(c.getName())) continue;   // 同名只算一门
+                planZxCredits += nz(c.getCredit());
+            }
+            if (planZxCredits > 0) {
+                reqMajorElec = planZxCredits;
+                reqMap.put("专业选修", planZxCredits);
+            }
+        } catch (Exception ignored) { }
+
+        // 「已通过」= 成绩流水有效记录通过（最新一次通过优先，挂科不被后续失败覆盖）
+        // 与 GPA、专业排名共用 GradeLedgerService 的同一口径
         Map<Long, Course> approvedCourses = new LinkedHashMap<>();
         Map<Long, Double> passedScore = new HashMap<>();
-        Map<Long, Double> failedScore = new HashMap<>();   // 挂科（有成绩且 <60）：用于「重修中」判定
-        for (Grade g : gradeRepo.findByStudentId(studentId)) {
-            if (g.getTotalScore() != null) {
-                if (g.getTotalScore() >= PASS_LINE) passedScore.put(g.getCourseId(), g.getTotalScore());
-                else failedScore.put(g.getCourseId(), g.getTotalScore());
-            }
+        Map<Long, Double> failedScore = new HashMap<>();   // 挂科（有效记录 <60）：用于「重修中」判定
+        for (Map.Entry<Long, GradeRecord> en : ledger.effectiveRecords(studentId).entrySet()) {
+            GradeRecord g = en.getValue();
+            if (g.getTotalScore() == null) continue;
+            if (g.getTotalScore() >= PASS_LINE) passedScore.put(en.getKey(), g.getTotalScore());
+            else failedScore.put(en.getKey(), g.getTotalScore());
         }
         // 同一门课程可能在多轮次都有记录，按课程去重，避免学分重复累加
         Set<Long> approvedIds = new HashSet<>();
@@ -120,9 +154,32 @@ public class GraduationService {
 
         Map<String, Integer> earned = new LinkedHashMap<>();
         for (String k : KEYS) earned.put(k, 0);
+        Set<String> earnedOnce = new HashSet<>();
         for (Course c : passedCourses.values()) {
+            if (!CourseGroup.countsForGraduation(c.getCourseCode())) continue;   // 历史拓展课只还原课表密度，不计毕业学分
+            if (c.getName() != null && !earnedOnce.add(c.getName())) continue;   // 同名课程只计一次学分
             String g = groupOf(c.getCategory());
             earned.put(g, earned.get(g) + nz(c.getCredit()));
+        }
+
+        // —— 教学班拆行后的归一化 ——
+        // 一个课程目录会拆成多个教学班行（同名不同 id），毕业口径必须按「课程名」归并；
+        // 按行号统计会得到「第 1 学期 614 门必修 / 1526 学分」这类荒谬数字。
+        List<Course> allCourses = courseService.findAll();
+        Map<Long, String> nameById = new HashMap<>();
+        for (Course c : allCourses) {
+            if (c.getId() != null && c.getName() != null) nameById.put(c.getId(), c.getName());
+        }
+        Set<String> passedNames = new HashSet<>();
+        Map<String, Double> passedScoreByName = new HashMap<>();
+        for (Map.Entry<Long, Double> en : passedScore.entrySet()) {
+            String n = nameById.get(en.getKey());
+            if (n != null) { passedNames.add(n); passedScoreByName.putIfAbsent(n, en.getValue()); }
+        }
+        Map<String, Double> failedScoreByName = new HashMap<>();
+        for (Map.Entry<Long, Double> en : failedScore.entrySet()) {
+            String n = nameById.get(en.getKey());
+            if (n != null && !passedNames.contains(n)) failedScoreByName.putIfAbsent(n, en.getValue());
         }
 
         // 必修逐门校验：教学计划中每一门必修课都必须「已录取且总评 ≥ 60」
@@ -132,27 +189,40 @@ public class GraduationService {
         for (Enrollment e : enrollmentRepo.findByStudentIdAndRound(studentId, curRound)) {
             if ("approved".equals(e.getStatus()) || "pending".equals(e.getStatus())) inProgress.add(e.getCourseId());
         }
+        Set<String> inProgressNames = new HashSet<>();
+        for (Long cid : inProgress) {
+            String n = nameById.get(cid);
+            if (n != null) inProgressNames.add(n);
+        }
         List<String> missingRequired = new ArrayList<>();
         List<Map<String, Object>> missingDetails = new ArrayList<>();
-        for (Course c : courseService.findAll()) {
+        Set<String> missingSeen = new HashSet<>();
+        // 必修缺课口径 v2:分母与缺课清单来自培养方案行(教学计划),
+        // 与选课/课表/成绩的方案学期完全一致;方案外课程不计入毕业缺口
+        for (TrainingPlanCourse row : trainingPlanService.resolvePlanRows(major, stuGrade)) {
+            Course c = courseService.findById(row.getCourseId());
+            if (c == null) continue;   // 方案引用的课程已删除
             if (c.getCategory() == null || !c.getCategory().contains("必修")) continue;
-            if (!passedCourses.containsKey(c.getId())) {
+            if (c.getName() == null || !missingSeen.add(c.getName())) continue;   // 同名只算一门
+            if (!passedScore.containsKey(c.getId())) {
                 missingRequired.add(c.getName());
                 Map<String, Object> md = new LinkedHashMap<>();
                 md.put("name", c.getName());
-                md.put("retaking", inProgress.contains(c.getId()));
+                md.put("retaking", inProgressNames.contains(c.getName()));
                 missingDetails.add(md);
             }
         }
 
         // 必修课按培养方案学期分组进度（只含必修）：选修从入学到毕业总量达标即可，
         // 必修则是每学期不同的课——任何一学期的必修没过都无法毕业，按学期展示让缺口一目了然。
-        int curSem = currentSemesterNo(stuGrade, java.time.LocalDate.now(),
+        int curSem = currentSemesterNo(stuGrade, major, java.time.LocalDate.now(),
                 cfg.getSemesterOffset() == null ? 0 : cfg.getSemesterOffset());
         Map<Integer, List<Course>> bySem = new TreeMap<>();
-        for (Course c : courseService.findAll()) {
+        for (TrainingPlanCourse row : trainingPlanService.resolvePlanRows(major, stuGrade)) {
+            Course c = courseService.findById(row.getCourseId());
+            if (c == null) continue;
             if (c.getCategory() == null || !c.getCategory().contains("必修")) continue;
-            int sno = c.getSemesterNo() != null && c.getSemesterNo() > 0 ? c.getSemesterNo() : 0;
+            int sno = row.getSemesterNo() != null && row.getSemesterNo() > 0 ? row.getSemesterNo() : 0;
             bySem.computeIfAbsent(sno, k -> new ArrayList<>()).add(c);
         }
         List<Map<String, Object>> semesters = new ArrayList<>();
@@ -161,21 +231,24 @@ public class GraduationService {
             List<Map<String, Object>> cs = new ArrayList<>();
             int total = 0, passedCnt = 0, credits = 0, semEarned = 0;
             for (Course c : en.getValue()) {
-                boolean p = passedCourses.containsKey(c.getId());
-                boolean failed = failedScore.containsKey(c.getId());
-                boolean pendingScore = !p && !failed;   // 已到学期但无成绩：已修待出分（或旧数据缺失）
+                String cname = c.getName();
+                boolean p = passedNames.contains(cname);
+                boolean failed = failedScoreByName.containsKey(cname);
+                // 无成绩记录就是「暂无成绩」：不臆断为通过/挂科，也不臆断为待出成绩或需重修。
+                // 成绩由教师录入后才决定状态；这里只如实反映「有无成绩」，避免演示数据被误读成大规模挂科。
+                boolean noScore = !p && !failed;
                 total++;
                 credits += nz(c.getCredit());
                 if (p) { passedCnt++; semEarned += nz(c.getCredit()); }
                 Map<String, Object> cm = new LinkedHashMap<>();
-                cm.put("name", c.getName());
+                cm.put("name", cname);
                 cm.put("credit", nz(c.getCredit()));
                 cm.put("passed", p);
                 cm.put("failed", failed);
-                cm.put("pendingScore", pendingScore);
-                cm.put("score", passedScore.containsKey(c.getId()) ? passedScore.get(c.getId()) : failedScore.get(c.getId()));
-                // 重修中 = 确实挂科（有成绩且 <60）且本轮在修；未出成绩的课是「已修待出分」，不标
-                cm.put("retaking", failed && inProgress.contains(c.getId()));
+                cm.put("noScore", noScore);
+                cm.put("score", passedScoreByName.containsKey(cname) ? passedScoreByName.get(cname) : failedScoreByName.get(cname));
+                // 重修中：必须确有挂科成绩（<60）且本轮在修；无成绩不算重修
+                cm.put("retaking", failed && inProgressNames.contains(cname));
                 cs.add(cm);
             }
             Map<String, Object> sm = new LinkedHashMap<>();
@@ -189,7 +262,10 @@ public class GraduationService {
             sm.put("credits", credits);
             sm.put("earned", semEarned);
             sm.put("done", passedCnt == total);
-            sm.put("courses", cs);
+            // 学生看不到以后的课表（真实教务口径）：未来学期只公示规划学分，
+            // 具体课程排课要等学期推进进入该学期后才对学生可见。
+            sm.put("courses", sno > curSem ? new ArrayList<>() : cs);
+            sm.put("planned", sno > curSem);
             semesters.add(sm);
         }
         // 当前学期没有排必修课（如大四毕设环节）也补一行，给学生"你在这里"的学期定位
@@ -211,6 +287,15 @@ public class GraduationService {
         }
 
         List<Map<String, Object>> categories = new ArrayList<>();
+        // 必修的达标规则是「一门都不能缺」，分母必须是培养方案里必修课的总学分（约 105 学分），
+        // 而不是可配置的毕业门槛（默认 18，那是给演示/弹性学分留的值）。
+        // 否则会出现「18/18 差 0 学分」却同时列着 19 门未通过的矛盾展示。
+        int planRequiredCredits = 0;
+        for (List<Course> list : bySem.values()) {
+            for (Course c : list) planRequiredCredits += nz(c.getCredit());
+        }
+        if (planRequiredCredits > reqRequired) reqRequired = planRequiredCredits;
+        reqMap.put("必修", reqRequired);
         int totalReq = 0, totalEarned = 0;
         boolean allDone = true;
         for (String k : KEYS) {
@@ -230,16 +315,8 @@ public class GraduationService {
             if ("必修".equals(k)) m.put("missing", missingRequired);
             categories.add(m);
         }
-        // 学分与课程数双达标：真实高校「修满规定学分 + 修满课程门数」模式
-        int coursesEarned = passedCourses.size();
-        Map<String, Object> courses = new LinkedHashMap<>();
-        courses.put("required", reqCourses);
-        courses.put("earned", coursesEarned);
-        courses.put("gap", Math.max(0, reqCourses - coursesEarned));
-        courses.put("percent", reqCourses <= 0 ? 0 : (int) Math.round(Math.min(coursesEarned, reqCourses) * 100.0 / reqCourses));
-        courses.put("done", coursesEarned >= reqCourses);
-
-        boolean graduated = allDone && totalEarned >= totalReq && coursesEarned >= reqCourses;
+        // 毕业按「必修 + 公共选修 + 专业选修」三类学分分别达标，不再单列实践与最少课程数
+        boolean graduated = allDone && totalEarned >= totalReq;
 
         List<Map<String, Object>> recommend = recommendCourses(approvedIds, earned, reqMap);
 
@@ -251,7 +328,6 @@ public class GraduationService {
         total.put("gap", Math.max(0, totalReq - totalEarned));
         total.put("percent", totalReq <= 0 ? 0 : (int) Math.round(totalEarned * 100.0 / totalReq));
         result.put("total", total);
-        result.put("courses", courses);
         result.put("graduated", graduated);
         result.put("missingRequired", missingRequired);
         result.put("missingDetails", missingDetails);
@@ -262,26 +338,27 @@ public class GraduationService {
                 : null);
         result.put("recommend", recommend);
         result.put("requirementSource", gr != null ? "grade" : "default");
-        result.put("requirementLabel", gr != null
-                ? (stuGrade + " 级"
-                    + (gr.getMajor() != null && !gr.getMajor().isBlank() ? " · " + gr.getMajor() : "")
-                    + " · " + (gr.getLabel() == null || gr.getLabel().isBlank() ? "定制培养方案" : gr.getLabel()))
-                : "全校默认要求");
+        // 毕业要求按学制两套，不按年级分化：标签只标学制（普通本科 / 专升本）
+        result.put("requirementLabel", isZsb ? "专升本" : "普通本科");
+        result.put("isZsb", isZsb);
         return result;
     }
 
-    /** 推荐可修课程：只推荐仍有差额的模块中的、学生尚未录取的课程 */
+    /**
+     * 推荐可修课程：只推荐公共选修（通识选修）。
+     * 它是学生唯一自主选择的类别；必修与专业选修由教务按培养方案在开学前排入课表，
+     * 学生提前无法预知后续学期上什么课，因此不做预告式推荐。
+     */
     private List<Map<String, Object>> recommendCourses(Set<Long> approvedIds,
                                                        Map<String, Integer> earned,
                                                        Map<String, Integer> reqMap) {
         List<Map<String, Object>> out = new ArrayList<>();
+        int gxGap = reqMap.getOrDefault("公共选修", 0) - earned.getOrDefault("公共选修", 0);
+        if (gxGap <= 0) return out;   // 通识选修已修满：不再推荐
         for (Course c : courseService.findAll()) {
             if (approvedIds.contains(c.getId())) continue;
-            // 必修课只能由教务系统自动安排，不进入推荐（学生无法自选必修）
-            if (c.getCategory() != null && c.getCategory().contains("必修")) continue;
-            String g = groupOf(c.getCategory());
-            int gap = reqMap.getOrDefault(g, 0) - earned.getOrDefault(g, 0);
-            if (gap <= 0) continue;
+            if (c.getCategory() == null || !c.getCategory().contains("公共选修")) continue;
+            if (!CourseGroup.countsForGraduation(c.getCourseCode())) continue;   // 历史拓展课不推荐
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("courseId", c.getId());
             m.put("name", c.getName());
@@ -291,17 +368,29 @@ public class GraduationService {
             m.put("time", c.getTime());
             m.put("location", c.getLocation());
             m.put("intro", c.getIntro());
-            m.put("group", g);
-            m.put("groupGap", gap);
+            m.put("group", "公共选修");
+            m.put("groupGap", gxGap);
             out.add(m);
         }
-        out.sort((a, b) -> {
-            int d = Integer.compare((Integer) b.get("groupGap"), (Integer) a.get("groupGap"));
-            if (d != 0) return d;
-            return Integer.compare((Integer) b.get("credit"), (Integer) a.get("credit"));
-        });
+        out.sort((a, b) -> Integer.compare((Integer) b.get("credit"), (Integer) a.get("credit")));
         return out.size() > 8 ? out.subList(0, 8) : out;
     }
 
     private int nz(Integer v) { return v == null ? 0 : v; }
+
+    /**
+     * 必修课按专业归属过滤：target_major 非空且学生专业非空时，学生专业须在目标专业清单内
+     * （| 分隔，兼容全/半角括号后缀如「数字媒体艺术（闽台合作）」）。未标注专业 = 全院/全校通用。
+     * 此前只按学院过滤，同学院其他专业（音乐学、商务英语等）的必修被误算成本专业的毕业缺口。
+     */
+    private boolean majorMatches(Course c, User student) {
+        String targets = c.getTargetMajor();
+        String major = student == null ? null : student.getMajor();
+        if (targets == null || targets.isBlank() || major == null || major.isBlank()) return true;
+        String my = major.replaceAll("[（(].*$", "").trim();
+        for (String x : targets.split("\\|")) {
+            if (x.replaceAll("[（(].*$", "").trim().equals(my)) return true;
+        }
+        return false;
+    }
 }

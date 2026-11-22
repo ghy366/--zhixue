@@ -58,9 +58,10 @@ public class IntentService {
             approved.computeIfAbsent(e.getCourseId(), cid -> courseRepo.findById(cid).orElse(null));
         }
         approved.values().removeIf(Objects::isNull);
-        // 门数上限口径：只统计非必修课（必修由教学计划自动安排，不占额度），与 enroll/结算/候补保持一致
+        // 门数上限口径：只统计通识选修（公共选修）——必修与专业选修由培养方案排定，不占选课额度，
+        // 与 enroll / 结算 / 换课的 isGxElective 口径保持一致
         int approvedCount = (int) approved.values().stream()
-                .filter(c -> !com.zhixue.util.CourseGroup.isRequired(c.getCategory()))
+                .filter(c -> c.getCategory() != null && c.getCategory().contains("公共选修"))
                 .count();
         Integer maxCourses = enrollmentService.getSystemConfig().getMaxCoursesPerSemester();
 
@@ -102,6 +103,12 @@ public class IntentService {
         return intentRepo.findByStudentIdAndCourseId(studentId, courseId).orElse(null);
     }
 
+    /** 学生全部意向单（课程列表批量预取「我的意向」用，替代逐课 find 的 N+1） */
+    public List<CourseIntent> listByStudent(Long studentId) {
+        if (studentId == null) return List.of();
+        return intentRepo.findByStudentIdOrderByCreatedAtAsc(studentId);
+    }
+
     public int totalPoints(Long studentId) {
         int sum = 0;
         for (CourseIntent it : intentRepo.findByStudentIdOrderByCreatedAtAsc(studentId)) {
@@ -115,10 +122,13 @@ public class IntentService {
         Map<String, Object> r = new HashMap<>();
         Course c = courseRepo.findById(courseId).orElse(null);
         if (c == null) { r.put("success", false); r.put("msg", "课程不存在"); return r; }
-        // 必修课由系统自动安排进课表，不允许加入意向单
+        // 必修与专业选修由教务按培养方案排入课表，不允许加入意向单（提示按类别给准确说法）
         if (enrollmentService.isRequiredCourse(courseId)) {
+            boolean zxx = c.getCategory() != null && c.getCategory().contains("专业选修");
             r.put("success", false);
-            r.put("msg", "必修课已自动安排进课表，无需选课");
+            r.put("msg", zxx
+                    ? "《" + c.getName() + "》为专业选修，由教务按培养方案在第 " + (c.getSemesterNo() != null && c.getSemesterNo() > 0 ? c.getSemesterNo() : "对应") + " 学期自动排入课表，无需选课"
+                    : "必修课已自动安排进课表，无需选课");
             return r;
         }
         CourseIntent it = intentRepo.findByStudentIdAndCourseId(studentId, courseId).orElse(null);

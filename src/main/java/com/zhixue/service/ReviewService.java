@@ -25,6 +25,13 @@ public class ReviewService {
     @Autowired private CourseRepository courseRepo;
     @Autowired private CourseService courseService;
     @Autowired private UserRepository userRepo;
+    @Autowired private com.zhixue.repository.SystemConfigRepository sysRepo;
+
+    /** 学生当前学期号（含学期推进偏移）：评教窗口按它判定 */
+    private int curSemOf(Integer grade) {
+        int offset = sysRepo.findById(1L).map(c -> c.getSemesterOffset() == null ? 0 : c.getSemesterOffset()).orElse(0);
+        return com.zhixue.service.GraduationService.currentSemesterNo(grade, java.time.LocalDate.now(), offset);
+    }
 
     /** 学生是否已录取过该课程（有资格评价） */
     private boolean hasStudied(Long studentId, Long courseId) {
@@ -83,6 +90,15 @@ public class ReviewService {
             if (v != null && (v < 1 || v > 5)) { r.put("success", false); r.put("msg", "维度评分需为 1-5 星"); return r; }
         }
         if (!hasStudied(studentId, courseId)) { r.put("success", false); r.put("msg", "只有录取过该课程的学生才能评价"); return r; }
+
+        // 评教窗口：仅当前学期课程可评（真实高校评教随学期关闭，历史学期不可补评）
+        Integer stuGrade = userRepo.findById(studentId).map(User::getGrade).orElse(null);
+        Integer semNo = enrollmentRepo.findByStudentId(studentId).stream()
+                .filter(e -> courseId.equals(e.getCourseId()) && "approved".equals(e.getStatus()) && e.getSemesterNo() != null)
+                .map(Enrollment::getSemesterNo).findFirst().orElse(null);
+        if (semNo != null && semNo != curSemOf(stuGrade)) {
+            r.put("success", false); r.put("msg", "评教已截止：仅当前学期课程可评价"); return r;
+        }
 
         CourseReview rev = reviewRepo.findByStudentIdAndCourseId(studentId, courseId).orElse(null);
         boolean isNew = rev == null;
@@ -186,8 +202,12 @@ public class ReviewService {
         Set<Long> reviewed = new HashSet<>();
         for (CourseReview rev : reviewRepo.findByStudentIdOrderByCreatedAtDesc(studentId)) reviewed.add(rev.getCourseId());
         Set<Long> seen = new HashSet<>();
+        Integer stuGrade = userRepo.findById(studentId).map(User::getGrade).orElse(null);
+        int curSem = curSemOf(stuGrade);
         for (Enrollment e : enrollmentRepo.findByStudentId(studentId)) {
             if (!"approved".equals(e.getStatus())) continue;
+            // 未来学期课程不进入评教列表（学生看不到以后的课；自动排课的预排记录只供毕业进度使用）
+            if (e.getSemesterNo() != null && e.getSemesterNo() > curSem) continue;
             if (reviewed.contains(e.getCourseId()) || seen.contains(e.getCourseId())) continue;
             seen.add(e.getCourseId());
             Course c = courseRepo.findById(e.getCourseId()).orElse(null);
@@ -199,6 +219,9 @@ public class ReviewService {
             m.put("credit", c.getCredit());
             m.put("teacherName", courseService.teacherName(c.getTeacherId()));
             m.putAll(semOf(studentId, c.getId()));
+            // 评教窗口：仅当前学期课程开放评价，历史学期评教已截止
+            Integer psem = (m.get("semesterNo") instanceof Integer) ? (Integer) m.get("semesterNo") : null;
+            m.put("current", psem != null && psem == curSem);
             out.add(m);
         }
         return out;

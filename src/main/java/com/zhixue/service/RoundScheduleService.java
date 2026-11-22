@@ -5,6 +5,7 @@ import com.zhixue.entity.SystemConfig;
 import com.zhixue.repository.RoundScheduleRepository;
 import com.zhixue.repository.SystemConfigRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +27,8 @@ public class RoundScheduleService {
     @Autowired private RoundScheduleRepository repo;
     @Autowired private SystemConfigRepository sysRepo;
     @Autowired private CapacityService capacityService;
+    /** @Lazy 打破循环：EnrollmentService 依赖本类，结算需反向调用它 */
+    @Autowired @Lazy private EnrollmentService enrollmentService;
 
     /** 确保 1..3 三条记录存在，按轮次号升序返回 */
     public List<RoundSchedule> list() {
@@ -140,6 +143,20 @@ public class RoundScheduleService {
 
         // 轮次门控：自动排班同样不能跳级，也不能在未开启新学期时开放第 1 轮
         int progress = c.getRoundProgress() == null ? 0 : Math.max(0, Math.min(3, c.getRoundProgress()));
+        // 自动模式下某轮窗口已整体结束 → 与手动「关闭本轮」同语义：结算该轮并推进进度解锁下一轮。
+        // lastPassed.roundNo > progress 保证每轮只结算/推进一次（幂等），避免每 30s 重复结算。
+        if (lastPassed != null && lastPassed.getRoundNo() != null
+                && lastPassed.getRoundNo() > progress && lastPassed.getRoundNo() <= ROUND_COUNT) {
+            int passed = lastPassed.getRoundNo();
+            try {
+                if (passed <= 2) enrollmentService.settleRound(passed);   // 第 3 轮为补选，结算口径由手动处理
+            } catch (Exception ex) {
+                org.slf4j.LoggerFactory.getLogger(RoundScheduleService.class)
+                        .warn("自动排班：第 {} 轮窗口结束后结算失败：{}", passed, ex.getMessage(), ex);
+            }
+            progress = passed;
+            c.setRoundProgress(passed);
+        }
         int unlocked = Math.min(3, progress + 1);
         if (newRound == null) newRound = unlocked;
         if (newRound > unlocked) { newRound = unlocked; newOpen = false; }
@@ -149,9 +166,11 @@ public class RoundScheduleService {
         boolean changed = !eq(c.getCurrentRound(), newRound)
                 || !eq(c.getRoundOpen(), newOpen)
                 || !eq(c.getRoundOpenAt(), newOpenAt)
-                || !eq(c.getRoundCloseAt(), newCloseAt);
+                || !eq(c.getRoundCloseAt(), newCloseAt)
+                || !eq(c.getRoundProgress(), progress);   // 窗口结束推进的进度也要落库，否则下次巡检重复结算
         if (changed) {
             // 自动排班不再清理报名数据：容量按学期口径释放，开启新学期由管理员显式操作
+            c.setRoundProgress(progress);
             c.setCurrentRound(newRound);
             c.setRoundOpen(newOpen);
             c.setRoundOpenAt(newOpenAt);

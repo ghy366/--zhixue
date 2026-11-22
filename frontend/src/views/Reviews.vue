@@ -89,10 +89,10 @@
           <template #prefix><span class="sem-cal" v-html="svgIcon('calendar')" /></template>
         <el-option v-for="o in semOptions" :key="o.no" :label="o.label" :value="o.no" />
         </el-select>
-        <span class="rv-sem-note">{{ t('评教按修读学期进行 · 我的平均评分统计全部学期') }}</span>
+        <span class="rv-sem-note">{{ t('仅当前学期课程开放评教 · 历史学期已截止 · 我的平均评分统计全部学期') }}</span>
       </div>
       <div class="stats-grid">
-        <div class="stat-card"><div class="stat-icon amber" v-html="svgIcon('edit')" /><div><div class="stat-value">{{ pendingFiltered.length }}</div><div class="stat-label">{{ t('待评价课程') }}</div></div></div>
+        <div class="stat-card"><div class="stat-icon amber" v-html="svgIcon('edit')" /><div><div class="stat-value">{{ reviewableCount }}</div><div class="stat-label">{{ t('可评课程（当前学期）') }}</div></div></div>
         <div class="stat-card"><div class="stat-icon green" v-html="svgIcon('check-circle')" /><div><div class="stat-value">{{ mineFiltered.length }}</div><div class="stat-label">{{ t('我已评价') }}</div></div></div>
         <div class="stat-card"><div class="stat-icon blue" v-html="svgIcon('star')" /><div><div class="stat-value">{{ myAvg }}</div><div class="stat-label">{{ t('我的平均评分') }}</div></div></div>
       </div>
@@ -108,7 +108,7 @@
                 <td>{{ c.teacherName }}</td>
                 <td>{{ c.category }}</td>
                 <td>{{ c.credit }}</td>
-                <td><el-button type="primary" size="small" @click="openForm(c)">{{ t('去评价') }}</el-button></td>
+                <td><el-tooltip :content="t('仅当前学期课程开放评教')" :disabled="!!c.current" placement="top"><span><el-button type="primary" size="small" :disabled="!c.current" @click="openForm(c)">{{ c.current ? t('去评价') : t('评教已截止') }}</el-button></span></el-tooltip></td>
               </tr>
             </tbody>
           </table>
@@ -170,6 +170,7 @@ import { ElMessage } from 'element-plus'
 import http from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/i18n'
+import { semesterTitle, isZsbUser } from '@/utils/semester'
 
 const auth = useAuthStore()
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
@@ -183,35 +184,50 @@ const selectedSem = ref<number | null>(null)
 const currentSemesterNo = ref<number | null>(null)
 const semOptions = ref<{ no: number; label: string }[]>([])
 
+const semOffset = ref(0)
 function mySemesterNo(): number {
   let g = 0
   try { g = Number(JSON.parse(localStorage.getItem('zhixue_user') || '{}').grade) || 0 } catch {}
   const t0 = new Date()
   const y = t0.getFullYear(), m = t0.getMonth() + 1
   if (g < 2000) return 1
-  return Math.max(1, m >= 8 ? (y - g) * 2 + 1 : (m === 1 ? (y - g) * 2 - 1 : (y - g) * 2))
+  const base = m >= 8 ? (y - g) * 2 + 1 : (m === 1 ? (y - g) * 2 - 1 : (y - g) * 2)
+  let sem = Math.max(1, base + Math.max(0, semOffset.value))
+  try {
+    const major = String(JSON.parse(localStorage.getItem('zhixue_user') || '{}').major || '')
+    if (major.includes('专升本')) sem = Math.min(4, sem)
+  } catch {}
+  return sem
 }
 
 function rebuildSemOptions() {
   currentSemesterNo.value = mySemesterNo()
   const set = new Map<number, string>()
   for (const c of pending.value) {
-    if (c.semesterNo != null && !set.has(c.semesterNo)) set.set(c.semesterNo, c.semesterLabel || `第 ${c.semesterNo} 学期`)
+    // 未来学期不进学期下拉（学生看不到以后的课）
+    if (currentSemesterNo.value != null && c.semesterNo != null && c.semesterNo > currentSemesterNo.value) continue
+    if (c.semesterNo != null && !set.has(c.semesterNo)) set.set(c.semesterNo, semesterTitle(c.semesterNo, isZsbUser()))
   }
   for (const m of mine.value) {
-    if (m.semesterNo != null && !set.has(m.semesterNo)) set.set(m.semesterNo, m.semesterLabel || `第 ${m.semesterNo} 学期`)
+    if (m.semesterNo != null && !set.has(m.semesterNo)) set.set(m.semesterNo, semesterTitle(m.semesterNo, isZsbUser()))
   }
   const list = [...set.entries()].sort((a, b) => b[0] - a[0]).map(([no, label]) => ({ no, label }))
   const cur = currentSemesterNo.value
   if (cur != null && !list.some(o => o.no === cur)) list.unshift({ no: cur, label: `第 ${cur} 学期` })
   semOptions.value = list
-  // 默认：最近一个有待评价课程的学期；没有则当前学期
-  const firstPending = [...pending.value].sort((a, b) => (b.semesterNo ?? 0) - (a.semesterNo ?? 0))[0]
-  selectedSem.value = firstPending?.semesterNo ?? cur
+  // 默认：当前学期（评教只开放当前学期）；当前学期无可评课程时回退最近有待评价的学期
+  const curPending = pending.value.some(c => c.current)
+  selectedSem.value = curPending ? cur : (firstPendingOrNull() ?? cur)
 }
 
 const pendingFiltered = computed(() =>
   pending.value.filter(c => selectedSem.value == null || (c.semesterNo ?? -1) === selectedSem.value))
+/** 可评课程数：当前学期开放的 */
+const reviewableCount = computed(() => pending.value.filter(c => c.current).length)
+function firstPendingOrNull(): number | null {
+  const first = [...pending.value].sort((a, b) => (b.semesterNo ?? 0) - (a.semesterNo ?? 0))[0]
+  return first?.semesterNo ?? null
+}
 const mineFiltered = computed(() =>
   mine.value.filter(m => selectedSem.value == null || (m.semesterNo ?? -1) === selectedSem.value))
 
@@ -336,6 +352,7 @@ async function load() {
     return
   }
   try {
+    try { const c: any = await http.get('/system/config'); semOffset.value = Number(c?.data?.semesterOffset) || 0 } catch {}
     const [p, m]: any[] = await Promise.all([http.get('/reviews/pending'), http.get('/reviews/mine')])
     pending.value = p?.data || []
     mine.value = m?.data || []
@@ -430,4 +447,9 @@ onMounted(load)
 :deep(.sem-pill .el-select__caret) { color: var(--primary); }
 :deep(.sem-pill .sem-cal) { width: 15px; height: 15px; color: var(--primary); display: block; }
 .sem-cal :deep(svg) { width: 15px; height: 15px; display: block; }
+
+/* ===== 评教页卡片内边距 ===== */
+.page-wrap .section { padding: 18px 22px; }
+.page-wrap .section-header { margin-bottom: 14px; }
+
 </style>

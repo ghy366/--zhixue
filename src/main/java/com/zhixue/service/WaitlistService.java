@@ -24,7 +24,7 @@ public class WaitlistService {
     @Autowired private CourseRepository courseRepo;
     @Autowired private SystemConfigRepository sysRepo;
     @Autowired private UserRepository userRepo;
-    @Autowired private GradeRepository gradeRepo;
+    @Autowired private GradeLedgerService ledger;
     @Autowired private NotificationService notificationService;
 
     public SystemConfig getConfig() {
@@ -88,7 +88,7 @@ public class WaitlistService {
         User u = userRepo.findById(studentId).orElse(null);
         if (u == null || u.getGrade() == null) return null;
         SystemConfig sys = getConfig();
-        return GraduationService.currentSemesterNo(u.getGrade(), java.time.LocalDate.now(),
+        return GraduationService.currentSemesterNo(u.getGrade(), u.getMajor(), java.time.LocalDate.now(),
                 sys.getSemesterOffset() == null ? 0 : sys.getSemesterOffset());
     }
 
@@ -97,6 +97,71 @@ public class WaitlistService {
         Course c = courseRepo.findById(courseId).orElse(null);
         if (c == null || c.getCapacity() == null) return false;
         return reserved(courseId, currentSemesterNo(studentId), round) >= c.getCapacity();
+    }
+
+    /** 课程列表批量预取：整轮进行中的候补按课程分组（加入时间升序，与 activeForCourse 口径一致） */
+    public Map<Long, List<Waitlist>> activeByCourseOfRound(int round) {
+        return waitlistRepo.findByRound(round).stream()
+                .filter(w -> ACTIVE.contains(w.getStatus()) && w.getCourseId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(Waitlist::getCourseId,
+                        java.util.stream.Collectors.collectingAndThen(java.util.stream.Collectors.toList(), l -> {
+                            l.sort(Comparator.comparing(Waitlist::getJoinTime,
+                                    Comparator.nullsLast(Comparator.naturalOrder())));
+                            return l;
+                        })));
+    }
+
+    /**
+     * 批量「满员」判定：语义与 isFull(courseId, round, studentId) 一致——
+     * studentSem 非空按该学生学期池（本学期跨轮已批准 + confirming 候补学生同学期），
+     * 为空（非学生视角）按当前轮全校池。替代逐门课查库的 N+1。
+     */
+    public Map<Long, Boolean> fullMap(Collection<Course> courses, int round, Integer studentSem,
+                                      Map<Long, List<Enrollment>> byCourseRound,
+                                      Map<Long, List<Enrollment>> byCourseSemester,
+                                      Map<Long, List<Waitlist>> activeByCourse) {
+        // confirming 候补学生的学期序：同一学生只算一次
+        Set<Long> wlStudents = new HashSet<>();
+        for (List<Waitlist> ws : activeByCourse.values()) {
+            for (Waitlist w : ws) if (w.getStudentId() != null) wlStudents.add(w.getStudentId());
+        }
+        Map<Long, Integer> studentSems = semesterNoBulk(wlStudents);
+        Map<Long, Boolean> out = new HashMap<>();
+        for (Course c : courses) {
+            if (c == null || c.getCapacity() == null) continue;
+            List<Waitlist> wls = activeByCourse.getOrDefault(c.getId(), List.of());
+            long reservedCount;
+            if (studentSem == null) {
+                reservedCount = byCourseRound.getOrDefault(c.getId(), List.of()).stream()
+                        .filter(e -> "approved".equals(e.getStatus())).count()
+                        + wls.stream().filter(w -> "confirming".equals(w.getStatus())).count();
+            } else {
+                // 学期池口径：已批准按学期严格相等（老数据未标注学期的不占新学期名额），与 reserved() 一致
+                reservedCount = byCourseSemester.getOrDefault(c.getId(), List.of()).stream()
+                        .filter(e -> "approved".equals(e.getStatus()) && studentSem.equals(e.getSemesterNo())).count()
+                        + wls.stream().filter(w -> "confirming".equals(w.getStatus()))
+                            .filter(w -> studentSem.equals(studentSems.get(w.getStudentId()))).count();
+            }
+            out.put(c.getId(), reservedCount >= c.getCapacity());
+        }
+        return out;
+    }
+
+    /** 批量学期序：一次加载用户后按 currentSemesterNo 同款公式计算 */
+    private Map<Long, Integer> semesterNoBulk(Collection<Long> ids) {
+        Map<Long, Integer> out = new HashMap<>();
+        if (ids.isEmpty()) return out;
+        Map<Long, User> users = new HashMap<>();
+        for (User u : userRepo.findAllById(ids)) users.put(u.getId(), u);
+        SystemConfig sys = getConfig();
+        java.time.LocalDate today = java.time.LocalDate.now();
+        for (Long id : ids) {
+            User u = users.get(id);
+            if (u == null || u.getGrade() == null) continue;
+            out.put(id, GraduationService.currentSemesterNo(u.getGrade(), u.getMajor(), today,
+                    sys.getSemesterOffset() == null ? 0 : sys.getSemesterOffset()));
+        }
+        return out;
     }
 
     // 加入候补队列（swapFromCourseId 非空 = 换课保底候补：递补确认时自动退掉该课完成换课）
@@ -240,8 +305,7 @@ public class WaitlistService {
         }
         // 换课确认的先修课校验（与换课报名同口径；不通过则名额放行给下一位）
         if (swapFromId != null && course.getPrereqId() != null) {
-            var preGrade = gradeRepo.findByStudentIdAndCourseId(studentId, course.getPrereqId()).orElse(null);
-            if (!com.zhixue.service.GradeService.passed(preGrade)) {
+            if (!ledger.hasPassed(studentId, course.getPrereqId())) {
                 return releaseSeat(w, "需先通过先修课程才能换入《" + course.getName() + "》，本次候补名额已释放给下一位");
             }
         }

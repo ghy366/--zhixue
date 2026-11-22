@@ -42,6 +42,17 @@ public class Enrollment {
     @Column(name = "swap_from_course_id")
     private Long swapFromCourseId;
 
+    /**
+     * 报名来源：null/normal 普通选课；retake 跟班重修（由教务/学生选班后自动写入，占 0 积分，
+     * 只用于让重修课程出现在课表与「我的课程」，不参与积分池与容量结算）。
+     */
+    @Column(name = "source", length = 16)
+    private String source;
+
+    /** 组班重修所属教学班（teaching_classes.id）：课表/名单读取该班的时间与教师 */
+    @Column(name = "teaching_class_id")
+    private Long teachingClassId;
+
     public Enrollment() {}
 
     public Long getId() { return id; }
@@ -60,4 +71,8 @@ public class Enrollment {
     public void setSemesterNo(Integer semesterNo) { this.semesterNo = semesterNo; }
     public Long getSwapFromCourseId() { return swapFromCourseId; }
     public void setSwapFromCourseId(Long v) { this.swapFromCourseId = v; }
+    public String getSource() { return source; }
+    public void setSource(String v) { this.source = v; }
+    public Long getTeachingClassId() { return teachingClassId; }
+    public void setTeachingClassId(Long v) { this.teachingClassId = v; }
 }

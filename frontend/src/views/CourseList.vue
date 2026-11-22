@@ -35,9 +35,12 @@
         <el-option :label="t('剩余名额优先')" value="remain" />
         <el-option :label="t('学分高优先')" value="credit" />
       </el-select>
+      <el-checkbox v-model="showSelected" size="small" class="show-selected-toggle">
+        {{ t('显示已选课程') }}<span v-if="!showSelected && hiddenSelectedCount" class="ss-count">({{ hiddenSelectedCount }})</span>
+      </el-checkbox>
       <el-tag type="info" effect="plain">{{ t('共 {n} 门', { n: total }) }}</el-tag>
       <el-tag v-if="maxCourses" :type="enrolledCount >= maxCourses ? 'danger' : 'success'" effect="plain">
-        {{ t('本学期最多可选 {max} 门选修 · 已选 {sel}/{max}', { max: maxCourses, sel: enrolledCount }) }}
+        {{ t('本学期最多可选 {max} 门通识选修 · 已选 {sel}/{max}', { max: maxCourses, sel: enrolledCount }) }}
       </el-tag>
       <el-tag v-if="canSelect" type="warning" effect="plain">{{ t('剩余积分 {n}', { n: remaining }) }}</el-tag>
       <span class="legend-note" v-if="currentRound < 3">
@@ -159,7 +162,11 @@
       <!-- 空状态：区分「筛选无结果」与「暂无课程」 -->
       <div v-if="!visibleCourses.length && !loading" class="cc-empty">
         <div class="cc-empty-icon">🔍</div>
-        <template v-if="hasFilter">
+        <template v-if="hiddenSelectedCount > 0 && !hasFilter && !showSelected">
+          <div class="cc-empty-title">{{ t('可选课程都已在你的课表里') }}</div>
+          <div class="cc-empty-sub">{{ t('已选课程默认隐藏，可在「我的课程」中查看与退课') }}</div>
+        </template>
+        <template v-else-if="hasFilter">
           <div class="cc-empty-title">{{ t('没有找到符合条件的课程') }}</div>
           <div class="cc-empty-sub">{{ t('试试更换关键词或清空筛选条件') }}</div>
           <el-button size="small" round @click="clearFilters">{{ t('清空搜索与筛选') }}</el-button>
@@ -357,8 +364,18 @@ const selectableCourses = computed(() => courses.value)
 
 const sortBy = ref<'default' | 'competition' | 'remain' | 'credit'>('default')
 
-/* 服务端已完成筛选与排序，这里只做透传 */
-const filteredCourses = computed(() => courses.value)
+/**
+ * 已录取课程默认从可选列表隐藏（对齐强智教务惯例：选课列表只承担「选」，
+ * 已选课程的查看与退课收敛到「我的课程」页）。待录取（竞价中）保留显示，
+ * 学生需要看到自己正在竞投的课程与竞争线。
+ */
+const showSelected = ref(false)
+const hiddenSelectedCount = computed(() => courses.value.filter((c: any) => c.myStatus === 'approved').length)
+
+/* 服务端已完成筛选与排序，这里做透传 + 默认隐藏已录取课程 */
+const filteredCourses = computed(() =>
+  showSelected.value ? courses.value : courses.value.filter((c: any) => c.myStatus !== 'approved')
+)
 
 /** 是否有筛选条件（用于空状态区分） */
 const hasFilter = computed(() => !!(keyword.value.trim() || selectedCategory.value || sortBy.value !== 'default'))
@@ -740,10 +757,11 @@ async function load() {
       total.value = d?.total || 0
       if (d?.categories?.length) categories.value = d.categories
     }
-    // 已选选修门数：从当前轮报名记录统计（列表分页后 myStatus 只覆盖当页）
+    // 已选通识选修门数：从当前轮报名记录统计（列表分页后 myStatus 只覆盖当页）；
+    // 门数上限只数公共选修——必修/专业选修为培养方案排课，不占选课额度（与后端 enroll/结算一致）
     mineEnrollments.value = mine?.data || []
     enrolledCount.value = (mine?.data || []).filter((x: any) =>
-      (x.status === 'pending' || x.status === 'approved') && !(x.category || '').includes('必修')
+      (x.status === 'pending' || x.status === 'approved') && (x.category || '').includes('公共选修')
     ).length
     remaining.value = p?.data?.remaining ?? 0
     currentRound.value = p?.data?.round ?? 1
@@ -776,6 +794,9 @@ onMounted(load)
 .kw-input { width: 300px; max-width: 100%; }
 
 .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+/* 「显示已选课程」开关：已录取课程默认隐藏，收进「我的课程」页管理 */
+.show-selected-toggle { margin-left: 4px; }
+.show-selected-toggle .ss-count { margin-left: 3px; font-size: 12px; color: var(--text-light, #94a3b8); }
 .stagger-banner { margin-bottom: 2px; }
 
 /* 同行等高：不用 align-items:start（那会让卡片按内容各自收缩，热门卡更高导致不齐）。

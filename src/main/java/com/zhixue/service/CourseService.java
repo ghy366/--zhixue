@@ -12,7 +12,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -43,7 +45,11 @@ public class CourseService {
     }
 
     public List<Course> findByTeacher(Long teacherId) {
-        return courseRepo.findById(teacherId).isPresent() ? courseRepo.findByTeacherId(teacherId) : List.of();
+        // 修复：原判断 courseRepo.findById(teacherId) 是拿「教师用户ID」去查「课程ID」，
+        // 新增教师（如 T018 id=1190）的课程 id 不存在 → 误判为无任课，返回空列表。
+        // 应检查用户表中的教师是否存在。
+        if (teacherId == null) return List.of();
+        return userRepo.findById(teacherId).isPresent() ? courseRepo.findByTeacherId(teacherId) : List.of();
     }
 
     public Course findById(Long id) { return courseRepo.findById(id).orElse(null); }
@@ -52,6 +58,20 @@ public class CourseService {
         if (teacherId == null) return "未分配";
         User u = userRepo.findById(teacherId).orElse(null);
         return u != null ? u.getName() : "未分配";
+    }
+
+    /** 全量用户名映射：课程列表页一次解析所有教师名，替代逐课 findById 的 N+1 */
+    public Map<Long, String> userNameMap() {
+        Map<Long, String> m = new HashMap<>();
+        for (User u : userRepo.findAll()) m.put(u.getId(), u.getName());
+        return m;
+    }
+
+    /** 全量课程名映射：课程列表页一次解析所有先修课名，替代逐课 findById 的 N+1 */
+    public Map<Long, String> courseNameMap() {
+        Map<Long, String> m = new HashMap<>();
+        for (Course c : courseRepo.findAll()) m.put(c.getId(), c.getName());
+        return m;
     }
 
     public Course save(Course c) { return courseRepo.save(c); }

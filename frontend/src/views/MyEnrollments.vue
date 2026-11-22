@@ -134,7 +134,7 @@
           <el-table-column v-if="batchMode" width="44">
             <template #header><el-checkbox v-model="allApproved" @change="toggleAllApproved" /></template>
             <template #default="{ row }">
-              <el-checkbox :model-value="checkedApproved.includes(row.id)" :disabled="isRequired(row)" @change="(v:any)=>toggleOne(row.id, v)" />
+              <el-checkbox :model-value="checkedApproved.includes(row.courseId)" :disabled="isRequired(row)" @change="(v:any)=>toggleOne(row.courseId, v)" />
             </template>
           </el-table-column>
           <el-table-column prop="courseName" :label="t('课程名')" min-width="160">
@@ -301,6 +301,7 @@ import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
 import { useCountUp } from '@/utils/useCountUp'
 import { t } from '@/i18n'
+import { semesterTitle, isZsbUser } from '@/utils/semester'
 
 interface Enrollment { id: number; courseId: number; courseName: string; teacherName: string; credit: number; category: string; status: string; points?: number; grade?: string; swapTarget?: boolean; swapLocked?: boolean; advisorName?: string | null }
 interface Waitlist { waitlistId: number; courseId: number; courseName: string; teacherName: string; position: number; status: string; swapFromName?: string }
@@ -344,10 +345,7 @@ function myGradeOf(): number {
   return g
 }
 function semesterLabelOf(no: number): string {
-  const g = myGradeOf()
-  if (g < 2000) return `第 ${no} 学期`
-  const startYear = g + Math.floor((no - 1) / 2)
-  return `${startYear}-${startYear + 1}学年${no % 2 === 1 ? '第一' : '第二'}学期`
+  return semesterTitle(no, isZsbUser())
 }
 
 async function loadSemOptions() {
@@ -356,18 +354,19 @@ async function loadSemOptions() {
     const ms: any = await http.get('/enrollments/my-semester')
     currentSemesterNo.value = ms?.data?.semesterNo ?? mySemesterNo()
   } catch { currentSemesterNo.value = mySemesterNo() }
-  const set = new Map<number, string>()
+  // 学期列表 = 有选课记录或有成绩的学期 + 当前学期（不再只看有成绩的学期）
+  let list: { no: number; label: string }[] = []
   try {
-    const r: any = await http.get('/enrollments/scores')
-    for (const g of (r?.data || [])) {
-      if (g.semesterNo != null && !set.has(g.semesterNo)) {
-        set.set(g.semesterNo, g.semesterLabel || semesterLabelOf(g.semesterNo))
-      }
-    }
+    const r: any = await http.get('/enrollments/my-semesters')
+    list = (r?.data || [])
+      .filter((s: any) => s.semesterNo != null)
+      .map((s: any) => ({ no: s.semesterNo, label: s.label || semesterLabelOf(s.semesterNo) }))
+    // 兜底：未来学期不下发也不展示（学生看不到以后的课表）
   } catch {}
-  const list = [...set.entries()].sort((a, b) => b[0] - a[0]).map(([no, label]) => ({ no, label }))
   const cur = currentSemesterNo.value
-  if (cur != null && !list.some(o => o.no === cur)) list.unshift({ no: cur, label: semesterLabelOf(cur) })
+  if (cur != null) list = list.filter(o => cur == null || o.no <= cur)
+  if (cur != null && !list.some(o => o.no === cur)) list.push({ no: cur, label: semesterLabelOf(cur) })
+  list.sort((a, b) => b.no - a.no)
   semOptions.value = list
   if (viewSem.value == null || !list.some(o => o.no === viewSem.value)) viewSem.value = cur
 }
@@ -388,8 +387,8 @@ const removable = computed(() => approved.value.filter(e => !isRequired(e)))
 const totalCredits = computed(() => approved.value.reduce((s, e) => s + (e.credit || 0), 0))
 const maxCredit = computed(() => config.value.maxCreditPerSemester)
 const maxCourses = computed(() => config.value.maxCoursesPerSemester)
-// 门数上限口径：只统计非必修课（必修由系统自动排课，不占额度），与后端 enroll/结算/候补一致
-const approvedElective = computed(() => approved.value.filter(e => !(e.category || '').includes('必修')))
+// 门数上限口径：只统计通识选修（公共选修）——必修与专业选修由培养方案排定，不占选课额度，与后端 enroll/结算一致
+const approvedElective = computed(() => approved.value.filter(e => (e.category || '').includes('公共选修')))
 const overCourseLimit = computed(() => !!maxCourses.value && approvedElective.value.length > maxCourses.value)
 // 候补中：只计仍在排队 / 待确认递补的记录（已取消 / 已递补 / 已过期不计）
 const rejected = computed(() => enrollments.value.filter(e => e.status === 'rejected'))
@@ -459,7 +458,8 @@ function gradeCls(v: any) {
 }
 
 function toggleAllApproved(v: boolean) {
-  checkedApproved.value = v ? removable.value.map(e => e.id) : []
+  // 后端 drop-batch 按 courseId 处理，勾选必须收集 courseId（e.id 是报名记录 id，传过去会退错课）
+  checkedApproved.value = v ? removable.value.map(e => e.courseId) : []
 }
 function toggleOne(id: number, v: boolean) {
   if (v && !checkedApproved.value.includes(id)) checkedApproved.value.push(id)
@@ -709,7 +709,7 @@ function openResult(force = false) {
   // 兜底：时间线无数据时用当前在册课程构造结果
   if (!rows.length && enrollments.value.length) {
     rows = enrollments.value.map((e: any) => ({
-      id: e.enrollmentId,
+      id: e.id,   // 列表映射后字段是 id（=enrollmentId），无 enrollmentId 字段
       courseName: e.courseName || t('（课程已删除）'),
       category: e.category || '',
       credit: e.credit || 0,

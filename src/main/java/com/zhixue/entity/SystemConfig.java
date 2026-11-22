@@ -27,13 +27,13 @@ public class SystemConfig {
     private java.time.LocalDateTime roundCloseAt;
 
     @Column(name = "grad_req_required")
-    private Integer gradReqRequired = 6;
+    private Integer gradReqRequired = 18;
 
     @Column(name = "grad_req_elective")
-    private Integer gradReqElective = 5;
+    private Integer gradReqElective = 8;
 
     @Column(name = "grad_req_general")
-    private Integer gradReqGeneral = 3;
+    private Integer gradReqGeneral = 8;   // 公共选修：厦门华厦学院修满 8 学分硬指标
 
     @Column(name = "grad_req_practice")
     private Integer gradReqPractice = 2;
@@ -98,6 +98,30 @@ public class SystemConfig {
     @Column(name = "new_semester_ready")
     private Boolean newSemesterReady = false;
 
+    /** 补考成绩封顶分（补考通过按该分记，防止刷分；0/null 表示不封顶） */
+    @Column(name = "makeup_score_cap")
+    private Integer makeupScoreCap = 60;
+
+    /** 同一门课最多允许补考次数（超过后只允许重修） */
+    @Column(name = "makeup_max_attempts")
+    private Integer makeupMaxAttempts = 1;
+
+    /** 同一门课最多允许重修次数 */
+    @Column(name = "max_retake_attempts")
+    private Integer maxRetakeAttempts = 2;
+
+    /** 组班重修开班门槛：达到该报名人数才允许组班（未达到只能跟班/自修） */
+    @Column(name = "retake_group_threshold")
+    private Integer retakeGroupThreshold = 15;
+
+    /** 补考报名开始时间（空表示不限） */
+    @Column(name = "makeup_open_at")
+    private java.time.LocalDateTime makeupOpenAt;
+
+    /** 补考报名结束时间（空表示不限） */
+    @Column(name = "makeup_close_at")
+    private java.time.LocalDateTime makeupCloseAt;
+
     public SystemConfig() {}
 
     public Long getId() { return id; }
@@ -158,4 +182,17 @@ public class SystemConfig {
 
     public Integer getRoundProgress() { return roundProgress; }
     public void setRoundProgress(Integer v) { this.roundProgress = v; }
+
+    public Integer getMakeupScoreCap() { return makeupScoreCap; }
+    public void setMakeupScoreCap(Integer v) { this.makeupScoreCap = v; }
+    public Integer getMakeupMaxAttempts() { return makeupMaxAttempts; }
+    public void setMakeupMaxAttempts(Integer v) { this.makeupMaxAttempts = v; }
+    public Integer getMaxRetakeAttempts() { return maxRetakeAttempts; }
+    public void setMaxRetakeAttempts(Integer v) { this.maxRetakeAttempts = v; }
+    public Integer getRetakeGroupThreshold() { return retakeGroupThreshold; }
+    public void setRetakeGroupThreshold(Integer v) { this.retakeGroupThreshold = v; }
+    public java.time.LocalDateTime getMakeupOpenAt() { return makeupOpenAt; }
+    public void setMakeupOpenAt(java.time.LocalDateTime v) { this.makeupOpenAt = v; }
+    public java.time.LocalDateTime getMakeupCloseAt() { return makeupCloseAt; }
+    public void setMakeupCloseAt(java.time.LocalDateTime v) { this.makeupCloseAt = v; }
 }

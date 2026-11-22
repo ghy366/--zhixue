@@ -23,6 +23,18 @@ public class Course {
     private Integer credit;
     private Integer capacity;
     private String category;      // 公共必修/专业必修/专业选修/公共选修
+
+    /** 适用学院：专业必修课只排给该学院学生；null = 全校公共课。对接厦门华厦学院4个招生学院 */
+    @Column(name = "target_college")
+    private String targetCollege;
+
+    /**
+     * 适用专业：按培养方案精确排课，避免同学院不同专业共用课程表。
+     * 多个专业用 | 分隔；null / 空 = 全院通用（或全校公共课）。
+     */
+    @Column(name = "target_major", length = 500)
+    private String targetMajor;
+
     private String time;          // 如 "周一 08:00-09:40 / 周三 10:00-11:40"
     private String location;
     private String campus;        // 校区：主校区/东校区/西校区
@@ -64,6 +76,10 @@ public class Course {
     public void setCapacity(Integer capacity) { this.capacity = capacity; }
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
+    public String getTargetCollege() { return targetCollege; }
+    public void setTargetCollege(String targetCollege) { this.targetCollege = targetCollege; }
+    public String getTargetMajor() { return targetMajor; }
+    public void setTargetMajor(String targetMajor) { this.targetMajor = targetMajor; }
     public String getTime() { return time; }
     public void setTime(String time) { this.time = time; }
     public String getLocation() { return location; }

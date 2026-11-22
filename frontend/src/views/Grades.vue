@@ -31,7 +31,7 @@
       <!-- ===== 成绩概览统计（口径分明：GPA=全部学期累计，其余=当前选中学期） ===== -->
       <div class="gr-stats-row">
         <div class="gr-stat gpa">
-          <b>{{ gpa.value == null ? '—' : animGpa }}</b>
+          <b>{{ gpa == null ? '—' : animGpa }}</b>
           <span>{{ t('累计 GPA') }}</span>
           <small>{{ t('全部学期 · 学分加权 · 4.0 制') }}</small>
         </div>
@@ -53,7 +53,7 @@
         <div class="gr-stat">
           <b>{{ animScored }} <i class="gr-of">/ {{ grades.length }}</i></b>
           <span>{{ t('已录入 / 总课程') }}</span>
-          <small>{{ t('已获学分 {n}（成绩≥60）', { n: animEarned }) }}</small>
+          <small>{{ t('已通过学分 {n}（成绩≥60）', { n: animEarned }) }}</small>
         </div>
         <div class="gr-stat gpa ranking">
           <b>{{ rankText }}</b>
@@ -91,7 +91,8 @@
       </div>
 
       <!-- ===== 成绩明细 ===== -->
-      <el-table v-if="filtered.length" :data="filtered" v-loading="loading" style="width:100%" row-key="courseId">
+      <el-table v-if="filtered.length" :data="filtered" v-loading="loading" style="width:100%" row-key="courseId"
+                class="gr-table" @row-click="openDrawer">
         <el-table-column prop="courseName" :label="t('课程名')" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.courseName }}
@@ -112,14 +113,26 @@
             <span v-else class="muted">{{ t('未录入') }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('状态')" width="118" align="center">
+        <el-table-column :label="t('状态')" width="150" align="center">
           <template #default="{ row }">
             <template v-if="isEntered(row)">
               <span class="st-text" :class="'st-' + scoreTag(row.totalScore)">{{ statusText(row.totalScore) }}</span>
-              <span v-if="Number(row.totalScore) < 60" class="rt-flag" :class="row.retaking ? 'now' : 'todo'">
-                {{ row.retaking ? t('重修中') : t('待补考') }}
-              </span>
+              <span v-if="row.badge" class="gd-badge" :class="row.badge">{{ badgeText(row) }}</span>
             </template>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('补考 / 重修')" width="128" align="center">
+          <template #default="{ row }">
+            <button v-if="row.badge === 'makeup_todo' && row.makeup" class="btn btn-warning btn-sm"
+                    @click.stop="registerMakeup(row)">{{ t('补考报名') }}</button>
+            <span v-else-if="row.badge === 'makeup_registered'" class="muted">{{ t('已报名') }}</span>
+            <button v-else-if="row.badge === 'retake_todo' && row.retake" class="btn btn-danger btn-sm"
+                    @click.stop="applyRetake(row)">{{ t('重修报名') }}</button>
+            <span v-else-if="row.badge === 'retake_registered'" class="muted">{{ t('待教务安排') }}</span>
+            <span v-else-if="row.badge === 'retaking' && row.retake?.teachingClassNo" class="muted">{{ t('已进班') }}</span>
+            <button v-else-if="row.badge === 'retaking' && row.retake" class="btn btn-outline btn-sm"
+                    @click.stop="openDrawer(row)">{{ t('选跟班班级') }}</button>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
@@ -149,15 +162,115 @@
       <el-empty v-if="grades.length && !filtered.length" :description="t('该学期暂无成绩记录（成绩数据归属于当前学期）')" />
       <div class="gr-footnote">{{ t('口径：平均分/最高/最低仅统计已录入成绩（未录入不计入、不当 0 分）；GPA = Σ(绩点×课程学分) ÷ Σ学分，绩点换算与后端一致（90→4.0 · 85→3.7 · 80→3.3 · 75→3.0 · 70→2.7 · 65→2.3 · 60→2.0 · <60→0），补考通过按 60 分档封顶 2.0 计绩点、重修按实际分数；总评 = 平时×40% + 期末×60%；定位条 60 及格 / 90 优秀。挂科课程可补考、补考不过可重修，重修通过即获得学分。') }}</div>
     </template>
+
+    <!-- ===== 补考 / 重修入口：常驻面板，避免只在挂科行内出现导致找不到 ===== -->
+    <div class="gd-flow-panel">
+      <div class="gd-flow-head">
+        <b>{{ t('补考 / 重修') }}</b>
+        <span class="muted">{{ t('待处理 {n} 项', { n: pendingFlows.length }) }}</span>
+      </div>
+      <div v-if="!pendingFlows.length" class="gd-flow-empty">
+        {{ t('当前没有待处理的补考或重修。补考未通过或缺考后，系统会自动生成「重修报名」入口。') }}
+      </div>
+      <div v-else class="gd-flow-list">
+        <div v-for="f in pendingFlows" :key="f.kind + f.id" class="gd-flow-row">
+          <span class="gd-badge" :class="flowBadge(f)">
+            {{ f.kind === 'makeup' ? t('补考') : t('重修') }}
+          </span>
+          <b>{{ f.row.courseName }}</b>
+          <small>{{ f.kind === 'makeup' ? makeupStatusText(f.status) : retakeStatusText(f.status) }}</small>
+          <button v-if="f.canAct" class="btn btn-sm" :class="f.kind === 'makeup' ? 'btn-warning' : 'btn-danger'"
+                  @click="f.kind === 'makeup' ? registerMakeup(f.row) : applyRetake(f.row)">
+            {{ f.kind === 'makeup' ? t('补考报名') : t('重修报名') }}
+          </button>
+          <span v-else-if="f.kind === 'retake' && (f.status === 'APPLIED' || f.status === 'APPROVED')" class="muted">
+            {{ t('待教务安排') }}
+          </span>
+          <span v-else-if="f.kind === 'retake' && f.status === 'ENROLLED' && f.row.retake?.teachingClassNo" class="muted">
+            {{ t('已进班') }}
+          </span>
+          <button v-else-if="f.kind === 'retake'" class="btn btn-outline btn-sm" @click="openDrawer(f.row)">
+            {{ f.status === 'ENROLLED' ? t('更换跟班班级') : t('选跟班班级') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 修读流水抽屉：历次修读 + 补考报名状态 + 跟班重修选班 ===== -->
+    <el-drawer v-model="drawerOpen" :title="drawerRow?.courseName ? t('修读流水 · {n}', { n: drawerRow.courseName }) : t('修读流水')" size="560px"
+               :lock-scroll="false" :modal="true" @closed="releaseBodyScrollLock">
+      <div v-if="drawerRow" class="gd-drawer">
+        <div class="gd-flow">
+          <div v-for="(h, i) in drawerHistory" :key="i" class="gd-flow-item" :class="{ pass: Number(h.totalScore) >= 60 }">
+            <span class="gd-dot" />
+            <div class="gd-flow-main">
+              <b>{{ typeText(h.examType) }} · {{ t('第 {n} 次修读', { n: h.attemptNo }) }}</b>
+              <small>{{ h.semesterNo ? t('第 {n} 学期', { n: h.semesterNo }) : '' }} · {{ t('总评') }} {{ h.totalScore ?? '—' }}</small>
+            </div>
+            <em>{{ Number(h.totalScore) >= 60 ? t('通过') : t('未通过') }}</em>
+          </div>
+          <div v-if="!drawerHistory.length" class="muted">{{ t('暂无流水记录') }}</div>
+        </div>
+
+        <div v-if="drawerRow.makeup" class="gd-block">
+          <div class="gd-block-title">{{ t('补考') }}</div>
+          <p>{{ t('状态') }}：{{ makeupStatusText(drawerRow.makeup.status) }}
+            <template v-if="drawerRow.makeup.examTime"> · {{ t('考试时间') }} {{ drawerRow.makeup.examTime.replace('T', ' ') }}</template>
+            <template v-if="drawerRow.makeup.location"> · {{ t('地点') }} {{ drawerRow.makeup.location }}</template>
+          </p>
+          <button v-if="drawerRow.badge === 'makeup_todo'" class="btn btn-warning btn-sm" @click="registerMakeup(drawerRow)">
+            {{ t('报名本次补考') }}
+          </button>
+        </div>
+
+        <div v-if="drawerRow.retake" class="gd-block">
+          <div class="gd-block-title">{{ t('重修') }}</div>
+          <p>{{ t('状态') }}：{{ retakeStatusText(drawerRow.retake.status) }} · {{ t('形式') }}：{{ formText(drawerRow.retake.form) }}</p>
+          <p v-if="drawerRow.retake.teachingClassNo" class="gd-class-info">
+            {{ t('教学班') }}：<b>{{ drawerRow.retake.teachingClassNo }}</b>
+            <template v-if="drawerRow.retake.teachingClassTime"> · {{ drawerRow.retake.teachingClassTime }}</template>
+            <template v-if="drawerRow.retake.teachingClassLocation"> · {{ drawerRow.retake.teachingClassLocation }}</template>
+            <template v-if="drawerRow.retake.teachingClassTeacher"> · {{ drawerRow.retake.teachingClassTeacher }}</template>
+          </p>
+          <button v-if="drawerRow.badge === 'retake_todo'" class="btn btn-danger btn-sm" @click="applyRetake(drawerRow)">
+            {{ t('报名重修') }}
+          </button>
+          <p v-if="drawerRow.retake.status === 'APPLIED'" class="muted">
+            {{ t('已报名，等待教务统一安排教学班（组班或跟班）。') }}
+          </p>
+          <template v-if="!drawerRow.retake.teachingClassNo && (drawerRow.retake.status === 'APPROVED' || drawerRow.retake.status === 'ENROLLED')">
+            <div class="gd-block-title" style="margin-top:12px">{{ t('跟班重修 · 选择教学班') }}</div>
+            <div v-if="drawerLoading" class="muted">{{ t('加载可选教学班…') }}</div>
+            <div v-else class="gd-classes">
+              <label v-for="c in classes" :key="c.courseId" class="gd-class" :class="{ on: chosenClassId === c.courseId, conflict: c.conflict }">
+                <input type="radio" :value="c.courseId" v-model="chosenClassId" />
+                <div>
+                  <b>{{ c.name }}</b>
+                  <small>{{ c.teacherName }} · {{ c.time || t('时间待定') }} · {{ c.location || t('地点待定') }}</small>
+                  <span v-if="c.conflict" class="gd-conflict">{{ t('与当前课表冲突') }}</span>
+                </div>
+              </label>
+              <div v-if="!classes.length" class="muted">{{ t('暂无同课程教学班可选') }}</div>
+            </div>
+            <button class="btn btn-primary btn-sm" style="margin-top:10px" :disabled="!chosenClassId" @click="chooseClass">
+              {{ t('确认跟班并写入课表') }}
+            </button>
+          </template>
+        </div>
+
+        <div v-if="!drawerRow.makeup && !drawerRow.retake" class="muted">{{ t('该课程没有进行中的补考或重修流程') }}</div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api'
 import { useCountUp } from '@/utils/useCountUp'
 import { t } from '@/i18n'
+import { semesterTitle, isZsbUser } from '@/utils/semester'
 
 interface Grade {
   courseId: number; courseName: string; teacherName: string; category: string
@@ -166,6 +279,146 @@ interface Grade {
   examType?: string | null; attempt?: number | null
   failed?: boolean; retaking?: boolean
   semesterNo?: number | null; semesterLabel?: string | null
+  badge?: string
+  history?: any[]
+  makeup?: { id: number; status: string; attemptNo?: number; score?: number | null; examTime?: string | null; location?: string | null } | null
+  retake?: { id: number; status: string; attemptNo?: number; form?: string | null; targetClassId?: number | null; score?: number | null
+    teachingClassNo?: string | null; teachingClassTime?: string | null
+    teachingClassLocation?: string | null; teachingClassTeacher?: string | null } | null
+}
+
+/* ===== 修读流水抽屉 + 补考/重修报名 ===== */
+const drawerOpen = ref(false)
+const drawerRow = ref<Grade | null>(null)
+const drawerHistory = ref<any[]>([])
+const classes = ref<any[]>([])
+const chosenClassId = ref<number | null>(null)
+const drawerLoading = ref(false)
+
+/** 常驻「补考 / 重修」入口的数据源：进行中的补考册与重修申请 */
+const pendingFlows = computed(() => {
+  const out: { kind: 'makeup' | 'retake'; id: number; row: Grade; status: string; canAct: boolean }[] = []
+  for (const g of grades.value) {
+    if (g.makeup && ['ELIGIBLE', 'REGISTERED', 'SCHEDULED'].includes(g.makeup.status)) {
+      out.push({ kind: 'makeup', id: g.makeup.id, row: g, status: g.makeup.status, canAct: g.makeup.status === 'ELIGIBLE' })
+    }
+    if (g.retake && ['ELIGIBLE', 'APPLIED', 'APPROVED', 'ENROLLED'].includes(g.retake.status)) {
+      out.push({ kind: 'retake', id: g.retake.id, row: g, status: g.retake.status, canAct: g.retake.status === 'ELIGIBLE' })
+    }
+  }
+  return out
+})
+/** 面板徽章样式：待报名 / 已报名待教务安排 / 重修中 */
+function flowBadge(f: { kind: 'makeup' | 'retake'; status: string }): string {
+  if (f.kind === 'makeup') {
+    return f.status === 'REGISTERED' || f.status === 'SCHEDULED' ? 'makeup_registered' : 'makeup_todo'
+  }
+  if (f.status === 'ENROLLED') return 'retaking'
+  if (f.status === 'APPLIED' || f.status === 'APPROVED') return 'retake_registered'
+  return 'retake_todo'
+}
+
+const BADGE_TEXT: Record<string, string> = {
+  makeup_todo: '待补考',
+  makeup_registered: '补考已报名',
+  retake_todo: '待重修',
+  retake_registered: '重修已报名',
+  retaking: '重修中',
+  makeup_passed: '已通过·补考',
+}
+function badgeText(row: Grade): string {
+  if (row.badge === 'retake_passed') return t('已通过·重修{n}', { n: row.retake?.attemptNo ?? '' })
+  return row.badge ? t(BADGE_TEXT[row.badge] || row.badge) : ''
+}
+function typeText(tp?: string | null): string {
+  return tp === 'makeup' ? t('补考') : tp === 'retake' ? t('重修') : t('正考')
+}
+function makeupStatusText(s: string): string {
+  const map: Record<string, string> = {
+    ELIGIBLE: '待报名', REGISTERED: '已报名', SCHEDULED: '已排考',
+    PASSED: '已通过', FAILED: '未通过', ABSENT: '缺考', CANCELLED: '已取消',
+  }
+  return t(map[s] || s)
+}
+function retakeStatusText(s: string): string {
+  const map: Record<string, string> = {
+    ELIGIBLE: '待报名', APPLIED: '已报名', APPROVED: '已安排', ENROLLED: '已进班',
+    PASSED: '已通过', FAILED: '未通过', CANCELLED: '已取消',
+  }
+  return t(map[s] || s)
+}
+function formText(f?: string | null): string {
+  return f === 'GROUP' ? t('组班') : f === 'FOLLOW' ? t('跟班') : f === 'SELF' ? t('自修') : t('未定')
+}
+
+async function openDrawer(row: Grade) {
+  drawerRow.value = row
+  drawerOpen.value = true
+  drawerHistory.value = row.history || []
+  classes.value = []
+  chosenClassId.value = null
+  try {
+    const r: any = await http.get('/grades/mine/records', { params: { courseId: row.courseId } })
+    drawerHistory.value = r?.data?.history || drawerHistory.value
+  } catch {}
+  if (row.retake && ['APPLIED', 'APPROVED'].includes(row.retake.status)) {
+    loadClasses(row)
+  }
+}
+
+async function loadClasses(row: Grade) {
+  drawerLoading.value = true
+  try {
+    const r: any = await http.get('/retake/classes', { params: { courseId: row.courseId } })
+    classes.value = r?.data || []
+  } catch {
+    classes.value = []
+  }
+  drawerLoading.value = false
+}
+
+async function registerMakeup(row: Grade) {
+  if (!row.makeup) return
+  try {
+    const r: any = await http.post(`/makeup/${row.makeup.id}/register`)
+    ElMessage.success(r?.message || t('补考报名成功'))
+    await load()
+    if (drawerOpen.value) await openDrawer(grades.value.find(g => g.courseId === row.courseId) || row)
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || t('报名失败'))
+  }
+}
+
+async function applyRetake(row: Grade) {
+  if (!row.retake) return
+  const fee = 200 * (Number((row as any).credit) || 0)
+  try {
+    await ElMessageBox.confirm(
+      t('《{name}》重修费 {fee} 元（200 元/学分 · 华厦教字〔2017〕8号）；缴费后原则上不退费，报名前请考虑清楚。确认报名？',
+        { name: row.courseName, fee }),
+      t('重修报名'), { type: 'warning', confirmButtonText: t('确认报名'), cancelButtonText: t('暂不报名') })
+  } catch { return }
+  try {
+    const r: any = await http.post(`/retake/${row.retake.id}/apply`)
+    ElMessage.success(r?.message || t('重修报名成功'))
+    await load()
+    if (drawerOpen.value) await openDrawer(grades.value.find(g => g.courseId === row.courseId) || row)
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || t('报名失败'))
+  }
+}
+
+async function chooseClass() {
+  const row = drawerRow.value
+  if (!row?.retake || !chosenClassId.value) return
+  try {
+    const r: any = await http.post(`/retake/${row.retake.id}/choose-class`, { courseId: chosenClassId.value })
+    ElMessage.success(r?.message || t('已加入跟班重修'))
+    drawerOpen.value = false
+    await load()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || t('选班失败'))
+  }
 }
 
 const loading = ref(false)
@@ -198,7 +451,6 @@ function isEntered(g: Grade): boolean {
 
 /* ===== 统计（只统计已录入成绩；0 分若平时/期末齐全视为真实 0 分） ===== */
 const scoredRows = computed(() => filtered.value.filter(isEntered))
-const allScored = computed(() => grades.value.filter(isEntered))
 const scoredCount = computed(() => scoredRows.value.length)
 const avgScore = computed(() => {
   const g = scoredRows.value
@@ -221,10 +473,18 @@ function gradeCls(n: number) {
   if (n >= 60) return 'mid'
   return 'bad'
 }
-/** 已获学分：已录入且总评 ≥60 的课程学分合计（学分来自真实课程数据） */
-const earnedCredits = computed(() =>
-  allScored.value.filter(g => Number(g.totalScore) >= 60).reduce((s, g) => s + (g.credit || 0), 0)
-)
+/* ===== 累计 GPA / 已通过学分：后端成绩流水有效记录（唯一口径，与毕业判定同源） ===== */
+const gpa = ref<number | null>(null)
+const earnedCredits = ref<number>(0)
+async function loadGpa() {
+  try {
+    const r: any = await http.get('/graduation/gpa')
+    const d = r?.data || {}
+    const v = Number(d.gpa)
+    gpa.value = Number.isFinite(v) ? v : null
+    earnedCredits.value = Number(d.earnedCredit) || 0
+  } catch {}
+}
 
 /** 与后端 GradeService.scoreToGpa 一致的 4.0 制换算（90→4 85→3.7 80→3.3 75→3 70→2.7 65→2.3 60→2 <60→0）。
     补考（makeup）通过一律按 60 分档封顶 2.0 计绩点——真实高校「补考通过不刷绩点」规则；重修按实际分数 */
@@ -234,14 +494,6 @@ function scoreToGpa(s: number, examType?: string | null): number {
   return examType === 'makeup' ? Math.min(2.0, p) : p
 }
 
-/** 累计 GPA：全部轮次已录入成绩、按真实课程学分加权（后端 gpaOfStudent 硬编码学分 3 不可靠，前端按真实学分计算） */
-const gpa = computed<number | null>(() => {
-  const scored = allScored.value.filter(g => g.credit > 0)
-  if (!scored.length) return null
-  const weighted = scored.reduce((s, g) => s + scoreToGpa(Number(g.totalScore), g.examType) * g.credit, 0)
-  const credits = scored.reduce((s, g) => s + g.credit, 0)
-  return credits > 0 ? Math.round((weighted / credits) * 100) / 100 : null
-})
 const gpaText = computed(() => gpa.value != null ? gpa.value.toFixed(2) : '—')
 
 /* ===== 类别均分：按课程类别聚合，展示有效成绩数量 ===== */
@@ -330,7 +582,7 @@ async function printTranscript() {
   const bySem = new Map()
   for (const g of rows) {
     const no = g.semesterNo ?? 0
-    if (!bySem.has(no)) bySem.set(no, { label: g.semesterLabel || ('第 ' + no + ' 学期'), list: [] })
+    if (!bySem.has(no)) bySem.set(no, { label: semesterTitle(no, isZsbUser()), list: [] })
     bySem.get(no).list.push(g)
   }
   const gpaTxt = gpa.value != null ? gpa.value.toFixed(2) : '—'
@@ -365,7 +617,7 @@ async function printTranscript() {
     <h1>智学选课 · 学生成绩单</h1>
     <div class="meta">姓名：${esc(stu.name)}　学号：${esc(stu.no)}　专业：${esc(stu.major)}　打印时间：${new Date().toLocaleString('zh-CN')}</div>
     ${semHtml}
-    <div class="sum">累计 GPA：<b>${gpaTxt}</b>　已获学分：<b>${earned}</b>　已通过课程：<b>${rows.filter(g => Number(g.totalScore) >= 60).length} 门</b></div>
+    <div class="sum">累计 GPA：<b>${gpaTxt}</b>　已通过学分：<b>${earned}</b>　已通过课程：<b>${rows.filter(g => Number(g.totalScore) >= 60).length} 门</b></div>
     <script>window.onload = () => setTimeout(() => window.print(), 300)<\/script>
     </body></html>`)
   w.document.close()
@@ -398,12 +650,17 @@ async function load() {
       }
       currentSemesterNo.value = sem
     }
-    grades.value = (r?.data?.list || r?.data || []) as Grade[]
+    const allGrades = (r?.data?.list || r?.data || []) as Grade[]
+    // 未来学期不可能有成绩：过滤掉 semesterNo > 当前学期的记录（培养方案提前排课/误录数据的兜底）
+    const curSem = currentSemesterNo.value
+    grades.value = curSem != null
+      ? allGrades.filter(g => g.semesterNo == null || g.semesterNo <= curSem)
+      : allGrades
     // 学期选项：从成绩的修读学期聚合（学期序降序），当前学期标注「进行中」
     const semSet = new Map<number, string>()
     for (const g of grades.value) {
       if (g.semesterNo != null && !semSet.has(g.semesterNo)) {
-        semSet.set(g.semesterNo, g.semesterLabel || `第 ${g.semesterNo} 学期`)
+        semSet.set(g.semesterNo, semesterTitle(g.semesterNo, isZsbUser()))
       }
     }
     const list: SemOpt[] = [...semSet.entries()]
@@ -435,8 +692,21 @@ async function load() {
   }
   loading.value = false
   loadRanking()
+  loadGpa()
 }
 onMounted(load)
+
+/* 兜底：Element Plus 弹层偶发残留 el-popup-parent--hidden（锁 body 滚动），
+   会导致成绩档案页「往下滚后滑不上去」。抽屉关闭/组件卸载时强制解锁。 */
+function releaseBodyScrollLock() {
+  nextTick(() => {
+    const b = document.body
+    b.classList.remove('el-popup-parent--hidden')
+    if (b.style.overflow === 'hidden') b.style.overflow = ''
+  })
+}
+watch(drawerOpen, (open) => { if (!open) releaseBodyScrollLock() })
+onBeforeUnmount(releaseBodyScrollLock)
 </script>
 
 <style scoped>
@@ -470,11 +740,56 @@ onMounted(load)
 
 /* 补考/重修标记 */
 .gr-exam-tag { margin-left: 5px; }
-.rt-flag { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; vertical-align: 1px; }
-.rt-flag.now { color: #b45309; background: rgba(217,119,6,.12); border: 1px solid rgba(217,119,6,.35); }
-.rt-flag.todo { color: #be123c; background: rgba(190,18,60,.08); border: 1px dashed rgba(190,18,60,.4); }
-html.dark .rt-flag.now { color: #fbbf24; }
-html.dark .rt-flag.todo { color: #fb7185; }
+.gr-table :deep(.el-table__row) { cursor: pointer; }
+.gd-badge {
+  display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700;
+  padding: 1px 8px; border-radius: 999px; vertical-align: 1px; white-space: nowrap;
+}
+.gd-badge.makeup_todo { color: #b45309; background: rgba(217,119,6,.12); border: 1px dashed rgba(217,119,6,.5); }
+.gd-badge.makeup_registered { color: #1d4ed8; background: rgba(37,99,235,.1); border: 1px solid rgba(37,99,235,.35); }
+.gd-badge.retake_todo { color: #be123c; background: rgba(190,18,60,.08); border: 1px dashed rgba(190,18,60,.4); }
+.gd-badge.retake_registered { color: #b45309; background: rgba(217,119,6,.1); border: 1px solid rgba(217,119,6,.35); }
+.gd-badge.retaking { color: #7c3aed; background: rgba(124,58,237,.1); border: 1px solid rgba(124,58,237,.35); }
+.gd-badge.makeup_passed, .gd-badge.retake_passed { color: #047857; background: rgba(5,150,105,.1); border: 1px solid rgba(5,150,105,.35); }
+html.dark .gd-badge.makeup_todo { color: #fbbf24; }
+html.dark .gd-badge.retake_todo { color: #fb7185; }
+html.dark .gd-badge.retake_registered { color: #fbbf24; }
+html.dark .gd-badge.retaking { color: #c4b5fd; }
+
+/* ===== 常驻补考 / 重修入口 ===== */
+.gd-flow-panel { margin-top: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.gd-flow-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.gd-flow-head b { font-size: 14px; color: var(--text); }
+.gd-flow-empty { font-size: 12.5px; color: var(--text-lighter); line-height: 1.7; }
+.gd-flow-list { display: flex; flex-direction: column; gap: 8px; }
+.gd-flow-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; }
+.gd-flow-row b { font-size: 13px; color: var(--text); }
+.gd-flow-row small { font-size: 12px; color: var(--text-lighter); flex: 1; }
+.gd-flow-row .gd-badge { margin-left: 0; }
+
+/* ===== 修读流水抽屉 ===== */
+.gd-drawer { display: flex; flex-direction: column; gap: 18px; }
+.gd-flow { display: flex; flex-direction: column; gap: 0; position: relative; }
+.gd-flow-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0 14px 18px; position: relative; border-left: 2px solid var(--border); }
+.gd-dot { position: absolute; left: -7px; top: 14px; width: 12px; height: 12px; border-radius: 50%; background: #e11d48; border: 2px solid var(--card); }
+.gd-flow-item.pass .gd-dot { background: #059669; }
+.gd-flow-main { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.gd-flow-main b { font-size: 13px; color: var(--text); }
+.gd-flow-main small { font-size: 12px; color: var(--text-lighter); }
+.gd-flow-item em { font-style: normal; font-size: 12px; font-weight: 700; color: #e11d48; }
+.gd-flow-item.pass em { color: #059669; }
+.gd-block { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.gd-block-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.gd-block p { margin: 0 0 8px; font-size: 12.5px; color: var(--text-light); }
+.gd-classes { display: flex; flex-direction: column; gap: 8px; }
+.gd-class { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; cursor: pointer; }
+.gd-class.on { border-color: var(--primary); background: rgba(37,99,235,.06); }
+.gd-class.conflict { border-style: dashed; }
+.gd-class b { display: block; font-size: 13px; color: var(--text); }
+.gd-class small { display: block; font-size: 12px; color: var(--text-lighter); margin-top: 2px; }
+.gd-conflict { display: inline-block; margin-top: 4px; font-size: 11px; color: #be123c; }
+.gd-class-info { padding: 8px 10px; border-radius: 8px; background: rgba(37,99,235,.06); }
+.gd-class-info b { color: var(--primary-deep); }
 
 /* ===== 概览统计行：统一高度/圆角/字号 ===== */
 .gr-stats-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }

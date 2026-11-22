@@ -8,6 +8,12 @@
     </div>
     <!-- ===== 毕业进度主视觉 ===== -->
     <div class="grad-hero" v-if="summary" v-show="gradTab === 'overview'">
+      <!-- 视觉模式切换：图表 / 星图 -->
+      <div class="hero-mode">
+        <button :class="{ on: skyMode === 'chart' }" @click="skyMode = 'chart'"><span v-html="svgIcon('bar-chart')" />{{ t('图表') }}</button>
+        <button :class="{ on: skyMode === 'sky' }" @click="skyMode = 'sky'"><span v-html="svgIcon('sparkles')" />{{ t('星图') }}</button>
+      </div>
+      <template v-if="skyMode === 'chart'">
       <!-- 左：总进度大环 -->
       <div class="grad-hero-left">
         <div class="grad-ring-box">
@@ -46,7 +52,7 @@
             <div class="ring-pct">{{ dispPct }}<small>%</small></div>
             <div class="ring-sub">{{ t('已获') }} <b>{{ dispEarned }}</b> / {{ sumRequired }} {{ t('学分') }}</div>
             <div class="ring-gap" :class="{ done: !sumGap && allDone }">
-              {{ allDone ? t('全部达标 · 恭喜') : (sumGap ? t('还差 {n} 学分', { n: sumGap }) : (coursesGap ? t('课程数还差 {n} 门', { n: coursesGap }) : t('必修课未全部通过'))) }}
+              {{ allDone ? t('全部达标 · 恭喜') : (sumGap ? t('还差 {n} 学分', { n: sumGap }) : t('必修课未全部通过')) }}
             </div>
           </div>
         </div>
@@ -62,7 +68,7 @@
           <span class="ghr-req-tag" :class="summary.requirementSource === 'grade' ? 'grade' : 'default'">
             {{ summary.requirementLabel || t('全校默认要求') }}
           </span>
-          <span class="ghr-req-note">{{ t('学分 + 课程数 双达标') }}</span>
+          <span class="ghr-req-note">{{ t('必修 + 公共选修 + 专业选修 三类达标') }}</span>
         </div>
 
         <div v-for="c in cats" :key="c.key" class="cat-row" :class="{ done: c.done }">
@@ -75,7 +81,7 @@
               <i :style="{ width: pctOf(c) + '%', background: barGrad(c) }" />
               <em v-if="!c.done" :style="{ left: pctOf(c) + '%' }" />
             </div>
-            <span class="cat-nums"><b :style="{ color: c.done ? '#34d399' : CAT_COLORS[c.key] }">{{ c.earned }}</b>/{{ c.required }}</span>
+            <span class="cat-nums"><b :style="{ color: c.done ? '#34d399' : CAT_COLORS[c.key] }">{{ Math.min(c.earned || 0, c.required || 0) }}</b>/{{ c.required }}</span>
             <span class="cat-state" :class="c.done ? 'ok' : 'gap'">{{ c.done ? t('达标') : t('差 {n}', { n: c.gap }) }}</span>
           </div>
           <!-- 必修：未通过课程清单（本轮已在修的标「重修中」） -->
@@ -88,21 +94,20 @@
           </div>
         </div>
 
-        <!-- 课程数双达标进度 -->
-        <div v-if="coursesProgress && coursesProgress.required > 0" class="cat-row" :class="{ done: coursesProgress.done }">
-          <div class="cat-line">
-            <span class="cat-ico" style="background: rgba(100,116,139,.14); color: #475569;">
-              <span v-html="svgIcon('clipboard')" />
-            </span>
-            <span class="cat-name">{{ t('课程数') }}</span>
-            <div class="cat-bar">
-              <i :style="{ width: (coursesProgress.percent || 0) + '%', background: 'linear-gradient(90deg,#475569,#94a3b8)' }" />
-              <em v-if="!coursesProgress.done" :style="{ left: (coursesProgress.percent || 0) + '%' }" />
-            </div>
-            <span class="cat-nums"><b :style="{ color: coursesProgress.done ? '#34d399' : '#475569' }">{{ coursesProgress.earned }}</b>/{{ coursesProgress.required }}</span>
-            <span class="cat-state" :class="coursesProgress.done ? 'ok' : 'gap'">{{ coursesProgress.done ? t('达标') : t('差 {n}', { n: coursesProgress.gap }) }}</span>
-          </div>
-        </div>
+      </div>
+      </template>
+      <!-- 星图模式：三维毕业星图（三星座 × 每课一星，拖拽旋转 / 悬停查看） -->
+      <div v-else class="grad-sky-box">
+        <GradGalaxy3D
+          :key="galaxySems.length"
+          :semesters="galaxySems"
+          :stars="skyStars"
+          :percent="clampPct"
+          :earned="dispEarned"
+          :required="sumRequired"
+          :gap="sumGap"
+          :current-semester-no="galaxyCurSem"
+        />
       </div>
     </div>
 
@@ -140,7 +145,7 @@
         <div v-for="s in semesters" :key="s.semesterNo" class="sem-row"
           :class="{ done: s.done && !s.future, current: s.current, future: s.future }">
           <div class="sem-head">
-            <span class="sem-badge">{{ s.label }}</span>
+            <span class="sem-badge">{{ semLabelOf(s) }}</span>
             <span class="sem-year">{{ s.schoolYear }}</span>
             <span v-if="s.current" class="sem-cur">{{ t('当前学期') }}</span>
             <span v-else-if="s.future" class="sem-future">{{ t('未开始') }}</span>
@@ -153,8 +158,8 @@
           </div>
           <div class="sem-chips">
             <span v-for="c in s.courses" :key="c.name" class="cm-chip"
-              :class="{ retaking: c.retaking, ok: c.passed, fail: c.failed, pending: c.pendingScore && !s.future }">
-              {{ c.name }}<em v-if="c.score != null" class="cm-score">{{ c.score }}分</em><i v-if="c.retaking" class="cm-flag">{{ t('重修中') }}</i><i v-else-if="c.pendingScore && !s.future" class="cm-flag pending-flag">{{ t('待出成绩') }}</i>
+              :class="{ retaking: c.retaking, ok: c.passed, fail: c.failed, noscore: c.noScore }">
+              {{ c.name }}<em v-if="c.score != null" class="cm-score">{{ c.score }}分</em><i v-if="c.retaking" class="cm-flag">{{ t('重修中') }}</i><i v-else-if="c.noScore" class="cm-flag noscore-flag">{{ t('暂无成绩') }}</i>
             </span>
           </div>
         </div>
@@ -175,7 +180,7 @@
       </div>
       <div class="semf-body">
         <div class="semf-head">
-          <span class="sem-badge">{{ focusSem.label }}</span>
+          <span class="sem-badge">{{ semLabelOf(focusSem) }}</span>
           <span class="sem-year">{{ focusSem.schoolYear }}</span>
           <span v-if="focusSem.current" class="sem-cur">{{ t('当前学期') }}</span>
           <span v-else-if="focusSem.future" class="sem-future">{{ t('未开始') }}</span>
@@ -187,10 +192,10 @@
         </div>
         <div class="semf-courses">
           <span v-for="c in focusSem.courses" :key="c.name" class="cm-chip"
-            :class="{ retaking: c.retaking, ok: c.passed, fail: c.failed, pending: c.pendingScore && !focusSem.future }">
-            {{ c.name }}<em v-if="c.score != null" class="cm-score">{{ c.score }}分</em><i v-if="c.retaking" class="cm-flag">{{ t('重修中') }}</i><i v-else-if="c.pendingScore && !focusSem.future" class="cm-flag pending-flag">{{ t('待出成绩') }}</i>
+            :class="{ retaking: c.retaking, ok: c.passed, fail: c.failed, noscore: c.noScore }">
+            {{ c.name }}<em v-if="c.score != null" class="cm-score">{{ c.score }}分</em><i v-if="c.retaking" class="cm-flag">{{ t('重修中') }}</i><i v-else-if="c.noScore" class="cm-flag noscore-flag">{{ t('暂无成绩') }}</i>
           </span>
-          <span v-if="!focusSem.courses.length" class="semf-nocourse">{{ t('本学期无必修课（毕设/实习环节）') }}</span>
+          <span v-if="!focusSem.courses.length" class="semf-nocourse">{{ focusSem.future ? t('该学期尚未开课——课程安排将在学期推进后公布（规划 {n} 学分）', { n: focusSem.credits }) : t('本学期无必修课（毕设/实习环节）') }}</span>
         </div>
       </div>
     </div>
@@ -246,27 +251,32 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import http from '@/api'
 import IntentPointsDialog from '@/components/IntentPointsDialog.vue'
+import GradGalaxy3D from '@/components/GradGalaxy3D.vue'
+import { useAuthStore } from '@/stores/auth'
 import { t } from '@/i18n'
+import { semesterTitle, isZsbUser } from '@/utils/semester'
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
+const auth = useAuthStore()
 
 /* ===== 视图 Tab：毕业总览 / 按学期进度 ===== */
 const gradTab = ref<'overview' | 'semesters'>('overview')
-const icons: Record<string, string> = { '必修': 'book', '选修': 'book-open', '通识': 'layers', '实践': 'flask' }
-const CAT_COLORS: Record<string, string> = { '必修': '#0f6f52', '选修': '#0284c7', '通识': '#0369a1', '实践': '#b45309' }
+/* 毕业总览视觉模式：chart = 环 + 类别进度条；sky = 三维毕业星图（three.js） */
+const skyMode = ref<'chart' | 'sky'>('chart')
+const scoreRows = ref<any[]>([])
+const icons: Record<string, string> = { '必修': 'book', '公共选修': 'layers', '专业选修': 'book-open' }
+const CAT_COLORS: Record<string, string> = { '必修': '#0f6f52', '公共选修': '#b45309', '专业选修': '#0284c7' }
 const CAT_BG: Record<string, string> = {
-  '必修': 'rgba(43,177,135,.14)', '选修': 'rgba(14,165,233,.14)',
-  '通识': 'rgba(13,148,136,.14)', '实践': 'rgba(245,158,11,.14)',
+  '必修': 'rgba(43,177,135,.14)', '公共选修': 'rgba(245,158,11,.14)', '专业选修': 'rgba(14,165,233,.14)',
 }
 const softBg = (k: string) => CAT_BG[k] || 'rgba(43,177,135,.14)'
 const barGrad = (c: any) => c.done
   ? 'linear-gradient(90deg, #0f6f52, #14b8a6)'
-  : `linear-gradient(90deg, ${CAT_COLORS[c.key] || '#2bb187'}, ${c.key === '实践' ? '#b45309' : c.key === '选修' ? '#0f766e' : '#0f766e'})`
+  : `linear-gradient(90deg, ${CAT_COLORS[c.key] || '#2bb187'}, ${c.key === '公共选修' ? '#f59e0b' : '#0f766e'})`
 const groupOf = (category: string) => {
-  if (!category) return '选修'
+  if (!category) return '专业选修'
   if (category.includes('必修')) return '必修'
-  if (category.includes('通识')) return '通识'
-  if (category.includes('实践')) return '实践'
-  return '选修'
+  if (category.includes('公共选修') || category.includes('通识')) return '公共选修'
+  return '专业选修'
 }
 
 /* ---------- 环 ---------- */
@@ -286,7 +296,13 @@ function missingRow(c: any): any[] {
 const doneCount = computed(() => cats.value.filter(c => c.done).length)
 
 /** 必修课按培养方案学期分组进度（后端 GraduationService.summary().semesters） */
-const semesters = computed<any[]>(() => summary.value?.semesters || [])
+/** 学期进度只呈现「已开学」的学期：未来学期对学生隐藏，到相应学期才开放（课程由教务开学前排定） */
+const semesters = computed<any[]>(() => (summary.value?.semesters || []).filter(s => !s.future))
+/** 学期分组标签：后端写死「第 N 学期」，统一转成通俗口径（大一上/大三上…），与全站一致 */
+function semLabelOf(s: any): string {
+  if (!s || s.semesterNo == null || s.semesterNo < 1) return s?.label || '—'
+  return semesterTitle(s.semesterNo, isZsbUser())
+}
 
 /* ===== 学期视图切换：全部（时间线）/ 单学期（学分进度环） ===== */
 const semView = ref<number | 'all'>('all')
@@ -294,7 +310,7 @@ const semViewOptions = computed(() => [
   { no: 'all' as const, label: t('全部学期总览') },
   ...semesters.value.map(s => ({
     no: s.semesterNo as number,
-    label: `${s.label} · ${s.schoolYear || ''}${s.current ? t('（进行中）') : ''}`,
+    label: `${semLabelOf(s)} · ${s.schoolYear || ''}${s.current ? t('（进行中）') : ''}`,
   })),
 ])
 const focusSem = computed(() => semesters.value.find(s => s.semesterNo === semView.value) || null)
@@ -325,16 +341,88 @@ async function applyGraduation() {
   } finally { applying.value = false }
 }
 
-/* 学分统计口径（还原原版判定）：每个类别最多按「要求学分」计入总进度，
-   一类修满不能抵扣其他类别的缺口；总达标需四类全部达标（含必修逐门通过）。 */
+/* 学分统计口径：必修 + 公共选修 + 专业选修三类，每类最多按「要求学分」计入总进度，
+   一类修满不能抵扣另一类的缺口；总达标需两类全部达标（含必修逐门通过）。 */
 const sumEarned = computed(() => cats.value.reduce((s, c) => s + Math.min(Number(c.earned) || 0, Number(c.required) || 0), 0))
 const sumRequired = computed(() => cats.value.reduce((s, c) => s + (Number(c.required) || 0), 0))
 const sumGap = computed(() => Math.max(0, sumRequired.value - sumEarned.value))
-const coursesProgress = computed<any>(() => summary.value?.courses || null)
-const coursesGap = computed(() => coursesProgress.value ? Math.max(0, (Number(coursesProgress.value.required) || 0) - (Number(coursesProgress.value.earned) || 0)) : 0)
-const allDone = computed(() =>
-  cats.value.length > 0 && cats.value.every(c => c.done)
-  && (!coursesProgress.value || Number(coursesProgress.value.required) <= 0 || coursesProgress.value.done))
+const allDone = computed(() => cats.value.length > 0 && cats.value.every(c => c.done))
+
+/* ---------- 毕业星图数据：成绩档案（已修/在修/挂科） ∪ 培养方案计划课（未修） ---------- */
+const galaxyCurSem = computed<number>(() => {
+  const grade = Number(auth.user?.grade) || 0
+  const now = new Date()
+  const y = now.getFullYear(), m = now.getMonth() + 1
+  let cs = grade >= 2000 ? (m >= 8 ? (y - grade) * 2 + 1 : (m === 1 ? (y - grade) * 2 - 1 : (y - grade) * 2)) : 1
+  if (isZsbUser()) cs = Math.min(4, cs)
+  return Math.max(1, cs)
+})
+
+const galaxySems = computed<any[]>(() => {
+  if (!summary.value) return []
+  const zsb = isZsbUser()
+  const total = zsb ? 4 : 8
+  const bySem = new Map<number, any[]>()
+  for (const sem of summary.value.semesters || []) {
+    for (const c of sem.courses || []) {
+      const arr = bySem.get(sem.semesterNo) || []
+      arr.push(c); bySem.set(sem.semesterNo, arr)
+    }
+  }
+  const out: any[] = []
+  for (let s = 1; s <= total; s++) {
+    const list = bySem.get(s) || []
+    const credits = list.reduce((a, c) => a + (Number(c.credit) || 0), 0)
+    const earned = list.reduce((a, c) => a + ((Number(c.score) || 0) >= 60 ? (Number(c.credit) || 0) : 0), 0)
+    const failed = list.some(c => c.score != null && Number(c.score) < 60)
+    const retaking = list.some(c => c.retaking)
+    const pending = list.some(c => c.score == null)
+    const status = !list.length ? 'future' : failed ? 'failed' : retaking ? 'retaking' : pending ? 'pending' : 'passed'
+    out.push({ semesterNo: s, label: semesterTitle(s, zsb), credits, earned, status, courses: list })
+  }
+  return out
+})
+
+const skyStars = computed<any[]>(() => {
+  if (!summary.value) return []
+  // 培养方案侧信息：重修中（挂科且本轮在修）→ 星图上优先显示「重修中」而非「未通过」
+  const retakingNames = new Set<string>()
+  for (const sem of summary.value.semesters || []) {
+    for (const c of sem.courses || []) if (c.retaking) retakingNames.add(c.name)
+  }
+  const out: any[] = []
+  const seen = new Set<string>()
+  // 已修 / 在修 / 挂科：来自成绩档案（含类别、学分、学期、分数）
+  for (const s of scoreRows.value) {
+    if (!s.courseName || seen.has(s.courseName)) continue
+    seen.add(s.courseName)
+    const total = s.totalScore == null ? null : Number(s.totalScore)
+    const failed = total != null && total < 60
+    const status = total == null ? 'pending' : (failed ? (retakingNames.has(s.courseName) ? 'retaking' : 'failed') : 'passed')
+    out.push({
+      name: s.courseName,
+      group: groupOf(s.category),
+      credit: Number(s.credit) || 1,
+      semesterNo: s.semesterNo,
+      status,
+      score: total,
+    })
+  }
+  // 计划必修缺口：summary 按学期进度里未出现在成绩档案的课（未修 / 待出分）
+  for (const sem of summary.value.semesters || []) {
+    for (const c of sem.courses || []) {
+      if (seen.has(c.name)) continue
+      seen.add(c.name)
+      const retaking = !!c.retaking
+      if (c.score != null) {
+        out.push({ name: c.name, group: groupOf('必修'), credit: c.credit, semesterNo: sem.semesterNo, status: retaking ? 'retaking' : 'failed', score: c.score })
+      } else {
+        out.push({ name: c.name, group: groupOf('必修'), credit: c.credit, semesterNo: sem.semesterNo, status: retaking ? 'retaking' : 'planned', score: null })
+      }
+    }
+  }
+  return out
+})
 
 /* 环心数字随环生长滚动 */
 const dispPct = ref(0)
@@ -362,44 +450,24 @@ watch([sumEarned, sumRequired], () => {
   }
   requestAnimationFrame(step)
 })
-/* 及格线：总评 ≥ 60 才算「获得」该课学分。
-   后端若按「已录取课程」累计（含未出成绩/不及格），这里按成绩二次校正各类别已获学分。 */
-const PASS_LINE = 60
-function applyPassedCredits(rows: any) {
-  if (!Array.isArray(rows) || !summary.value) return
-  const seen = new Set<number>()
-  const earned: Record<string, number> = { '必修': 0, '选修': 0, '通识': 0, '实践': 0 }
-  for (const row of rows) {
-    const id = Number(row.courseId)
-    if (seen.has(id)) continue
-    seen.add(id)
-    if (row.totalScore == null || Number(row.totalScore) < PASS_LINE) continue
-    const g = groupOf(String(row.category || ''))
-    earned[g] += Number(row.credit) || 0
-  }
-  summary.value.categories = summary.value.categories.map((c: any) => {
-    const got = earned[c.key] ?? 0
-    const req = Number(c.required) || 0
-    return { ...c, earned: got, gap: Math.max(0, req - got), done: got >= req }
-  })
-}
 async function load() {
   loading.value = true
   try {
-    const [r, p, sc, ma]: any[] = await Promise.all([
+    const [r, p, ma, sc]: any[] = await Promise.all([
       http.get('/graduation/summary'),
       http.get('/enrollments/points').catch(() => null),
-      http.get('/enrollments/scores').catch(() => null),
-      http.get('/graduation/my-application').catch(() => null)
+      http.get('/graduation/my-application').catch(() => null),
+      http.get('/enrollments/scores').catch(() => null)
     ])
     // 兼容两种返回形态：{success,data} 或直接对象
     const body = r && r.data !== undefined ? r.data : r
     summary.value = body && body.categories ? body : null
     if (body?.applicationStatus) applicationStatus.value = body.applicationStatus
+    // 毕业星图数据源：成绩档案（含课程类别/学分/学期/分数）
+    scoreRows.value = (sc && sc.data !== undefined ? sc.data : sc) || []
     // 毕设总评快照（申请记录里带出）
     const myApp = ma && ma.data !== undefined ? ma.data : ma
     thesisScore.value = myApp && myApp.thesisScore != null ? Number(myApp.thesisScore) : null
-    applyPassedCredits(sc?.data)
     remaining.value = p?.data?.remaining ?? 0
     currentRound.value = p?.data?.round ?? 1
     pointPool.value = p?.data?.total ?? 50
@@ -409,7 +477,7 @@ async function load() {
         try {
           const r2: any = await http.get('/graduation/summary')
           const b2 = r2 && r2.data !== undefined ? r2.data : r2
-          if (b2 && b2.categories) { summary.value = b2; applyPassedCredits(sc?.data) }
+          if (b2 && b2.categories) summary.value = b2
         } catch {}
       }, 600)
     }
@@ -444,6 +512,24 @@ onMounted(load)
 .page-wrap { padding: 4px 0; display: flex; flex-direction: column; gap: 16px; }
 
 /* ===== 主视觉卡 ===== */
+/* 视觉模式切换（右上角悬浮）：图表 / 星图 */
+.hero-mode {
+  position: absolute; top: 18px; right: 22px; z-index: 3;
+  display: inline-flex; padding: 3px; border-radius: 10px;
+  background: var(--bg, rgba(148, 163, 184, 0.1)); border: 1px solid var(--border);
+}
+.hero-mode button {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 13px; border-radius: 8px; border: none;
+  background: transparent; color: var(--text-light, #64748b);
+  font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .18s;
+  font-family: inherit;
+}
+.hero-mode button.on { background: var(--card-bg, #fff); color: var(--primary, #2bb187); box-shadow: 0 1px 6px rgba(15, 40, 30, 0.12); }
+.hero-mode button svg.icon { width: 14px; height: 14px; }
+/* 星图模式容器 */
+.grad-sky-box { flex: 1 1 100%; }
+.grad-sky-box :deep(.gsky-wrap) { box-shadow: 0 14px 40px -18px rgba(6, 40, 30, 0.5); }
 .grad-hero {
   display: flex; gap: 28px; align-items: stretch; flex-wrap: wrap;
   padding: 26px 28px; border-radius: 18px;
@@ -485,7 +571,7 @@ onMounted(load)
 
 /* 右侧类别构成 */
 .grad-hero-right { flex: 1; min-width: 320px; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
-.ghr-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.ghr-head { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 10px; padding-right: 150px; }
 /* 毕业要求来源（按年级 / 全校默认） */
 .ghr-req { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .ghr-req-tag { font-size: 12.5px; font-weight: 700; padding: 4px 12px; border-radius: 999px; }
@@ -505,7 +591,7 @@ html.dark .ghr-req-tag.grade { color: #2dd4bf; }
   display: flex; align-items: center; justify-content: center;
 }
 .cat-ico .icon { width: 15px; height: 15px; }
-.cat-name { font-size: 13px; font-weight: 700; color: var(--text); width: 34px; flex-shrink: 0; }
+.cat-name { font-size: 13px; font-weight: 700; color: var(--text); width: 56px; flex-shrink: 0; white-space: nowrap; }
 .cat-bar {
   flex: 1; position: relative; height: 10px; border-radius: 99px;
   background: rgba(148,163,184,.13); overflow: visible;
@@ -580,6 +666,10 @@ html.dark .cm-chip.ok { color: #34d399; }
 .cm-chip.pending { color: #475569; background: rgba(100,116,139,.08); border: 1px solid rgba(100,116,139,.3); }
 .pending-flag { font-style: normal; font-size: 10.5px; font-weight: 700; color: #475569; background: rgba(100,116,139,.12); border-radius: 999px; padding: 0 6px; line-height: 16px; }
 html.dark .cm-chip.pending, html.dark .pending-flag { color: #94a3b8; }
+/* 无成绩记录 = 中性「暂无成绩」：灰蓝色，不臆断通过/挂科，只如实反映未录入状态 */
+.cm-chip.noscore { color: #64748b; background: rgba(100,116,139,.07); border: 1px solid rgba(100,116,139,.25); }
+.noscore-flag { font-style: normal; font-size: 10.5px; font-weight: 600; color: #64748b; background: rgba(100,116,139,.1); border-radius: 999px; padding: 0 6px; line-height: 16px; }
+html.dark .cm-chip.noscore, html.dark .noscore-flag { color: #94a3b8; }
 
 /* ===== 推荐课程 ===== */
 .rec-note { font-size: 12px; color: var(--text-light); }

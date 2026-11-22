@@ -23,9 +23,9 @@
         <span class="wn-chev">›</span>
       </button>
       <button class="wn-btn" @click="changeWeek(1)" :disabled="week>=18">›</button>
-      <button class="wn-reset" @click="week = curWeek">🔄 {{ t('重置') }}</button>
-      <button class="wn-export" @click="exportIcs">📅 {{ t('导出日历') }}</button>
-      <button class="wn-export" @click="exportPng">🖼️ {{ t('导出图片') }}</button>
+      <button class="wn-reset" @click="week = curWeek"><i class="bic" v-html="svgIcon('refresh')"></i>{{ t('重置') }}</button>
+      <button class="wn-export" @click="exportIcs"><i class="bic" v-html="svgIcon('calendar')"></i>{{ t('导出日历') }}</button>
+      <button class="wn-export" @click="exportPng"><i class="bic" v-html="svgIcon('download')"></i>{{ t('导出图片') }}</button>
     </div>
 
     <!-- ===== #1 拖拽试排工具条（默认折叠，点开才显示候选） ===== -->
@@ -96,11 +96,11 @@
             :key="'df' + df.key"
             class="draft-block"
             :class="{ 'df-conflict': df.conflicts.length }"
-            :title="df.conflicts.length ? t('⚠ 与以下课程时间冲突：{n}', { n: df.conflicts.map((x: any) => x.name).join('、') }) : t('试排预览 · 点击移除')"
+            :title="df.conflicts.length ? t('与以下课程时间冲突：{n}', { n: df.conflicts.map((x: any) => x.name).join('、') }) : t('试排预览 · 点击移除')"
             @click="removeDraft(df.key)"
           >
             <div class="cb-name">{{ df.name }}</div>
-            <div class="cb-meta">{{ df.conflicts.length ? t('⚠ {n} 处冲突', { n: df.conflicts.length }) : t('试排预览') }}</div>
+            <div class="cb-meta"><i v-if="df.conflicts.length" class="bic" v-html="svgIcon('alert-triangle')"></i>{{ df.conflicts.length ? t('{n} 处冲突', { n: df.conflicts.length }) : t('试排预览') }}</div>
           </div>
         </div>
       </div>
@@ -124,8 +124,8 @@
     <!-- ===== 冲突检测 ===== -->
     <div v-if="conflicts.length" class="section conflict-section">
       <div class="section-header">
-        <div class="section-title">{{ t('⚠️ 时空坐标冲突（{n} 处）', { n: conflicts.length }) }}</div>
-        <span class="section-sub">{{ t('🔴 教室/时间冲突 · 🟠 同一教师同一时间 · 悬停课表卡片可高亮冲突对方') }}</span>
+        <div class="section-title"><i class="bic" v-html="svgIcon('alert-triangle')"></i>{{ t('时空坐标冲突（{n} 处）', { n: conflicts.length }) }}</div>
+        <span class="section-sub"><i class="dot-legend red"></i>{{ t('教室/时间冲突') }} · <i class="dot-legend orange"></i>{{ t('同一教师同一时间') }} · {{ t('悬停课表卡片可高亮冲突对方') }}</span>
       </div>
       <div class="conf-list">
         <div v-for="(c, i) in conflicts" :key="i" class="conf-item" :class="'t-' + c.type">
@@ -168,11 +168,11 @@
     <!-- ===== 校园地图（3D / 平面）===== -->
     <div class="section campus-section">
       <div class="section-header">
-        <div class="section-title">{{ t('🗺️ 我的校园地图') }}</div>
+        <div class="section-title"><i class="bic" v-html="svgIcon('map-pin')"></i>{{ t('我的校园地图') }}</div>
         <div style="display:flex;gap:8px;align-items:center">
           <el-radio-group v-if="showMap" v-model="mapMode" size="small">
-            <el-radio-button label="3d">{{ t('🏢 3D 模型') }}</el-radio-button>
-            <el-radio-button label="2d">{{ t('🗺️ 平面地图') }}</el-radio-button>
+            <el-radio-button label="3d">{{ t('3D 模型') }}</el-radio-button>
+            <el-radio-button label="2d">{{ t('平面地图') }}</el-radio-button>
           </el-radio-group>
           <button class="btn btn-ghost btn-sm" @click="showMap = !showMap">{{ showMap ? t('收起地图') : t('展开地图') }}</button>
         </div>
@@ -182,144 +182,6 @@
     </div>
 
     <!-- ===== 智能选课推荐 ===== -->
-    <div class="section gen-section">
-      <!-- 标题栏：左 标题+说明 / 右 实时统计（全部来自当前勾选状态的真实计算） -->
-      <div class="gen-head">
-        <div class="gen-head-l">
-          <div class="section-title">{{ t('🧠 时空推演') }}</div>
-          <span class="section-sub">{{ t('结合上课时间、学分与竞争度，在浏览器本地实时计算互不冲突的选课组合；🔒 锁定课程优先入选') }}</span>
-        </div>
-        <div class="gen-head-r">
-          <div class="gen-stat"><b>{{ checkedIds.length }}</b><small>{{ t('已选课程') }}</small></div>
-          <div class="gen-stat"><b>{{ checkedCredits }}</b><small>{{ t('已选总学分') }}</small></div>
-          <div class="gen-stat" :class="{ bad: conflictCourseCount > 0 }"><b>{{ conflictCourseCount }}</b><small>{{ t('时间冲突') }}</small></div>
-          <button class="btn btn-primary btn-sm" :disabled="generating || !checkedIds.length" @click="generate" :title="t('基于当前勾选与锁定课程重新计算推荐组合')">
-            {{ generating ? t('⏳ 计算中…') : t('✨ 重新推荐') }}
-          </button>
-        </div>
-      </div>
-
-      <div v-if="cands.length" class="cand-list">
-        <div v-for="c in cands" :key="c.id" class="cand-row" :class="{ locked: locks.has(c.id), conflicted: rowConflict(c).length > 0, checked: checkedIds.includes(c.id) }">
-          <!-- 第一行：勾选 + 课程名 + 类型 + 推荐标签（真实判断依据） -->
-          <div class="cr-top">
-            <label class="cand-label">
-              <input type="checkbox" class="cand-check" v-model="checkedIds" :value="c.id" />
-              <span class="cand-name" :title="c.name">{{ c.name }}</span>
-            </label>
-            <span v-if="c.category" class="cand-cat">{{ c.category }}</span>
-            <span class="cr-rec" :class="recTag(c).cls" :title="recTag(c).tip">{{ recTag(c).label }}</span>
-            <button class="cand-loc" :disabled="!buildingFromLocation(c.location)" @click="locateOnMap(c.location)" :title="t('在 3D 校园地图中定位教学楼')">{{ t('定位') }}</button>
-            <button class="cand-lock" :class="{ locked: locks.has(c.id) }" @click="toggleLock(c.id)" :title="locks.has(c.id) ? t('已锁定：重新推荐时优先保留') : t('锁定：生成方案时优先占位')">
-              {{ locks.has(c.id) ? '🔒' : '🔓' }}
-            </button>
-          </div>
-          <!-- 第二行：教师 / 学分 / 时间 / 教室 / 校区 -->
-          <div class="cr-meta">
-            <span>👨‍🏫 {{ (isThesisCourse(c) && thesisAdvisorName) ? thesisAdvisorName : (c.teacherName || c.teacher || t('教师待定')) }}</span>
-            <span>🎓 {{ c.credit || 0 }} {{ t('学分') }}</span>
-            <span>📅 {{ c.time || t('时间待定') }}</span>
-            <span>🏛️ {{ c.location || t('教室待定') }}</span>
-            <span>🗺️ {{ c.campus || t('主校区') }}</span>
-          </div>
-          <!-- 第三行：推荐理由 + 时间冲突提示 -->
-          <div class="cr-reason">
-            <span class="cr-why">{{ recReason(c) }}</span>
-            <span v-if="rowConflict(c).length" class="cr-conflict" :title="t('与 {n} 上课时间重叠', { n: rowConflict(c).map(x => x.name).join('、') })">
-              ⚠ {{ t('与 {n} 时间冲突', { n: rowConflict(c).map(x => x.name).join('、') }) }}
-            </span>
-          </div>
-        </div>
-
-        <div class="cand-actions">
-          <button class="btn btn-ghost btn-sm" @click="resetGen" :title="t('清空勾选与全部锁定')">🔄 {{ t('重置') }}</button>
-          <button class="btn btn-primary btn-sm" :disabled="generating || !checkedIds.length" @click="generate" :title="t('基于当前勾选与锁定重新计算推荐组合')">
-            {{ generating ? t('⏳ 生成中...') : t('✨ 生成推荐方案') }}
-          </button>
-        </div>
-      </div>
-      <div v-else class="cand-empty">{{ t('没有更多可选的候选课程 🎉') }}</div>
-
-      <!-- 推荐组合概览：方案编号 / 推荐原因 / 规模 / 冲突检查 / 锁定保护（均为前端真实计算结果） -->
-      <div v-if="plans.length && activePlan" class="ov-strip">
-        <div class="ov-item">
-          <small>{{ t('当前方案') }}</small>
-          <b>{{ t('方案 {n}', { n: planIdx + 1 }) }} · {{ planTag(activePlan).label }}</b>
-        </div>
-        <div class="ov-item ov-wide">
-          <small>{{ t('推荐原因') }}</small>
-          <span>{{ planReason(activePlan) }}</span>
-        </div>
-        <div class="ov-item">
-          <small>{{ t('组合规模') }}</small>
-          <b>{{ activePlan.courses.length }} {{ t('门') }} / {{ activePlan.credits }} {{ t('学分') }}</b>
-        </div>
-        <div class="ov-item">
-          <small>{{ t('冲突检查') }}</small>
-          <b :class="activePlan.conflicts.length ? 'bad' : 'ok'">{{ activePlan.conflicts.length ? t('{n} 处冲突', { n: activePlan.conflicts.length }) : t('全部互不冲突 ✓') }}</b>
-        </div>
-        <div class="ov-item">
-          <small>{{ t('锁定保护') }}</small>
-          <b :class="{ ok: lockedCheckedCount > 0 }">{{ lockedCheckedCount ? t('已优先保留 {n} 门锁定课程', { n: lockedCheckedCount }) : t('未使用锁定') }}</b>
-        </div>
-      </div>
-
-      <div v-if="plans.length" class="rec-panel">
-        <div class="rec-head">
-          ✨ {{ t('已生成 {n} 套互不冲突方案', { n: plans.length }) }} · {{ t('点击卡片切换预览') }}
-          <span v-if="plans[0]?.excluded.length" class="rec-rejected-tip">
-            · {{ t('勾选中 {n} 门因冲突未能进入任何方案', { n: plans[0]?.excluded.length }) }}
-          </span>
-        </div>
-        <!-- 方案对比卡片 -->
-        <div class="plan-cards">
-          <div
-            v-for="(pl, pi) in plans" :key="pi"
-            class="plan-card" :class="{ active: planIdx === pi, conflict: !!pl.conflicts.length }"
-            @click="planIdx = pi"
-          >
-            <div class="plan-head">
-              <b>{{ t('方案 {n}', { n: pi + 1 }) }}</b>
-              <span class="plan-tag" :class="planTag(pl).cls">{{ planTag(pl).label }}</span>
-            </div>
-            <div class="plan-stats">
-              <span><b>{{ pl.courses.length }}</b> {{ t('门') }}</span>
-              <span><b>{{ pl.credits }}</b> {{ t('学分') }}</span>
-              <span>{{ t('空闲') }} <b>{{ pl.freeSlots }}</b> {{ t('格') }}</span>
-            </div>
-            <div class="plan-chips">
-              <span v-for="c in pl.courses" :key="c.courseId" class="plan-chip">{{ c.name }}</span>
-            </div>
-          </div>
-        </div>
-        <!-- 当前方案明细 -->
-        <div class="data-table">
-          <table>
-            <thead><tr><th>{{ t('课程') }}</th><th>{{ t('上课时间') }}</th><th>{{ t('学分') }}</th><th>{{ t('报名/容量') }}</th><th>{{ t('结果') }}</th></tr></thead>
-            <tbody>
-              <tr v-for="c in activePlan?.courses || []" :key="'ok-'+c.courseId">
-                <td><b>{{ c.name }}</b></td>
-                <td style="font-size:13px;color:var(--text-light)">{{ c.time || '' }}</td>
-                <td>{{ c.credit || 0 }}</td>
-                <td style="font-size:12px;color:var(--text-light)">{{ statOf(c.courseId) }}</td>
-                <td><span class="status-tag status-approved">{{ t('方案 {n} 选入', { n: planIdx + 1 }) }}</span></td>
-              </tr>
-              <tr v-for="id in activePlan?.excluded || []" :key="'no-'+id" class="rec-rejected">
-                <td>{{ candMap.get(id)?.name || t('课程#{n}', { n: id }) }}</td>
-                <td style="font-size:13px;color:var(--text-light)">{{ candMap.get(id)?.time || '' }}</td>
-                <td>{{ candMap.get(id)?.credit || '' }}</td>
-                <td style="font-size:12px;color:var(--text-light)">{{ statOf(id) }}</td>
-                <td><span class="status-tag status-rejected">{{ t('未入选') }}</span></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="rec-actions">
-          <button v-if="activePlan?.courses.length" class="btn btn-primary btn-sm" @click="addIntents">🛒 {{ t('把方案 {n} 加入意向单', { n: planIdx + 1 }) }}</button>
-        </div>
-        <div class="rec-tip">{{ t('推荐组合由') }}<strong>{{ t('浏览器本地规则算法') }}</strong>{{ t('（三种贪心策略：学分优先 / 竞争小优先 / 随机扰动）基于课程真实上课时间计算生成，非后端 AI 推荐；冲突判定按「周几 + 节次时段」粒度。「报名/容量」可帮你判断竞争激烈程度。点「加入意向单」后，可在意向单页面调整投入积分并一键提交。') }}</div>
-      </div>
-    </div>
 
     <!-- ===== 周次选择器（teleport到body避免被page容器截断） ===== -->
     <Teleport to="body">
@@ -341,8 +203,8 @@
                 @click="semSel = o.no"
               >
                 <span class="wk-sem-check" v-if="o.no === semSel">✓</span>
-                <b class="wk-sem-year">{{ o.year }}</b>
-                <span class="wk-sem-term">{{ o.term }}</span>
+                <b class="wk-sem-year">{{ o.main }}</b>
+                <span class="wk-sem-term">{{ o.sub }}</span>
               </div>
             </div>
           </div>
@@ -424,7 +286,8 @@ async function locateOnMap(loc?: string) {
   // 等 three.js 场景完成初始化（动态 import + 建 mesh）
   await new Promise(r => setTimeout(r, 500))
   map3dRef.value?.focusBuilding(b)
-  if (wasHidden) document.querySelector('.campus-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  // 定位时始终把地图滚入视口：地图已展开但可能在视口外（页面较长），不滚动会导致飞行动画不可见
+  document.querySelector('.campus-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 function locateFromDialog() {
   showClass.value = false
@@ -440,8 +303,8 @@ const period = ref<'week' | 'day'>('week')
 const showClass = ref(false)
 const currentClass = ref<ScheduleItem | null>(null)
 const semInfo = ref<SemInfo | null>(null)
-/* ===== 学期切换：可选学期 = 有修读记录的学期（从成绩聚合），确认后重载课表 ===== */
-interface SemOptItem { no: number; label: string; year?: string; term?: string }
+/* ===== 学期切换：可选学期 = 已开学学期（当前学期及之前），确认后重载课表 ===== */
+interface SemOptItem { no: number; label: string; main: string; sub: string }
 const semOpts = ref<SemOptItem[]>([])
 const semSel = ref<number | null>(null)
 const viewSem = ref<number | null>(null)
@@ -454,6 +317,7 @@ const viewSemLabel = computed(() => {
   return hit ? hit.label : ''
 })
 const currentSemesterNo = ref<number | null>(null)
+const semOffset = ref(0)
 
 function myGrade(): number {
   let g = 0
@@ -461,53 +325,58 @@ function myGrade(): number {
   return g
 }
 function mySemesterNo(): number {
-  // 与后端 GraduationService.currentSemesterNo 同公式（从本地登录信息取年级）
+  // 与后端 GraduationService.currentSemesterNo 同公式（从本地登录信息取年级），并叠加学期偏移
   const g = myGrade()
   const t0 = new Date()
   const y = t0.getFullYear(), m = t0.getMonth() + 1
   if (g < 2000) return 1
-  return Math.max(1, m >= 8 ? (y - g) * 2 + 1 : (m === 1 ? (y - g) * 2 - 1 : (y - g) * 2))
+  const base = m >= 8 ? (y - g) * 2 + 1 : (m === 1 ? (y - g) * 2 - 1 : (y - g) * 2)
+  let sem = Math.max(1, base + Math.max(0, semOffset.value))
+  // 专升本两年制：最多 4 个学期，封顶（已到毕业学期）
+  try {
+    const major = String(JSON.parse(localStorage.getItem('zhixue_user') || '{}').major || '')
+    if (major.includes('专升本')) sem = Math.min(4, sem)
+  } catch {}
+  return sem
 }
-/** 学期序 → 学年学期名（与后端 semesterLabel 同公式） */
+/** 学期序 → "大一上"等通俗名（专升本两年制映射到大三上~大四下） */
 function semesterLabelOf(no: number): string {
-  const g = myGrade()
-  if (g < 2000) return `第 ${no} 学期`
-  const startYear = g + Math.floor((no - 1) / 2)
-  return `${startYear}-${startYear + 1}学年${no % 2 === 1 ? '第一' : '第二'}学期`
+  const zsb = String(JSON.parse(localStorage.getItem('zhixue_user') || '{}').major || '').includes('专升本')
+  const seq = zsb ? no + 4 : no
+  const yi = Math.floor((seq - 1) / 2)
+  if (yi >= 5) return `第 ${no} 学期`
+  return `大${['一','二','三','四','五'][yi]}${(seq - 1) % 2 === 0 ? '上' : '下'}`
+}
+
+/** 学期序 → 学年学期主标题（教务标准写法）：第 7 学期 → 「2026-2027学年 第一学期」 */
+function academicLabelOf(no: number): string {
+  const grade = myGrade()
+  const base = grade >= 2000 ? grade + Math.floor((no - 1) / 2) : null
+  const term = ['第一', '第二'][((no - 1) % 2 + 2) % 2]
+  return base != null ? `${base}-${base + 1}学年 第${term}学期` : `第 ${no} 学期`
 }
 
 async function loadSemOptions() {
+  try { const c: any = await http.get('/system/config'); semOffset.value = Number(c?.data?.semesterOffset) || 0 } catch {}
   currentSemesterNo.value = mySemesterNo()
-  try {
-    const r: any = await http.get('/enrollments/scores')
-    const set = new Map<number, string>()
-    for (const g of (r?.data || [])) {
-      if (g.semesterNo != null && !set.has(g.semesterNo)) {
-        set.set(g.semesterNo, g.semesterLabel || semesterLabelOf(g.semesterNo))
-      }
-    }
-    const list: SemOptItem[] = [...set.entries()].sort((a, b) => b[0] - a[0]).map(([no, label]) => {
-      const m = label.match(/(\d{4}-\d{4})学年(第一|第二)学期/)
-      return { no, label, year: m ? m[1] : '', term: m ? m[2] : '' }
-    })
-    const cur = currentSemesterNo.value
-    if (cur != null && !list.some(o => o.no === cur)) {
-      list.unshift({ no: cur, label: semesterLabelOf(cur), year: '', term: '' })
-    }
-    semOpts.value = list
-    semSel.value = cur
-    viewSem.value = cur
-  } catch (e: any) {
-    // 非学生角色（教师/管理员）无修读记录：scores 403 时降级为仅当前学期
-    semOpts.value = []
-  } finally {
-    const cur = currentSemesterNo.value
-    if (cur != null && !semOpts.value.some(o => o.no === cur)) {
-      semOpts.value.unshift({ no: cur, label: semesterLabelOf(cur) })
-    }
-    semSel.value = cur
-    viewSem.value = cur
+  // 学期选项 = 本学期 + 之前的学期（未来学期尚未开课，不进入周次选择）。
+  // 覆盖整个修读期（本科 8 / 专升本 4），不再依赖「有成绩记录的学期」。
+  const zsb = String(JSON.parse(localStorage.getItem('zhixue_user') || '{}').major || '').includes('专升本')
+  const total = zsb ? 4 : 8
+  const cur0 = currentSemesterNo.value
+  const list: SemOptItem[] = []
+  for (let no = total; no >= 1; no--) {
+    if (cur0 != null && no > cur0) continue   // 未来学期不显示
+    list.push({ no, label: academicLabelOf(no), main: academicLabelOf(no), sub: semesterLabelOf(no) })
   }
+  const cur = currentSemesterNo.value
+  if (cur != null && !list.some(o => o.no === cur)) {
+    // 已超出正常修读期（如历史年级推算 > 8）：补一个当前学期项兜底
+    list.unshift({ no: cur, label: `第 ${cur} 学期`, main: `第 ${cur} 学期`, sub: semesterLabelOf(cur) })
+  }
+  semOpts.value = list
+  semSel.value = cur
+  viewSem.value = cur
 }
 const curWeek = ref(1)
 const week = ref(1)
@@ -517,10 +386,6 @@ const weekBtn = ref<HTMLElement | null>(null)
 const sheetPos = ref({ top: 0, left: 0 })
 
 const cands = ref<Course[]>([])
-const checkedIds = ref<number[]>([])
-const locks = ref<Set<number>>(new Set())
-const generating = ref(false)
-const candMap = new Map<number, Course>()
 
 const WEEK0_DEFAULT = new Date(2026, 8, 7) // 2026-09-07
 const palette = ['#15803d', '#2563eb', '#0369a1', '#b45309', '#be185d', '#0f766e', '#dc2626', '#0f6f52']
@@ -688,212 +553,6 @@ async function confirmWeekPicker() {
   if (semChanged) await loadSchedule()
 }
 function viewClass(c: any) { currentClass.value = c; showClass.value = true }
-function statOf(id: number): string {
-  const c = candMap.get(id)
-  if (!c) return '—'
-  return `${(c.stat?.total || 0)}/${(c.capacity || 0)}`
-}
-function toggleLock(id: number) {
-  const s = locks.value
-  if (s.has(id)) s.delete(id); else s.add(id)
-  locks.value = new Set(s)
-}
-
-/* ===== 实时推荐分析：勾选变化即刻重算（全部基于真实课程数据，前端计算） ===== */
-/** 已勾选课程 id 集合（避免模板/计算属性里反复 includes） */
-const checkedSet = computed(() => new Set(checkedIds.value))
-/** 已勾选课程总学分 */
-const checkedCredits = computed(() =>
-  cands.value.filter(c => checkedSet.value.has(c.id)).reduce((s, c) => s + (c.credit || 0), 0)
-)
-/** 已勾选且锁定的课程数（重新生成时后端优先保留，见 generate() 锁定占位逻辑） */
-const lockedCheckedCount = computed(() => checkedIds.value.filter(id => locks.value.has(id)).length)
-
-/**
- * 勾选课程间的实时时间冲突：按 parseSchedule 解析出的「周几 + 节次时段」真实重叠判定。
- * 同时检测与已录取课表（items）的冲突。冲突课程不会被自动取消，仅在行内与概览中提示。
- */
-const checkedConflicts = computed<Map<number, { name: string; enrolled: boolean }[]>>(() => {
-  const m = new Map<number, { name: string; enrolled: boolean }[]>()
-  const push = (id: number, name: string, enrolled: boolean) => {
-    const arr = m.get(id) || []
-    if (!arr.some(x => x.name === name)) arr.push({ name, enrolled })
-    m.set(id, arr)
-  }
-  const arr = cands.value.filter(c => checkedSet.value.has(c.id))
-  const slotKeys = new Map<number, string[]>(arr.map(c => [c.id, slotsKeyOf(c)]))
-  // 勾选课程两两判冲突
-  for (let i = 0; i < arr.length; i++) {
-    for (let j = i + 1; j < arr.length; j++) {
-      const ka = new Set(slotKeys.get(arr[i].id)!)
-      if ((slotKeys.get(arr[j].id)!).some(k => ka.has(k))) {
-        push(arr[i].id, arr[j].name, false)
-        push(arr[j].id, arr[i].name, false)
-      }
-    }
-  }
-  // 与已录取课表判冲突
-  const enrolled = items.value.map(it => ({ key: it.dayOfWeek + '-' + it.period, name: it.name }))
-  for (const c of arr) {
-    const ks = new Set(slotKeys.get(c.id) || [])
-    for (const it of enrolled) if (ks.has(it.key)) push(c.id, it.name, true)
-  }
-  return m
-})
-/** 时间冲突的课程数（用于标题栏统计） */
-const conflictCourseCount = computed(() => checkedConflicts.value.size)
-/** 某课程当前的冲突列表（无冲突返回空数组） */
-function rowConflict(c: Course): { name: string; enrolled: boolean }[] {
-  return checkedConflicts.value.get(c.id) || []
-}
-function slotsKeyOf(c: Course): string[] {
-  return courseSlots(c).map(s => s.day + '-' + s.period)
-}
-
-/** 推荐标签：有真实判断依据（锁定态 > 冲突态 > 学分×竞争度），无数据不虚构 */
-function recTag(c: Course): { label: string; cls: string; tip: string } {
-  if (locks.value.has(c.id)) return { label: t('🔒 已锁定'), cls: 'lock', tip: t('生成方案时优先占位保留') }
-  if (rowConflict(c).length) return { label: t('⚠ 时间冲突'), cls: 'conf', tip: t('与勾选课程或已录取课表时间重叠') }
-  const ratio = (c.stat?.total || 0) / Math.max(1, c.capacity || 1)
-  const credit = c.credit || 0
-  if (credit >= 3 && ratio <= 0.6) return { label: t('⭐ 优先推荐'), cls: 'best', tip: t('学分较高且竞争较小') }
-  if (ratio <= 0.8) return { label: t('👍 推荐'), cls: 'good', tip: t('竞争相对适中') }
-  return { label: t('可选'), cls: 'ok', tip: t('常规可选课程') }
-}
-
-/** 推荐理由：逐条来自真实数据（时间解析 / 冲突 / 学分 / 竞争度 / 锁定） */
-function recReason(c: Course): string {
-  const parts: string[] = []
-  const slots = courseSlots(c)
-  if (!slots.length) {
-    parts.push(t('上课时间无法解析，暂不参与冲突检测'))
-  } else {
-    const cf = rowConflict(c)
-    parts.push(cf.length ? t('与 {n} 门课程时间重叠', { n: cf.length }) : t('与已选课程时间不冲突'))
-  }
-  const credit = c.credit || 0
-  if (credit >= 3) parts.push(t('{n} 学分，有助于凑满总学分', { n: credit }))
-  const cap = c.capacity || 0
-  if (cap > 0) {
-    const ratio = (c.stat?.total || 0) / cap
-    if (ratio <= 0.6) parts.push(t('竞争较小（{a}/{b}）', { a: c.stat?.total || 0, b: cap }))
-    else if (ratio > 1) parts.push(t('报名已超容量（{a}/{b}）', { a: c.stat?.total || 0, b: cap }))
-  }
-  if (locks.value.has(c.id)) parts.push(t('已锁定，重新推荐时优先保留'))
-  return parts.join(' · ')
-}
-
-/** 组合概览的推荐原因：来自方案真实策略，不虚构后端算法 */
-function planReason(pl: Plan): string {
-  if (pl.strategy.includes('学分')) return t('优先保留学分高的课程，在互不冲突前提下组合总学分最大')
-  if (pl.strategy.includes('竞争')) return t('优先选择报名/容量比低的课程，降低落选风险')
-  return t('在可行组合中做随机均衡采样，供对比不同取舍')
-}
-
-/* ===== #8 多方案生成：三种贪心策略，全部互不冲突，可对比 ===== */
-interface Plan {
-  courses: (Course & { courseId: number })[]
-  credits: number
-  freeSlots: number
-  excluded: number[]
-  conflicts: string[]
-  strategy: string
-}
-const plans = ref<Plan[]>([])
-const planIdx = ref(0)
-const activePlan = computed(() => plans.value[planIdx.value] || null)
-
-/** 课程占用的 (day, period) 集合；locks 中的课程优先占位 */
-function occupyOf(c: Course): { day: number; period: string }[] {
-  return courseSlots(c)
-}
-function planTag(pl: Plan): { label: string; cls: string } {
-  if (!pl.courses.length) return { label: t('无可行组合'), cls: 'bad' }
-  if (pl.strategy.includes('学分')) return { label: t('学分最多'), cls: 'credit' }
-  if (pl.strategy.includes('竞争')) return { label: t('竞争最小'), cls: 'easy' }
-  return { label: t('均衡组合'), cls: 'mix' }
-}
-
-function generate() {
-  if (!checkedIds.value.length) { ElMessage.warning(t('请至少勾选一门候选课程')); return }
-  generating.value = true
-  try {
-    const chosen = cands.value.filter(c => checkedIds.value.includes(c.id))
-    const locked = chosen.filter(c => locks.value.has(c.id))
-    // 5×7 网格共 35 格
-    const totalSlots = periods.length * 7
-    const strategies: { name: string; sortFn: (a: Course, b: Course) => number; jitter: boolean }[] = [
-      { name: '学分优先', sortFn: (a, b) => (b.credit || 0) - (a.credit || 0), jitter: false },
-      { name: '竞争最小', sortFn: (a, b) => ((a.stat?.total || 0) / Math.max(1, a.capacity || 1)) - ((b.stat?.total || 0) / Math.max(1, b.capacity || 1)), jitter: false },
-      { name: '均衡扰动', sortFn: () => Math.random() - 0.5, jitter: true },
-    ]
-    const out: Plan[] = []
-    const coveredByAny = new Set<number>()
-    for (const st of strategies) {
-      const occupied = new Map<string, string>()   // "day-period" -> name
-      // 已录取课表先占格（含待录取）：推荐方案不得与现有课表撞车
-      for (const it of items.value) {
-        const key = it.dayOfWeek + '-' + it.period
-        if (!occupied.has(key)) occupied.set(key, it.name)
-      }
-      // 🔒 锁定课程再占格（与已录取课表或彼此冲突则记入方案问题）
-      const conflicts: string[] = []
-      for (const c of locked) {
-        for (const s of occupyOf(c)) {
-          const key = s.day + '-' + s.period
-          if (occupied.has(key)) conflicts.push(`${c.name} 与 ${occupied.get(key)} 在 ${key} 冲突`)
-          else occupied.set(key, c.name)
-        }
-      }
-      const rest = chosen.filter(c => !locks.value.has(c.id)).sort(st.sortFn)
-      const picked: (Course & { courseId: number })[] = []
-      const excluded: number[] = []
-      for (const c of rest) {
-        const slots = occupyOf(c)
-        if (!slots.length) { excluded.push(c.id); continue }
-        const clash = slots.some(s => occupied.has(s.day + '-' + s.period))
-        if (clash) { excluded.push(c.id); continue }
-        for (const s of slots) occupied.set(s.day + '-' + s.period, c.name)
-        picked.push({ ...c, courseId: c.id })
-      }
-      for (const p of picked) coveredByAny.add(p.courseId)
-      // 方案内课程多时段课程占用可能重复占同一格（同一课两节在同一格），freeSlots 按去重格子算
-      const credits = picked.reduce((s, c) => s + (c.credit || 0), 0)
-      out.push({ courses: picked, credits, freeSlots: totalSlots - occupied.size, excluded, conflicts, strategy: st.name })
-    }
-    // 排除列表 = 从未进入任何方案的课
-    for (const pl of out) pl.excluded = pl.excluded.filter(id => !coveredByAny.has(id) && !locks.value.has(id))
-    out.sort((a, b) => b.credits - a.credits)
-    plans.value = out
-    planIdx.value = 0
-    const best = out[0]
-    if (!best || !best.courses.length) ElMessage.error(t('勾选的课程全部互相冲突，没有可行方案'))
-    else ElMessage.success(t('已生成 {n} 套方案，最优方案 {a} 门 / {b} 学分', { n: out.length, a: best.courses.length, b: best.credits }))
-  } finally { generating.value = false }
-}
-function resetGen() {
-  checkedIds.value = []
-  locks.value = new Set()
-  plans.value = []
-  planIdx.value = 0
-}
-async function addIntents() {
-  const list = activePlan.value?.courses || []
-  if (!list.length) return
-  const token = localStorage.getItem('zhixue_token')
-  let ok = 0
-  for (const c of list) {
-    try {
-      await fetch('/api/intents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-        body: JSON.stringify({ courseId: c.courseId }),
-      })
-      ok++
-    } catch {}
-  }
-  ElMessage.success(ok ? t('已把方案 {a} 的 {b} 门课程加入意向单', { a: planIdx.value + 1, b: ok }) : t('加入失败'))
-}
 
 /** 课表周视图导出为 PNG 图片（html2canvas 按需加载） */
 const gridRef = ref<HTMLElement | null>(null)
@@ -983,7 +642,11 @@ onMounted(async () => {
 async function loadSchedule() {
   try {
     const q = viewSem.value != null ? `?semester=${viewSem.value}` : ''
-    const mineR: any = await http.get('/enrollments/mine' + q)
+    // 我的课表与课程目录并行拉取（学期切换时两个请求各跑各的，不再串行叠加等待）
+    const [mineR, allR]: any[] = await Promise.all([
+      http.get('/enrollments/mine' + q),
+      http.get('/courses'),
+    ])
     const mine = mineR?.data || []
     // 课表只显示本学期修读的课（mine 已按学期归属过滤）；历史学期课程在成绩单与毕业进度中查看
     const courseIds = [...new Set(mine.map((e: any) => e.courseId))]
@@ -995,21 +658,36 @@ async function loadSchedule() {
     for (const e of mine) {
       if (e.status === 'approved') statusOf.set(e.courseId, 'approved')
     }
-    const allR: any = await http.get('/courses')
     const allCourses = allR?.data || []
+    // 组班重修：/enrollments/mine 会带上教学班自己的时间/地点/教师，课表优先按教学班展示
+    const classInfo = new Map<number, any>()
+    for (const e of mine) if (e.time) classInfo.set(e.courseId, e)
     items.value = allCourses
       .filter((c: any) => courseIds.includes(c.id))
-      .flatMap((c: any) => parseSchedule(c).map((it: ScheduleItem) => ({
-        ...it, category: c.category, pending: statusOf.get(c.id) !== 'approved',
-      })))
+      .flatMap((c: any) => {
+        const o = classInfo.get(c.id)
+        const src = o ? { ...c, time: o.time, location: o.location || c.location, teacherName: o.teacherName || c.teacherName } : c
+        return parseSchedule(src).map((it: ScheduleItem) => ({
+          ...it, category: c.category, pending: statusOf.get(c.id) !== 'approved',
+        }))
+      })
 
     // 4) 智能推荐候选（必修课已自动排入课表，不再作为候选）
+    // 只列本专业可修课程：公共选修（无学院限制）全院可选；专业类课程须匹配学院+专业
+    const me = JSON.parse(localStorage.getItem('zhixue_user') || '{}')
+    const myCollege = String(me.college || '')
+    const myMajor = String(me.major || '').replace(/[\(（].*$/, '').trim()
+    const fitMajor = (c: any) => {
+      const college = String(c.targetCollege || '')
+      const majors = String(c.targetMajor || '')
+      if (college && myCollege && college !== myCollege) return false
+      if (!majors) return true   // 全院/全校通用
+      return majors.split('|').some((x: string) => x.trim().replace(/[\(（].*$/, '').trim() === myMajor)
+    }
     const curIds = new Set(courseIds)
     cands.value = allCourses.filter((c: any) =>
-      !curIds.has(c.id) && !(c.category || '').includes('必修')
+      !curIds.has(c.id) && !(c.category || '').includes('必修') && fitMajor(c)
     )
-    cands.value.forEach(c => candMap.set(c.id, c))
-    checkedIds.value = cands.value.map(c => c.id)
   } catch {
     ElMessage.error(t('课表数据加载失败（服务可能刚重启），请刷新页面重试'))
   }
@@ -1087,11 +765,12 @@ function parseSchedule(course: any): ScheduleItem[] {  const WEEK_MAP: Record<st
   function timeToPeriod(raw: string): string | null {
     const hh = raw.split(':')[0]
     const h = parseInt(hh, 10)
-    if (h === 8)  return '1-2'
-    if (h === 10) return '3-4'
-    if (h === 14) return '5-6'
-    if (h === 16) return '7-8'
-    if (h === 19) return '9-10'
+    // 标准节次起点；相近时刻就近归入（兼容培养方案重排产生的 7/9/11/15/17/20 点档）
+    if (h <= 8)  return '1-2'
+    if (h === 9 || h === 10) return '3-4'
+    if (h === 11 || h === 12 || h === 13 || h === 14) return '5-6'
+    if (h === 15 || h === 16) return '7-8'
+    if (h >= 17) return '9-10'
     return null
   }
   const raw: string = course.time || course.schedule || ''
@@ -1153,6 +832,13 @@ function parseSchedule(course: any): ScheduleItem[] {  const WEEK_MAP: Record<st
 .wn-sep { color: var(--text-light); }
 .wn-week { font-weight: 700; color: var(--primary); font-size: 16px; }
 .wn-chev { color: var(--text-light); margin-left: 4px; }
+/* 雪碧图小图标容器：按钮/标题/芯片里的行内 SVG（替代 emoji） */
+.bic { display: inline-flex; align-items: center; justify-content: center; width: 1.05em; height: 1.05em; margin-right: 5px; vertical-align: -0.18em; flex: none; }
+.bic svg.icon { width: 100%; height: 100%; }
+/* 冲突图例圆点（替代 🔴🟠） */
+.dot-legend { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 4px 0 6px; vertical-align: 0; }
+.dot-legend.red { background: #e11d48; }
+.dot-legend.orange { background: #d97706; }
 .wn-reset {
   padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
   background: var(--bg); color: var(--text-light); font-size: 13px; cursor: pointer;
@@ -1163,8 +849,10 @@ function parseSchedule(course: any): ScheduleItem[] {  const WEEK_MAP: Record<st
   padding: 6px 14px; border-radius: 8px; border: none;
   background: var(--primary-deep);
   color: #fff; font-size: 13px; font-weight: 500; cursor: pointer;
-  transition: all .15s; margin-left: auto;
+  transition: all .15s;
 }
+/* 两个导出按钮成组靠右：只有紧跟「重置」的第一个导出按钮吃掉剩余空隙 */
+.wn-reset + .wn-export { margin-left: auto; }
 .wn-export:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(43,177,135,0.4); }
 
 /* ===== 课表网格 ===== */
@@ -1303,7 +991,7 @@ html[data-theme="dark"] .conf-pend-tag { background: rgba(217,119,6,.22); }
   font-size: 12px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
 }
-.wk-sem-year { display: block; font-size: 14px; font-weight: 800; color: var(--text); }
+.wk-sem-year { display: block; font-size: 13px; font-weight: 800; color: var(--text); letter-spacing: -0.2px; }
 .wk-sem-item.active .wk-sem-year { color: var(--primary); }
 .wk-sem-term { display: block; font-size: 12px; color: var(--text-light); margin-top: 2px; }
 .wk-sem-item.cur .wk-sem-term::after { content: '·本学期'; color: var(--primary); font-weight: 700; }
@@ -1349,127 +1037,4 @@ html[data-theme="dark"] .conf-pend-tag { background: rgba(217,119,6,.22); }
 .wk-confirm:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(43,177,135,.45); }
 .wk-head-spacer { width: 40px; flex-shrink: 0; }
 
-/* ===== 智能选课推荐板块样式系统（补齐缺失定义） ===== */
-/* -- 标题栏 -- */
-.gen-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
-.gen-head-l { display: flex; flex-direction: column; gap: 4px; }
-.gen-head-l .section-sub { font-size: 12.5px; color: var(--text-light); }
-.gen-head-r { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.gen-stat { text-align: center; padding: 6px 14px; border-radius: 12px; background: color-mix(in srgb, var(--card-bg) 65%, transparent); border: 1px solid var(--border); min-width: 74px; }
-.gen-stat b { display: block; font-size: 19px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.2; }
-.gen-stat small { font-size: 11px; color: var(--text-light); }
-.gen-stat.bad b { color: #e11d48; }
-
-/* -- 候选课程行卡 -- */
-.cand-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
-.cand-row {
-  padding: 11px 14px; border-radius: 12px;
-  border: 1px solid var(--border); background: var(--card-bg);
-  transition: border-color .2s, box-shadow .2s, background .2s;
-}
-.cand-row:hover { border-color: rgba(43,177,135,.45); box-shadow: 0 4px 14px -6px rgba(43,177,135,.25); }
-.cand-row.checked { border-color: rgba(43,177,135,.5); background: rgba(43,177,135,.05); }
-.cand-row.locked { border-left: 3px solid #f59e0b; }
-.cand-row.conflicted { border-left: 3px solid rgba(244,63,94,.55); }
-.cr-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.cand-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; min-width: 0; }
-.cand-check { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; flex-shrink: 0; }
-.cand-name { font-size: 13.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.cand-cat { font-size: 11px; font-weight: 600; color: var(--text-light); background: color-mix(in srgb, var(--text-light) 10%, transparent); padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
-.cr-rec { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; flex-shrink: 0; }
-.cr-rec.rec-green { color: #059669; background: rgba(16,185,129,.1); }
-.cr-rec.rec-blue { color: #0284c7; background: rgba(2,132,199,.1); }
-.cr-rec.rec-amber { color: #d97706; background: rgba(245,158,11,.1); }
-.cr-rec.rec-red { color: #e11d48; background: rgba(244,63,94,.1); }
-html.dark .cr-rec.rec-green { color: #34d399; }
-html.dark .cr-rec.rec-blue { color: #38bdf8; }
-html.dark .cr-rec.rec-amber { color: #fbbf24; }
-html.dark .cr-rec.rec-red { color: #fb7185; }
-.cand-loc, .cand-lock {
-  margin-left: auto; border: none; background: transparent; cursor: pointer;
-  font-size: 13px; padding: 3px 6px; border-radius: 7px; color: var(--text-light);
-  transition: background .15s, color .15s; flex-shrink: 0;
-}
-.cand-loc { margin-left: 8px; }
-.cand-loc:hover:not(:disabled) { background: rgba(43,177,135,.1); color: var(--primary); }
-.cand-loc:disabled { opacity: .35; cursor: not-allowed; }
-.cand-lock:hover { background: rgba(245,158,11,.1); }
-.cand-lock.locked { color: #f59e0b; }
-.cr-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
-.cr-meta span {
-  font-size: 11.5px; color: var(--text-light);
-  background: color-mix(in srgb, var(--text-light) 8%, transparent);
-  padding: 2px 9px; border-radius: 999px; white-space: nowrap;
-}
-.cr-reason { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 7px; }
-.cr-why { font-size: 11.5px; color: var(--text-lighter); }
-.cr-conflict { font-size: 11.5px; font-weight: 600; color: #e11d48; }
-html.dark .cr-conflict { color: #fb7185; }
-.cand-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.cand-empty { text-align: center; padding: 26px; color: var(--text-light); font-size: 13px;
-  border: 1.5px dashed var(--border); border-radius: 12px; }
-
-/* -- 概览统计条 -- */
-.ov-strip { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-.ov-item {
-  flex: 1; min-width: 150px; padding: 10px 14px; border-radius: 12px;
-  background: color-mix(in srgb, var(--card-bg) 65%, transparent); border: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 3px;
-}
-.ov-item small { font-size: 11px; color: var(--text-light); }
-.ov-item b { font-size: 13.5px; font-weight: 800; color: var(--text); }
-.ov-item b.ok { color: #059669; }
-.ov-item b.bad { color: #e11d48; }
-html.dark .ov-item b.ok { color: #34d399; }
-html.dark .ov-item b.bad { color: #fb7185; }
-.ov-wide { flex: 2.2; min-width: 220px; }
-.ov-wide span { font-size: 12px; color: var(--text-light); line-height: 1.5; }
-
-/* -- 方案面板 -- */
-.rec-panel {
-  padding: 16px 18px; border-radius: 14px;
-  border: 1px solid rgba(43,177,135,.3);
-  background: linear-gradient(160deg, rgba(43,177,135,.05), rgba(56,189,248,.03)), var(--card-bg);
-}
-.rec-head { font-size: 13.5px; font-weight: 700; color: var(--text); margin-bottom: 14px; }
-.rec-rejected-tip { font-size: 12px; font-weight: 600; color: #d97706; }
-html.dark .rec-rejected-tip { color: #fbbf24; }
-
-/* -- 方案对比卡片 -- */
-.plan-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-@media (max-width: 900px) { .plan-cards { grid-template-columns: 1fr; } }
-.plan-card {
-  padding: 14px 16px; border-radius: 13px; cursor: pointer;
-  border: 1.5px solid var(--border); background: var(--card-bg);
-  transition: all .22s cubic-bezier(.2,.7,.3,1);
-}
-.plan-card:hover { transform: translateY(-2px); border-color: rgba(43,177,135,.45); box-shadow: 0 8px 20px -8px rgba(43,177,135,.3); }
-.plan-card.active {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(43,177,135,.14), 0 8px 20px -8px rgba(43,177,135,.3);
-  background: linear-gradient(160deg, rgba(43,177,135,.06), transparent), var(--card-bg);
-}
-.plan-card.conflict { border-color: rgba(245,158,11,.4); }
-.plan-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.plan-head b { font-size: 13.5px; font-weight: 800; color: var(--text); }
-.plan-tag { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
-.plan-tag.credit { color: #059669; background: rgba(16,185,129,.1); }
-html.dark .plan-tag.credit { color: #34d399; }
-.plan-tag.easy { color: #0284c7; background: rgba(2,132,199,.1); }
-html.dark .plan-tag.easy { color: #38bdf8; }
-.plan-tag.mix { color: #7c3aed; background: rgba(124,58,237,.1); }
-html.dark .plan-tag.mix { color: #a78bfa; }
-.plan-tag.bad { color: #e11d48; background: rgba(244,63,94,.1); }
-.plan-stats { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; font-size: 12px; color: var(--text-light); }
-.plan-stats b { font-size: 16px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
-.plan-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.plan-chip {
-  font-size: 11.5px; font-weight: 600; color: var(--text);
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
-  padding: 3px 10px; border-radius: 999px;
-}
-
-/* -- 方案明细表 -- */
-.rec-panel .data-table { margin-top: 12px; }
 </style>

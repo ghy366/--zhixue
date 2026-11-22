@@ -13,6 +13,7 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     List<Course> findByTeacherId(Long teacherId);
     List<Course> findByCategory(String category);
     List<Course> findByNameContaining(String name);
+    Course findByCourseCode(String courseCode);
 
     /**
      * 锁定课程行：第三轮“先到先得”在锁内统计已录取人数并插入，

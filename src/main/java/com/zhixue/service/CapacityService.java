@@ -89,7 +89,7 @@ public class CapacityService {
         Map<Long, Integer> curSemByStudent = new HashMap<>();
         for (User u : userRepo.findByRole("student")) {
             curSemByStudent.put(u.getId(),
-                    GraduationService.currentSemesterNo(u.getGrade(), LocalDate.now(), offset));
+                    GraduationService.currentSemesterNo(u.getGrade(), u.getMajor(), LocalDate.now(), offset));
         }
 
         List<Enrollment> all = enrollmentRepo.findAll();

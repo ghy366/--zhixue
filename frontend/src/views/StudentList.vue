@@ -1,5 +1,23 @@
 <template>
-  <div class="page-wrap stats-page liquid">
+  <div class="page-wrap stats-page liquid sl-page">
+    <!-- ===== 顶部 sticky 导航栏 ===== -->
+    <header class="sl-topbar">
+      <div class="sl-brand">
+        <div class="sl-brand-icon">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+        </div>
+        <div class="sl-brand-text">
+          <div class="sl-title">{{ t('学生名单') }}</div>
+          <div class="sl-subtitle">{{ selectedCourse ? selectedCourse.courseName + ' · ' + selectedCourse.classNo : t('请选择教学班') }} · {{ t('共 {n} 人', { n: totalCount }) }}</div>
+        </div>
+      </div>
+      <button class="sl-search-trigger" @click="openCommand" :aria-label="t('打开搜索')">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span class="sl-search-ph">{{ filters.keyword || t('搜索学号 / 姓名 / 专业 / 班级，支持拼音首字母…') }}</span>
+        <kbd class="sl-kbd">{{ isMac ? '⌘' : 'Ctrl+' }} K</kbd>
+      </button>
+    </header>
+
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-icon green" v-html="svgIcon('check-circle')" /><div><div class="stat-value">{{ approvedCount }}</div><div class="stat-label">{{ t('已录取') }}</div></div></div>
       <div class="stat-card"><div class="stat-icon amber" v-html="svgIcon('hourglass')" /><div><div class="stat-value">{{ pendingCount }}</div><div class="stat-label">{{ t('待录取') }}</div></div></div>
@@ -9,12 +27,22 @@
     <!-- 课程选择器 -->
     <div class="section">
       <div class="section-header">
-        <div class="section-title">{{ t('选择课程') }}</div>
+        <div class="section-title">{{ t('选择教学班') }}</div>
         <div class="tab-group">
           <button v-for="c in courses" :key="c.id" class="tab-btn"
             :class="{active: selectedCourse?.id === c.id}" @click="selectCourse(c)">
-            {{ c.name }}
+            {{ c.courseName }} · {{ c.classNo }}
           </button>
+        </div>
+      </div>
+
+      <!-- 筛选轨道 chips：状态，读写同一个 filters -->
+      <div class="sl-filtercard">
+        <div class="sl-chip-row">
+          <button class="sl-chip" :class="{ on: !filters.status }" @click="filters.status = ''">{{ t('全部学生') }}</button>
+          <button class="sl-chip" :class="{ on: filters.status === 'approved' }" @click="filters.status = 'approved'">{{ t('已录取') }} <span class="sl-chip-n">{{ studentsAll.filter(s => s.status === 'approved').length }}</span></button>
+          <button class="sl-chip" :class="{ on: filters.status === 'pending' }" @click="filters.status = 'pending'">{{ t('待录取') }} <span class="sl-chip-n">{{ studentsAll.filter(s => s.status !== 'approved').length }}</span></button>
+          <button v-if="hasFilter" class="sl-reset" @click="clearFilters">{{ t('清空') }}</button>
         </div>
       </div>
 
@@ -51,23 +79,36 @@
               <tr><th>{{ t('学号') }}</th><th>{{ t('姓名') }}</th><th>{{ t('专业') }}</th><th>{{ t('班级') }}</th><th>{{ t('状态') }}</th><th>{{ t('操作') }}</th></tr>
             </thead>
           <tbody>
-            <tr v-for="s in currentStudents" :key="s.enrollmentId">
+            <tr v-for="s in paged" :key="s.enrollmentId" class="sl-row" @click="openProfile(s)">
               <td>{{ s.studentNo }}</td>
               <td>
-                <button class="stu-name" @click="openProfile(s)" :title="t('查看学生画像')">{{ s.studentName }}</button>
+                <button class="stu-name" @click.stop="openProfile(s)" :title="t('查看学生画像')">{{ s.studentName }}</button>
               </td>
               <td>{{ s.studentMajor || '-' }}</td>
               <td>{{ s.studentClass || '-' }}</td>
               <td>
                 <span class="status-tag" :class="statusCls(s.status)">{{ statusText(s.status) }}</span>
+                <span v-if="s.source === 'retake'" class="status-tag status-retake">{{ t('重修') }}</span>
               </td>
               <td>
-                <button v-if="s.status === 'approved'" class="btn btn-primary btn-sm" @click="goGrade(s)">{{ t('录入成绩') }}</button>
+                <button v-if="s.status === 'approved'" class="btn btn-primary btn-sm" @click.stop="goGrade(s)">{{ t('录入成绩') }}</button>
                 <span v-else class="btn btn-ghost btn-sm" style="cursor:not-allowed;color:var(--text-light)">{{ t('待结算') }}</span>
               </td>
             </tr>
           </tbody>
           </table>
+          <div v-if="suggestChips.length && !paged.length" class="sl-suggest">
+            <span class="sl-suggest-label">{{ t('是不是想找') }}</span>
+            <button v-for="sug in suggestChips" :key="sug" class="sl-suggest-chip" @click="filters.keyword = sug">{{ sug }}</button>
+          </div>
+          <div v-if="filtered.length > pageSize" class="sl-pagebar">
+            <span class="sl-pageinfo">{{ t('共 {n} 人 · 第 {p} / {total} 页', { n: filtered.length, p: page, total: totalPages }) }}</span>
+            <div class="sl-pager">
+              <button class="sl-pg-btn" :disabled="page <= 1" @click="page--">‹</button>
+              <button v-for="p in pageItems" :key="p" class="sl-pg-btn" :class="{ active: p === page }" @click="page = p">{{ p }}</button>
+              <button class="sl-pg-btn" :disabled="page >= totalPages" @click="page++">›</button>
+            </div>
+          </div>
         </div>
       </div>
       <div v-else class="empty-state">
@@ -157,23 +198,87 @@
         </template>
       </div>
     </el-dialog>
+
+    <!-- ================= 命令面板 ================= -->
+    <Teleport to="body">
+      <div v-if="cmdOpen" class="cmd-overlay" @click="closeCommand(false)">
+        <div class="cmd-panel" @click.stop>
+          <div class="cmd-input-row">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input ref="cmdInput" v-model="cmdTerm" :placeholder="t('搜索学号 / 姓名 / 专业 / 班级，支持拼音首字母…')" />
+            <kbd class="sl-kbd">esc</kbd>
+          </div>
+          <div class="cmd-results">
+            <template v-if="cmdItems.length">
+              <div v-if="cmdStudents.length" class="cmd-group">
+                <div class="cmd-group-h">{{ t('学生') }} <span>{{ cmdStudents.length }}</span></div>
+                <button v-for="(s, i) in cmdStudents" :key="s.enrollmentId" class="cmd-item" :class="{ active: cmdCursor === i }" @mouseenter="cmdCursor = i" @click="selectCmd(cmdItems[i])">
+                  <span class="cmd-item-ico user"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>
+                  <span class="cmd-item-main"><b>{{ s.studentName }}</b><small>{{ s.studentNo }} · {{ s.studentMajor || '—' }} · {{ s.studentClass || '—' }}</small></span>
+                  <span class="cmd-enter" v-if="cmdCursor === i">↵</span>
+                </button>
+              </div>
+              <div v-if="cmdCourses.length" class="cmd-group">
+                <div class="cmd-group-h">{{ t('课程') }} <span>{{ cmdCourses.length }}</span></div>
+                <button v-for="(c, j) in cmdCourses" :key="c.id" class="cmd-item" :class="{ active: cmdCursor === cmdStudents.length + j }" @mouseenter="cmdCursor = cmdStudents.length + j" @click="selectCmd(cmdItems[cmdStudents.length + j])">
+                  <span class="cmd-item-ico org"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v15H6.5A2.5 2.5 0 0 0 4 19.5z"/></svg></span>
+                  <span class="cmd-item-main"><b>{{ c.name }}</b><small>{{ t('切换到此课程') }}</small></span>
+                  <span class="cmd-enter" v-if="cmdCursor === cmdStudents.length + j">↵</span>
+                </button>
+              </div>
+            </template>
+            <div v-else class="cmd-empty">{{ t('没有联想结果，试试学号 / 姓名 / 拼音首字母') }}</div>
+          </div>
+          <div class="cmd-footer">
+            <span><kbd class="sl-kbd">↑</kbd><kbd class="sl-kbd">↓</kbd> {{ t('导航') }}</span>
+            <span><kbd class="sl-kbd">↵</kbd> {{ t('选中') }}</span>
+            <span class="cmd-footer-tip">{{ t('选中学生看画像 · 选中课程即切换') }}</span>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, toRefs, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import http from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/i18n'
+import { diceCoefficient } from '@/utils/similarity'
+import { initialsOf } from '@/utils/pinyin'
 
 const auth = useAuthStore()
 const router = useRouter()
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
 
 const courses = ref<any[]>([])
 const selectedCourse = ref<any>(null)
 const currentStudents = ref<any[]>([])
+const studentsAll = ref<any[]>([])
+// 单一状态源：列表状态 chips / 搜索 / 命令面板读写同一 filters
+const filters = reactive({ keyword: '' as string, status: '' as string })
+const page = ref(1)
+const pageSize = ref(20)
+
+const filtered = computed(() => {
+  const k = filters.keyword.trim().toLowerCase()
+  return studentsAll.value.filter(s => {
+    if (filters.status === 'approved' && s.status !== 'approved') return false
+    if (filters.status === 'pending' && s.status === 'approved') return false
+    if (k && !(`${s.studentNo || ''} ${s.studentName || ''} ${s.studentMajor || ''} ${s.studentClass || ''}`.toLowerCase().includes(k))) return false
+    return true
+  })
+})
+const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize.value)))
+const paged = computed(() => filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
+const pageItems = computed(() => Array.from({ length: totalPages.value }, (_, i) => i + 1).filter(p => totalPages.value <= 7 || p === 1 || p === totalPages.value || Math.abs(p - page.value) <= 1))
+const hasFilter = computed(() => !!(filters.keyword || filters.status))
+function clearFilters() { filters.keyword = ''; filters.status = ''; page.value = 1 }
+watch([() => filters.keyword, () => filters.status], () => { page.value = 1 })
+watch(totalPages, v => { if (page.value > v) page.value = v })
 
 function statusCls(s: string) {
   if (s === 'approved') return 'status-approved'
@@ -268,25 +373,102 @@ function resetProfileScroll() {
 
 async function loadCourses() {
   try {
-    const r: any = await http.get(`/courses/teacher/${auth.user?.id}`)
+    // 我的教学班（平行班）：成员 = 挂班在读学生，而非整门课的年级大名单
+    const r: any = await http.get('/teaching-classes', { params: { teacherId: auth.user?.id } })
     courses.value = r?.data || []
-    if (courses.value.length) selectCourse(courses.value[0])
+    if (!courses.value.length) return
+    selectCourse(courses.value[0])
   } catch {}
 }
 
 async function selectCourse(c: any) {
   selectedCourse.value = c
   try {
-    const r: any = await http.get(`/enrollments/course/${c.id}`)
+    const r: any = await http.get(`/teaching-classes/${c.id}/members`)
     currentStudents.value = r?.data || []
-  } catch { currentStudents.value = [] }
+    studentsAll.value = currentStudents.value
+    page.value = 1
+  } catch { currentStudents.value = []; studentsAll.value = [] }
+}
+
+/* ===== 空结果 Dice ===== */
+function charDice(a: string, b: string): number {
+  const A = new Set(Array.from(a.toLowerCase().replace(/\s+/g, '')))
+  const B = new Set(Array.from(b.toLowerCase().replace(/\s+/g, '')))
+  if (!A.size || !B.size) return 0
+  let inter = 0
+  for (const c of A) if (B.has(c)) inter++
+  return (2 * inter) / (A.size + B.size)
+}
+const suggestChips = computed(() => {
+  const k = filters.keyword.trim()
+  if (!k) return []
+  const names = new Set<string>()
+  for (const s of studentsAll.value) { names.add(s.studentName); if (s.studentNo) names.add(s.studentNo) }
+  const scored = new Map<string, number>()
+  for (const n of names) {
+    const score = Math.max(diceCoefficient(k, n), charDice(k, n))
+    if (score >= 0.34) scored.set(n, score)
+  }
+  return [...scored.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([n]) => n)
+})
+
+/* ===== 命令面板 ===== */
+const cmdOpen = ref(false)
+const cmdTerm = ref('')
+const cmdCursor = ref(0)
+const cmdInput = ref<HTMLInputElement | null>(null)
+function pyOf(s: any) { return initialsOf(`${s.studentName || ''} ${s.studentNo || ''} ${s.studentMajor || ''} ${s.studentClass || ''}`) }
+function matchText(haystack: string, py: string, qq: string): boolean {
+  const ql = qq.toLowerCase().replace(/\s+/g, '')
+  if (!ql) return true
+  if ((haystack || '').toLowerCase().replace(/\s+/g, '').includes(ql)) return true
+  return !!py && py.includes(ql)
+}
+function openCommand() { cmdTerm.value = filters.keyword; cmdCursor.value = 0; cmdOpen.value = true; nextTick(() => cmdInput.value?.focus()) }
+function closeCommand(clear: boolean) {
+  cmdOpen.value = false
+  if (clear) { cmdTerm.value = ''; filters.keyword = '' }
+  else { cmdTerm.value = filters.keyword }
+}
+watch(cmdTerm, v => { if (cmdOpen.value) filters.keyword = v })
+const cmdStudents = computed(() => {
+  const qq = cmdTerm.value.trim()
+  const arr = !qq ? studentsAll.value.slice(0, 8)
+    : studentsAll.value.filter(s => matchText(`${s.studentName || ''} ${s.studentNo || ''} ${s.studentMajor || ''} ${s.studentClass || ''}`, pyOf(s), qq)).slice(0, 8)
+  return arr
+})
+const cmdCourses = computed(() => {
+  const qq = cmdTerm.value.trim()
+  return courses.value.filter(c => !qq || matchText(c.name, initialsOf(c.name), qq)).slice(0, 6)
+})
+type CmdItem = { kind: 'student' | 'course'; raw: any }
+const cmdItems = computed<CmdItem[]>(() => [
+  ...cmdStudents.value.map(s => ({ kind: 'student' as const, raw: s })),
+  ...cmdCourses.value.map(c => ({ kind: 'course' as const, raw: c })),
+])
+watch(cmdItems, () => { if (cmdCursor.value >= cmdItems.value.length) cmdCursor.value = 0 })
+function selectCmd(item: CmdItem | undefined) {
+  if (!item) return
+  if (item.kind === 'student') { openProfile(item.raw); cmdOpen.value = false; cmdTerm.value = ''; filters.keyword = '' }
+  else { selectCourse(item.raw); cmdOpen.value = false; cmdTerm.value = ''; filters.keyword = '' }
+}
+function onGlobalKey(e: KeyboardEvent) {
+  const meta = e.metaKey || e.ctrlKey
+  if (meta && e.key.toLowerCase() === 'k') { e.preventDefault(); cmdOpen.value ? closeCommand(false) : openCommand(); return }
+  if (!cmdOpen.value) return
+  if (e.key === 'Escape') { e.preventDefault(); closeCommand(false) }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); if (cmdItems.value.length) cmdCursor.value = (cmdCursor.value + 1) % cmdItems.value.length }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (cmdItems.value.length) cmdCursor.value = (cmdCursor.value - 1 + cmdItems.value.length) % cmdItems.value.length }
+  else if (e.key === 'Enter') { e.preventDefault(); selectCmd(cmdItems.value[cmdCursor.value]) }
 }
 
 function goGrade(s: any) {
-  router.push({ name: 'GradeMgr', query: { courseId: selectedCourse.value.id } })
+  router.push({ name: 'GradeMgr', query: { courseId: selectedCourse.value.courseId, classId: selectedCourse.value.id } })
 }
 
-onMounted(loadCourses)
+onMounted(() => { loadCourses(); window.addEventListener('keydown', onGlobalKey) })
+onBeforeUnmount(() => { window.removeEventListener('keydown', onGlobalKey) })
 </script>
 
 <style scoped>
@@ -299,6 +481,7 @@ onMounted(loadCourses)
 .status-approved { background: rgba(16,185,129,0.15); color: #10b981; }
 .status-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
 .status-rejected { background: rgba(239,68,68,0.15); color: #ef4444; }
+.status-retake { background: rgba(124,58,237,0.14); color: #7c3aed; margin-left: 5px; }
 .empty-state { text-align: center; padding: 60px 20px; color: var(--text-light); }
 .empty-icon { font-size: 48px; opacity: 0.3; margin-bottom: 10px; }
 
@@ -371,4 +554,70 @@ onMounted(loadCourses)
 @keyframes slGrow { from { transform: scaleX(0); transform-origin: left; } to { transform: scaleX(1); } }
 .sl-point-val { text-align: right; font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .sl-nodata { font-size: 12px; color: var(--text-light); opacity: .75; padding: 14px 0; text-align: center; }
+
+/* ================= 检索体验升级：顶栏 / 筛选 chips / 命令面板 / 分页 ================= */
+.sl-page { --g: #10b981; --g-dark: #059669; --g-soft: rgba(16,185,129,.10); }
+.ic { display: block; }
+.sl-topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 16px; background: color-mix(in srgb, var(--card, #fff) 86%, transparent); backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); border: 0.5px solid var(--border, #e5e7eb); border-radius: 16px; box-shadow: 0 1px 2px rgba(16,24,40,.03), 0 8px 24px rgba(16,24,40,.04); }
+.sl-brand { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.sl-brand-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #34d399, var(--g-dark)); box-shadow: 0 4px 12px rgba(16,185,129,.32); }
+.sl-brand-icon .ic { width: 21px; height: 21px; }
+.sl-title { font-size: 17px; font-weight: 700; color: var(--text, #0f172a); line-height: 1.2; }
+.sl-subtitle { font-size: 12px; color: var(--text-lighter, #94a3b8); margin-top: 2px; }
+.sl-search-trigger { flex: 1 1 320px; max-width: 520px; min-width: 180px; height: 38px; display: flex; align-items: center; gap: 9px; padding: 0 10px 0 14px; border: 1px solid var(--border, #e5e7eb); border-radius: 999px; background: var(--card, #fff); color: var(--text-lighter, #94a3b8); cursor: pointer; transition: all .18s; font-family: inherit; }
+.sl-search-trigger:hover { border-color: var(--g); box-shadow: 0 0 0 3px var(--g-soft); }
+.sl-search-trigger .ic { width: 17px; height: 17px; flex: 0 0 auto; }
+.sl-search-ph { flex: 1; text-align: left; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sl-kbd { font-family: inherit; font-size: 11px; line-height: 1; white-space: nowrap; padding: 4px 7px; border-radius: 6px; border: 1px solid var(--border, #e5e7eb); background: color-mix(in srgb, var(--card, #fff) 92%, #000 8%); color: var(--text-light, #64748b); flex: 0 0 auto; }
+.sl-filtercard { padding: 10px 14px; border: 0.5px solid var(--border); border-radius: 12px; background: var(--card); margin: 10px 0 14px; }
+.sl-chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sl-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: var(--text-light); font-family: inherit; font-size: 12.5px; cursor: pointer; transition: all .16s; }
+.sl-chip:hover { border-color: var(--g); color: var(--g); }
+.sl-chip.on { background: var(--g-soft); border-color: var(--g); color: var(--g-dark); font-weight: 600; }
+.sl-chip-n { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: rgba(0,0,0,.06); font-variant-numeric: tabular-nums; }
+.sl-chip.on .sl-chip-n { background: rgba(255,255,255,.4); }
+.sl-reset { border: none; background: none; color: var(--text-lighter); font-family: inherit; font-size: 12.5px; cursor: pointer; padding: 6px 8px; margin-left: auto; }
+.sl-reset:hover { color: #ef4444; }
+.sl-row { cursor: pointer; }
+.sl-row:hover { background: var(--g-soft); }
+.sl-suggest { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 12px 14px; border-top: 1px solid var(--border); }
+.sl-suggest-label { font-size: 12px; color: var(--text-light); }
+.sl-suggest-chip { border: 1px solid var(--border); background: var(--card); color: var(--g-dark); font-family: inherit; font-size: 12.5px; padding: 5px 11px; border-radius: 999px; cursor: pointer; transition: all .15s; }
+.sl-suggest-chip:hover { border-color: var(--g); background: var(--g-soft); }
+.sl-pagebar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); }
+.sl-pageinfo { font-size: 12px; color: var(--text-light); }
+.sl-pager { display: flex; align-items: center; gap: 4px; }
+.sl-pg-btn { min-width: 28px; height: 28px; padding: 0 7px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text-light); font-family: inherit; font-size: 12px; cursor: pointer; }
+.sl-pg-btn:hover:not(:disabled) { border-color: var(--g); color: var(--g); }
+.sl-pg-btn.active { background: var(--g); border-color: var(--g); color: #fff; font-weight: 700; }
+.sl-pg-btn:disabled { opacity: .4; cursor: not-allowed; }
+.cmd-overlay { position: fixed; inset: 0; z-index: 4000; display: flex; justify-content: center; align-items: flex-start; padding: 14vh 16px 16px; background: rgba(15,23,42,.42); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: cmdFade .16s ease; }
+.cmd-panel { width: 100%; max-width: 600px; max-height: 68vh; display: flex; flex-direction: column; border: 0.5px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--card); box-shadow: 0 24px 70px rgba(15,23,42,.34); animation: cmdUp .2s cubic-bezier(.16,1,.3,1); }
+.cmd-input-row { display: flex; align-items: center; gap: 11px; padding: 14px 16px; border-bottom: 0.5px solid var(--border); }
+.cmd-input-row .ic { width: 19px; height: 19px; color: var(--g); flex: 0 0 auto; }
+.cmd-input-row input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text); font-family: inherit; font-size: 15px; }
+.cmd-input-row input::placeholder { color: var(--text-lighter); }
+.cmd-results { flex: 1; overflow-y: auto; padding: 8px; }
+.cmd-group + .cmd-group { margin-top: 6px; }
+.cmd-group-h { display: flex; align-items: center; gap: 7px; padding: 6px 10px; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--text-lighter); text-transform: uppercase; }
+.cmd-group-h span { font-weight: 500; }
+.cmd-item { display: flex; align-items: center; gap: 11px; width: 100%; text-align: left; border: none; background: none; font-family: inherit; cursor: pointer; padding: 9px 10px; border-radius: 10px; color: var(--text); }
+.cmd-item.active { background: var(--g-soft); }
+.cmd-item-ico { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: 0 0 auto; }
+.cmd-item-ico .ic { width: 17px; height: 17px; }
+.cmd-item-ico.user { background: rgba(16,185,129,.13); color: var(--g); }
+.cmd-item-ico.org { background: rgba(59,130,246,.13); color: #3b82f6; }
+.cmd-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmd-item-main b { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-item-main small { font-size: 11px; color: var(--text-lighter); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-enter { color: var(--g); font-size: 14px; flex: 0 0 auto; }
+.cmd-empty { padding: 36px 16px; text-align: center; color: var(--text-lighter); font-size: 13px; }
+.cmd-footer { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-top: 0.5px solid var(--border); background: color-mix(in srgb, var(--card) 94%, #000 6%); font-size: 11px; color: var(--text-lighter); }
+.cmd-footer span { display: inline-flex; align-items: center; gap: 4px; }
+.cmd-footer .sl-kbd { padding: 2px 6px; }
+.cmd-footer-tip { margin-left: auto; color: var(--g); }
+@keyframes cmdFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes cmdUp { from { opacity: 0; transform: translateY(-10px) scale(.985) } to { opacity: 1; transform: none } }
+@media (max-width: 1100px) { .sl-search-trigger { order: 3; flex-basis: 100%; max-width: none; } }
+@media (max-width: 560px) { .sl-topbar { padding: 12px; } .sl-kbd { display: none; } }
 </style>

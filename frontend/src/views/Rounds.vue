@@ -280,26 +280,16 @@
               <span class="rd-unit">{{ t('学分') }}</span>
             </div>
             <div class="rc-row">
-              <label>{{ t('选修') }}</label>
+              <label>{{ t('公共选修') }}</label>
+              <el-input-number v-model="form.gradReqGeneral" :min="0" :max="60" />
+              <span class="rd-unit">{{ t('学分 · 华厦 8 分') }}</span>
+            </div>
+            <div class="rc-row">
+              <label>{{ t('专业选修') }}</label>
               <el-input-number v-model="form.gradReqElective" :min="0" :max="60" />
               <span class="rd-unit">{{ t('学分') }}</span>
             </div>
-            <div class="rc-row">
-              <label>{{ t('通识') }}</label>
-              <el-input-number v-model="form.gradReqGeneral" :min="0" :max="60" />
-              <span class="rd-unit">{{ t('学分') }}</span>
-            </div>
-            <div class="rc-row">
-              <label>{{ t('实践') }}</label>
-              <el-input-number v-model="form.gradReqPractice" :min="0" :max="60" />
-              <span class="rd-unit">{{ t('学分') }}</span>
-            </div>
-            <div class="rc-row">
-              <label>{{ t('最少课程数') }}</label>
-              <el-input-number v-model="form.gradReqCourses" :min="0" :max="100" />
-              <span class="rd-unit">{{ t('门 · 与学分双达标') }}</span>
-            </div>
-            <div class="rd-form-tip">{{ t('合计 {n} 学分 + 至少 {c} 门课 · 各模块学分与课程数都达标方可毕业；不同年级可在下方单独设置', { n: gradReqTotal, c: form.gradReqCourses ?? 0 }) }}</div>
+            <div class="rd-form-tip">{{ t('合计 {n} 学分 · 必修 / 公共选修 / 专业选修 三类分别达标（对齐厦门华厦学院，公共选修须修满 8 分）；不同年级可在下方单独设置', { n: gradReqTotal }) }}</div>
           </div>
         </div>
       </div>
@@ -350,7 +340,7 @@ const roundBlockReason = computed(() => {
   return ''
 })
 const derivedPhase = ref<string>('')
-const form = reactive<any>({ roundOpenAt: null, roundCloseAt: null, currentPhase: 'auto', maxCreditPerSemester: 24, maxCoursesPerSemester: 2, confirmMinutes: 30, teacherMaxCourses: 3, gradReqRequired: 6, gradReqElective: 5, gradReqGeneral: 3, gradReqPractice: 2, gradReqCourses: 9 })
+const form = reactive<any>({ roundOpenAt: null, roundCloseAt: null, currentPhase: 'auto', maxCreditPerSemester: 24, maxCoursesPerSemester: 2, confirmMinutes: 30, teacherMaxCourses: 3, gradReqRequired: 18, gradReqGeneral: 8, gradReqElective: 8, gradReqPractice: 0, gradReqCourses: 0 })
 const manualRound = ref<number>(1)
 const saving = ref(false)
 const savingSchedule = ref(false)
@@ -359,13 +349,11 @@ const stagger = reactive<{ rows: any[] }>({ rows: [] })
 const savingStagger = ref(false)
 const gradReqItems = [
   { key: 'gradReqRequired', label: '必修' },
-  { key: 'gradReqElective', label: '选修' },
-  { key: 'gradReqGeneral', label: '通识' },
-  { key: 'gradReqPractice', label: '实践' },
+  { key: 'gradReqGeneral', label: '公共选修' },
+  { key: 'gradReqElective', label: '专业选修' },
 ]
 const gradReqTotal = computed(() =>
-  (Number(form.gradReqRequired) || 0) + (Number(form.gradReqElective) || 0) +
-  (Number(form.gradReqGeneral) || 0) + (Number(form.gradReqPractice) || 0))
+  (Number(form.gradReqRequired) || 0) + (Number(form.gradReqGeneral) || 0) + (Number(form.gradReqElective) || 0))
 
 const gradeStats = ref<any[]>([])          // 学生表里实际存在的年级 + 人数
 const unknownStudents = ref(0)             // 还没有年级的学生数（grade 为空）
@@ -392,11 +380,11 @@ async function load() {
     form.maxCoursesPerSemester = config.value.maxCoursesPerSemester ?? 2
     form.confirmMinutes = config.value.confirmMinutes ?? 30
     form.teacherMaxCourses = config.value.teacherMaxCourses ?? 3
-    form.gradReqRequired = config.value.gradReqRequired ?? 6
-    form.gradReqElective = config.value.gradReqElective ?? 5
-    form.gradReqGeneral = config.value.gradReqGeneral ?? 3
-    form.gradReqPractice = config.value.gradReqPractice ?? 2
-    form.gradReqCourses = config.value.gradReqCourses ?? 9
+    form.gradReqRequired = config.value.gradReqRequired ?? 18
+    form.gradReqGeneral = config.value.gradReqGeneral ?? 8
+    form.gradReqElective = config.value.gradReqElective ?? 8
+    form.gradReqPractice = 0
+    form.gradReqCourses = 0
     manualRound.value = config.value.currentRound || 1
   } catch {}
   try {

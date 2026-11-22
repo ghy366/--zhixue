@@ -1,22 +1,27 @@
 <template>
   <div class="page-wrap stats-page liquid">
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-icon blue" v-html="svgIcon('book')" /><div><div class="stat-value">{{ courses.length }}</div><div class="stat-label">{{ t('授课课程') }}</div></div></div>
+      <div class="stat-card"><div class="stat-icon blue" v-html="svgIcon('book')" /><div><div class="stat-value">{{ courses.length }}</div><div class="stat-label">{{ t('教学班（平行班）') }}</div></div></div>
       <div class="stat-card"><div class="stat-icon green" v-html="svgIcon('check-circle')" /><div><div class="stat-value">{{ gradedCount }}</div><div class="stat-label">{{ t('已批改') }}</div></div></div>
       <div class="stat-card"><div class="stat-icon amber" v-html="svgIcon('hourglass')" /><div><div class="stat-value">{{ pendingCount }}</div><div class="stat-label">{{ t('待批改') }}</div></div></div>
     </div>
     <div class="section">
       <div class="section-header">
-        <div class="section-title">{{ t('选择课程') }}</div>
+        <div class="section-title">{{ t('选择教学班') }}</div>
         <div class="tab-group">
-          <button v-for="c in courses" :key="c.id" class="tab-btn" :class="{active: selectedCourse?.id === c.id}" @click="selectCourse(c)">{{ c.name }}</button>
+          <button v-for="c in courses" :key="c.id" class="tab-btn" :class="{active: selectedCourse?.id === c.id}" @click="selectCourse(c)">{{ c.courseName }} · {{ c.classNo }}</button>
         </div>
       </div>
       <div v-if="selectedCourse">
+        <!-- ===== 正考 / 补考 / 重修：三份名单来源不同，必须分开录分 ===== -->
+        <div class="gm-batch-note" style="padding: 4px 0 10px">
+          {{ t('名单：本教学班在读学生（{n} 人）· 挂科学生可在行内选择按补考/重修录分', { n: students.length }) }}
+        </div>
+
         <!-- ===== 成绩录入进度 ===== -->
-        <div class="gm-progress" v-if="students.length">
+        <div class="gm-progress" v-if="students.length && batch === 'normal'">
           <div class="gm-progress-head">
-            <span>{{ t('成绩录入进度 · {n}', { n: selectedCourse.name }) }}</span>
+            <span>{{ t('成绩录入进度 · {n}', { n: selectedCourse.courseName + ' · ' + selectedCourse.classNo }) }}</span>
             <b>{{ t('{g} / {s} 人（{p}%）', { g: gradedStudents.length, s: students.length, p: gradePct }) }}</b>
           </div>
           <div class="gm-progress-track">
@@ -28,7 +33,7 @@
         </div>
 
         <!-- ===== 成绩分析 ===== -->
-        <div class="gm-analysis" v-if="gradedStudents.length">
+        <div class="gm-analysis" v-if="gradedStudents.length && batch === 'normal'">
           <div class="gm-kpis">
             <div class="gm-kpi"><b>{{ avgTotal }}</b><span>{{ t('平均总评') }}</span></div>
             <div class="gm-kpi ok"><b>{{ passRate }}%</b><span>{{ t('及格率') }}</span></div>
@@ -97,7 +102,11 @@
                 </td>
                 <td><b>{{ fmt(s.totalScore) }}</b></td>
                 <td>
-                  <template v-if="editingId === s.studentId && isFailedRow(s)">
+                  <template v-if="batch !== 'normal'">
+                    <span class="gm-etag" :class="batch">{{ batch === 'makeup' ? t('补考') : t('重修') }}</span>
+                    <span v-if="s.flowStatus" class="gm-flow">{{ flowText(s.flowStatus) }}</span>
+                  </template>
+                  <template v-else-if="editingId === s.studentId && isFailedRow(s)">
                     <div class="gm-exam-type">
                       <label :class="{ on: editExamType === 'makeup' }"><input type="radio" value="makeup" v-model="editExamType" /> {{ t('补考') }}</label>
                       <label :class="{ on: editExamType === 'retake' }"><input type="radio" value="retake" v-model="editExamType" /> {{ t('重修') }}</label>
@@ -115,10 +124,15 @@
                     <button class="btn btn-success btn-sm" @click="saveGrade(s)">{{ t('保存') }}</button>
                     <button class="btn btn-ghost btn-sm" @click="editingId = null">{{ t('取消') }}</button>
                   </template>
-                  <button v-else class="btn btn-outline btn-sm" @click="startEdit(s)">{{ s.totalScore != null ? (isFailedRow(s) ? t('录补考/重修') : t('批改')) : t('录入成绩') }}</button>
+                  <button v-else class="btn btn-outline btn-sm" @click="startEdit(s)">
+                    {{ batch === 'makeup' ? t('录入补考成绩') : batch === 'retake' ? t('录入重修成绩')
+                      : s.totalScore != null ? (isFailedRow(s) ? t('录补考/重修') : t('批改')) : t('录入成绩') }}
+                  </button>
                 </td>
               </tr>
-              <tr v-if="!students.length"><td colspan="8" style="text-align:center;color:var(--text-light);padding:24px">{{ t('该课程暂无学生') }}</td></tr>
+              <tr v-if="!students.length"><td colspan="8" style="text-align:center;color:var(--text-light);padding:24px">
+                {{ batch === 'makeup' ? t('该课程暂无补考学生') : batch === 'retake' ? t('该课程暂无重修学生') : t('该课程暂无学生') }}
+              </td></tr>
             </tbody>
           </table>
         </div>
@@ -151,6 +165,30 @@ const editRegular = ref<number | null>(null)
 const editFinal = ref<number | null>(null)
 /** 已挂科记录再录入 = 补考 / 重修（真实高校：先补考，不过再重修）；正常成绩留空 */
 const editExamType = ref('')
+
+/** 正考 / 补考 / 重修：名单来源不同（已录取 / 补考册 / 重修录取），必须分开录分 */
+const batch = ref<'normal' | 'makeup' | 'retake'>('normal')
+const batchTabs = [
+  { k: 'normal', label: '正考' },
+  { k: 'makeup', label: '补考' },
+  { k: 'retake', label: '重修' },
+]
+const makeupCap = ref(60)
+function switchBatch(k: 'normal' | 'makeup' | 'retake') {
+  if (batch.value === k) return
+  batch.value = k
+  editingId.value = null
+  students.value = []
+  loadStudents()
+}
+function flowText(s: string) {
+  const map: Record<string, string> = {
+    ELIGIBLE: '待报名', REGISTERED: '已报名', SCHEDULED: '已排考', APPLIED: '已报名',
+    APPROVED: '已安排', ENROLLED: '已进班', PASSED: '已通过', FAILED: '未通过',
+    ABSENT: '缺考', CANCELLED: '已取消',
+  }
+  return t(map[s] || s)
+}
 
 /** 挂科行：已录入总评且 < 60（补考/重修录入对象） */
 function isFailedRow(s: any): boolean {
@@ -207,12 +245,13 @@ const sy = (v: number) => 190 - (v / 100) * (190 - 30) - 12
 
 async function loadCourses() {
   try {
-    const r: any = await http.get(`/courses/teacher/${auth.user?.id}`)
+    // 我的教学班（平行班）：成绩按班录入,名单 = 挂班在读学生
+    const r: any = await http.get('/teaching-classes', { params: { teacherId: auth.user?.id } })
     courses.value = r?.data || []
     if (courses.value.length && !selectedCourse.value) {
-      // 支持从"选课学生"页带 courseId 跳转过来直接定位课程
-      const q = Number(route.query.courseId)
-      const target = courses.value.find(c => c.id === q)
+      // 支持从"学生名册"页带 classId 跳转过来直接定位班级
+      const qc = Number(route.query.classId)
+      const target = courses.value.find(c => c.id === qc)
       selectedCourse.value = target || courses.value[0]
       await loadStudents()
     }
@@ -221,16 +260,16 @@ async function loadCourses() {
 async function loadStudents() {
   if (!selectedCourse.value) return
   try {
-    const r: any = await http.get(`/grades/course/${selectedCourse.value.id}`)
+    const r: any = await http.get(`/grades/course/${selectedCourse.value.courseId}`, { params: { classId: selectedCourse.value.id } })
     students.value = r?.data || []
-  } catch {}
+  } catch { students.value = [] }
 }
-function selectCourse(c: any) { selectedCourse.value = c; editingId.value = null; loadStudents() }
+function selectCourse(c: any) { selectedCourse.value = c; editingId.value = null; batch.value = 'normal'; loadStudents() }
 function startEdit(s: any) {
   editingId.value = s.studentId
   editRegular.value = s.regularScore ?? null
   editFinal.value = s.finalScore ?? null
-  editExamType.value = isFailedRow(s) ? 'makeup' : ''
+  editExamType.value = batch.value !== 'normal' ? batch.value : (isFailedRow(s) ? 'makeup' : '')
 }
 function validScore(v: any): boolean {
   if (v === null || v === '' || v === undefined) return true // 允许留空 = 未录入
@@ -242,26 +281,40 @@ async function saveGrade(s: any) {
     ElMessage.warning(t('成绩需为 0–100 的数字，留空表示未录入'))
     return
   }
+  // 补考 tab 强制 makeup；重修 tab 强制 retake；正考 tab 按挂科行手动选择
+  const examType = batch.value !== 'normal' ? batch.value : (editExamType.value || undefined)
+  const raw = (Number(editRegular.value || 0) * 0.4) + (Number(editFinal.value || 0) * 0.6)
+  if (examType === 'makeup' && raw > makeupCap.value) {
+    ElMessage.warning(t('补考总评 {r} 超过封顶 {c} 分，保存后将按 {c} 分折算', { r: raw.toFixed(1), c: makeupCap.value }))
+  }
   try {
-    await http.post('/grades', {
+    const r: any = await http.post('/grades', {
       studentId: s.studentId,
-      courseId: selectedCourse.value.id,
+      courseId: selectedCourse.value.courseId,
+      classId: selectedCourse.value.id,
       regularScore: editRegular.value === '' ? null : editRegular.value,
       finalScore: editFinal.value === '' ? null : editFinal.value,
-      // 挂科行的补考/重修标记；正常成绩不传（保持原性质，普通改分不会被误标）
-      examType: editExamType.value || undefined,
+      examType,
     })
-    ElMessage.success(editExamType.value
-      ? (editExamType.value === 'makeup' ? t('补考成绩已保存') : t('重修成绩已保存'))
-      : t('成绩已保存'))
+    ElMessage.success(r?.message || (examType
+      ? (examType === 'makeup' ? t('补考成绩已保存') : t('重修成绩已保存'))
+      : t('成绩已保存')))
     editingId.value = null
     await loadStudents()
   } catch (e: any) {
-    ElMessage.error(e?.message || t('保存失败'))
+    ElMessage.error(e?.response?.data?.message || e?.message || t('保存失败'))
   }
 }
 
-onMounted(loadCourses)
+async function loadConfig() {
+  try {
+    const r: any = await http.get('/system/config')
+    const c = r?.data || {}
+    if (c.makeupScoreCap != null && Number(c.makeupScoreCap) > 0) makeupCap.value = Number(c.makeupScoreCap)
+  } catch {}
+}
+
+onMounted(() => { loadConfig(); loadCourses() })
 </script>
 
 <style scoped>
@@ -270,6 +323,14 @@ onMounted(loadCourses)
 .tab-btn { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-light); font-size: 13px; cursor: pointer; transition: all .15s; }
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active { background: var(--primary-deep); color: #fff; border-color: var(--primary-deep); }
+
+/* 正考 / 补考 / 重修 批次切换 */
+.gm-batch-tabs { display: flex; align-items: center; gap: 8px; margin: 4px 0 16px; flex-wrap: wrap; }
+.gm-batch-btn { padding: 6px 18px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-light); font-size: 13px; cursor: pointer; transition: all .15s; }
+.gm-batch-btn:hover { color: var(--text); }
+.gm-batch-btn.active { background: var(--primary-deep); color: #fff; border-color: var(--primary-deep); }
+.gm-batch-note { font-size: 12px; color: var(--text-lighter); }
+.gm-flow { margin-left: 6px; font-size: 11px; color: var(--text-lighter); }
 .empty-state { text-align: center; padding: 60px 20px; color: var(--text-light); }
 .empty-icon { font-size: 48px; opacity: 0.3; margin-bottom: 10px; }
 

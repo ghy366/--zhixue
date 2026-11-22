@@ -1,217 +1,122 @@
 <template>
   <div class="tp-page stats-page liquid">
-    <!-- ===== 页头 ===== -->
+    <!-- ===== 两个 Tab ===== -->
+    <div class="tp-tabs">
+      <button class="tp-tab" :class="{ on: activeTab === 'courses' }" @click="activeTab = 'courses'">
+        <span class="tp-tab-ico" v-html="svgIcon('book-open')" />{{ t('修读课程方案') }}
+        <small>{{ t('按专业+学期排定必修') }}</small>
+      </button>
+      <button class="tp-tab" :class="{ on: activeTab === 'diff' }" @click="activeTab = 'diff'">
+        <span class="tp-tab-ico" v-html="svgIcon('graduation-cap')" />{{ t('差异化培养') }}
+        <small>{{ t('毕业学分要求') }}</small>
+      </button>
+    </div>
+
+    <!-- ===== Tab 1：修读课程方案（教务系统批量排定）===== -->
+    <div v-show="activeTab === 'courses'">
+      <TrainingPlanCourses />
+    </div>
+
+    <!-- ===== Tab 2：毕业条件（= 培养方案，学制两套，按专业逐行展开）===== -->
+    <div v-show="activeTab === 'diff'">
     <div class="tp-hero">
       <div class="tp-hero-main">
-        <h2><span class="tp-hero-ico" v-html="svgIcon('graduation-cap')" />{{ t('差异化培养方案') }}</h2>
-        <p>{{ t('参照真实高校培养方案模式：为不同年级（或年级+专业）配置专属的毕业学分与课程门数要求；未覆盖的学生自动使用全校默认要求。') }}</p>
+        <h2><span class="tp-hero-ico" v-html="svgIcon('graduation-cap')" />{{ t('毕业条件 · 即培养方案') }}</h2>
+        <p>{{ t('每个专业的毕业条件 = 修完其培养方案排定的全部课程（必修 + 专业选修）并自选修满公共选修 6 学分。下表按专业逐行给出精确学分；条件随培养方案自动更新。') }}</p>
       </div>
       <div class="tp-hero-stats">
-        <div class="tp-hstat"><b>{{ items.length }}</b><span>{{ t('方案总数') }}</span></div>
-        <div class="tp-hstat"><b>{{ coveredGrades }}</b><span>{{ t('覆盖年级') }}</span></div>
-        <div class="tp-hstat"><b>{{ customMajors }}</b><span>{{ t('定制专业') }}</span></div>
-        <div class="tp-hstat"><b>{{ maxTotal }}</b><span>{{ t('最高总学分') }}</span></div>
+        <div class="tp-hstat"><b>{{ items.length }}</b><span>{{ t('学制套数') }}</span></div>
+        <div class="tp-hstat"><b>{{ gxSupply ?? '—' }}</b><span>{{ t('全校公选池学分') }}</span></div>
       </div>
     </div>
 
-    <!-- ===== 工具栏 ===== -->
-    <div class="tp-toolbar">
-      <span class="tp-count">{{ t('共 {n} 个方案', { n: items.length }) }}</span>
-      <span class="tp-dirty" v-if="dirty">{{ t('有未保存的修改') }}</span>
-      <span class="tp-flex"></span>
-      <button class="btn btn-outline btn-sm" @click="addPlan" :disabled="editingIdx !== null">+ {{ t('新增方案') }}</button>
-      <button class="btn btn-primary btn-sm" :disabled="!dirty || editingIdx !== null" @click="saveAll">
-        {{ saving ? t('保存中…') : t('保存全部修改') }}
-      </button>
-    </div>
-
-    <!-- ===== 方案卡片网格 ===== -->
-    <div class="tp-grid" v-if="items.length">
-      <div v-for="(g, i) in items" :key="i" class="tp-card" :class="{ editing: editingIdx === i, generic: !g.major, custom: g.major }">
-        <!-- 编辑态 -->
-        <template v-if="editingIdx === i">
-          <div class="tp-edit-head">
-            <span class="tp-grade-badge edit">{{ g.grade ? g.grade + ' 级' : '——' }}</span>
-            <el-input-number v-model="g.grade" :min="2000" :max="2100" size="small" controls-position="right" style="width:110px" />
-          </div>
-          <div class="tp-edit-grid">
-            <label>{{ t('适用专业') }}<el-input v-model="g.major" size="small" :placeholder="t('留空 = 全年级通用')" /></label>
-            <label>{{ t('方案名称') }}<el-input v-model="g.label" size="small" :placeholder="t('如 普通本科 / 专升本')" /></label>
-          </div>
-          <div class="tp-edit-grid four">
-            <label>{{ t('必修') }}<el-input-number v-model="g.gradReqRequired" :min="0" :max="200" size="small" controls-position="right" style="width:100%" /></label>
-            <label>{{ t('选修') }}<el-input-number v-model="g.gradReqElective" :min="0" :max="200" size="small" controls-position="right" style="width:100%" /></label>
-            <label>{{ t('通识') }}<el-input-number v-model="g.gradReqGeneral" :min="0" :max="200" size="small" controls-position="right" style="width:100%" /></label>
-            <label>{{ t('实践') }}<el-input-number v-model="g.gradReqPractice" :min="0" :max="200" size="small" controls-position="right" style="width:100%" /></label>
-          </div>
-          <div class="tp-edit-grid">
-            <label>{{ t('最少课程数') }}<el-input-number v-model="g.gradReqCourses" :min="0" :max="200" size="small" controls-position="right" style="width:100%" /></label>
-            <span class="tp-total-edit">{{ t('合计 {n} 学分', { n: totalOf(g) }) }}</span>
-          </div>
-          <div class="tp-actions">
-            <button class="btn btn-success btn-sm" @click="confirmEdit(i)">{{ t('完成') }}</button>
-            <button class="btn btn-danger btn-sm" @click="removePlan(i)">{{ t('删除') }}</button>
-          </div>
-        </template>
-
-        <!-- 查看态 -->
-        <template v-else>
-          <div class="tp-card-head">
-            <span class="tp-grade-badge">{{ g.grade }} 级</span>
-            <div class="tp-card-title">
-              <b>{{ g.label || t('定制培养方案') }}</b>
-              <span class="tp-major">{{ g.major ? t('限 {m} 专业', { m: g.major }) : t('全年级通用') }}</span>
-            </div>
-            <span class="tp-total" :class="{ max: totalOf(g) === maxTotal }">{{ totalOf(g) }}<small>{{ t('学分') }}</small></span>
-          </div>
-          <div class="tp-cats">
-            <div class="tp-cat" v-for="c in catDefs" :key="c.key">
-              <b :style="{ color: c.color }">{{ g[c.key] ?? 0 }}</b>
-              <span>{{ t(c.name) }}</span>
-            </div>
-            <div class="tp-cat">
-              <b>{{ g.gradReqCourses ?? 0 }}</b>
-              <span>{{ t('课程数') }}</span>
-            </div>
-          </div>
-          <div class="tp-actions view">
-            <button class="btn btn-outline btn-sm" @click="startEdit(i)">{{ t('编辑') }}</button>
-            <button class="btn btn-ghost-danger btn-sm" @click="removePlan(i)">{{ t('删除') }}</button>
-          </div>
-        </template>
+    <!-- ===== 学制区块：每专业一行的毕业条件表 ===== -->
+    <div class="tp-trackblock" v-for="g in items" :key="g.track">
+      <div class="tp-track-head">
+        <span class="tp-track-badge" :style="{ background: g.track === 'zsb' ? '#0284c7' : '#2bb187' }">{{ g.label }}</span>
+        <b>{{ g.track === 'zsb' ? t('专升本毕业条件') : t('普通本科毕业条件') }}</b>
+        <span class="tp-track-note">{{ t('覆盖 {n} 个专业 · 公共选修自选修满 6 学分（全校公选池 {m} 学分）', { n: g.coveredMajorCount, m: g.gxSupply ?? '—' }) }}</span>
       </div>
-
-      <!-- 新增占位卡 -->
-      <button class="tp-card tp-add" @click="addPlan" v-if="editingIdx === null">
-        <span class="tp-add-ico">＋</span>
-        <span>{{ t('新增培养方案') }}</span>
-        <small>{{ t('为某个年级（或年级+专业）定制毕业要求') }}</small>
-      </button>
+      <table class="tp-mtable">
+        <thead>
+          <tr>
+            <th>{{ t('专业') }}</th>
+            <th>{{ t('必修（含公共必修）') }}</th>
+            <th>{{ t('专业选修') }}</th>
+            <th>{{ t('公共选修（自选）') }}</th>
+            <th>{{ t('毕业合计') }}</th>
+            <th>{{ t('课程门数') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="mj in g.majors" :key="mj.major">
+            <td class="tp-mname">{{ mj.major }}</td>
+            <td class="tp-mnum">{{ mj.bx }}</td>
+            <td class="tp-mnum">{{ mj.zx }}</td>
+            <td class="tp-mnum">6</td>
+            <td class="tp-mtotal">{{ mj.total }}</td>
+            <td class="tp-mnum">{{ mj.courses }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="tp-tracknote">{{ t('修完对应专业培养方案的全部课程（含公共选修自选 6 学分）即满足该专业毕业条件；课程随培养方案调整自动同步。') }}</div>
     </div>
 
-    <div v-else class="tp-empty">
-      <div class="tp-empty-ico" v-html="svgIcon('graduation-cap')" />
-      <b>{{ t('还没有配置任何差异化方案') }}</b>
-      <p>{{ t('所有学生当前使用全校默认要求。点击下方按钮为特定年级（如专升本）定制专属方案。') }}</p>
-      <button class="btn btn-primary" @click="addPlan">+ {{ t('新增第一个方案') }}</button>
+    <!-- 专业增减说明（红字） -->
+    <div class="tp-rednote">
+      <b>关于专业的新增与撤销：</b>
+      真实高校的新增 / 撤销本科专业，走教育部「普通高等学校本科专业设置与服务平台」的年度集中备案审批
+      （院系申报 → 教学委员会论证 → 校长办公会 → 报教育部备案），不在教务 / 选课系统里操作——真实华厦亦如此
+      （2015 年建校首批 5 个本科专业，现已增至 20 余个）。
+      本系统内的「加专业」= 在「修读课程方案」为该专业排定课程并导入该专业学生账号：
+      毕业条件（上表）、自动排课、毕业进度即全部自动联动，本表会自动新增该专业一行。
     </div>
-
-    <!-- ===== 全校默认要求提示 ===== -->
-    <div class="tp-default-hint">
-      <span class="tp-hint-ico" v-html="svgIcon('alert-triangle')" />
-      <span>{{ props.embedded
-        ? t('未覆盖的学生按本页「规则与参数」Tab 中「毕业要求学分」的全校默认要求计算毕业进度。')
-        : t('未覆盖的学生按「选课轮次 → 规则与参数 → 毕业要求学分」的全校默认要求计算毕业进度。') }}</span>
-      <button v-if="!props.embedded" class="btn btn-ghost btn-sm" @click="$router.push('/rounds')">{{ t('前往配置默认要求 →') }}</button>
-    </div>
+    </div><!-- /Tab 2 毕业条件 -->
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import http from '@/api'
 import { t } from '@/i18n'
+import TrainingPlanCourses from '@/components/TrainingPlanCourses.vue'
 const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
+
+// 两个 Tab：修读课程方案 / 毕业条件（= 培养方案，学制两套）
+const activeTab = ref<'courses' | 'diff'>('courses')
 
 // 嵌入模式（选课轮次页 Tab 内）：隐藏跳转提示按钮，文案指向本页「规则与参数」Tab
 const props = defineProps<{ embedded?: boolean }>()
 
-interface Plan {
-  grade: number | null
-  major: string | null
-  label: string | null
-  gradReqRequired: number
-  gradReqElective: number
-  gradReqGeneral: number
-  gradReqPractice: number
-  gradReqCourses: number
+interface MajorCond {
+  major: string
+  bx: number
+  zx: number
+  courses: number
+  total: number
 }
 
-const catDefs = [
-  { key: 'gradReqRequired', name: '必修', color: '#0f6f52' },
-  { key: 'gradReqElective', name: '选修', color: '#0284c7' },
-  { key: 'gradReqGeneral', name: '通识', color: '#0369a1' },
-  { key: 'gradReqPractice', name: '实践', color: '#b45309' },
-]
+interface Plan {
+  track: 'normal' | 'zsb'
+  label: string
+  gxSupply?: number | null
+  coveredMajorCount?: number
+  majors?: MajorCond[]
+}
 
 const items = ref<Plan[]>([])
-const editingIdx = ref<number | null>(null)
-const dirty = ref(false)
-const saving = ref(false)
-
-const coveredGrades = computed(() => new Set(items.value.map(g => g.grade)).size)
-const customMajors = computed(() => items.value.filter(g => g.major && g.major.trim()).length)
-const maxTotal = computed(() => Math.max(0, ...items.value.map(totalOf)))
-function totalOf(g: Plan): number {
-  return (Number(g.gradReqRequired) || 0) + (Number(g.gradReqElective) || 0)
-    + (Number(g.gradReqGeneral) || 0) + (Number(g.gradReqPractice) || 0)
-}
+const gxSupply = computed(() => items.value[0]?.gxSupply ?? null)
 
 async function load() {
   try {
     const r: any = await http.get('/system/grade-reqs')
-    items.value = (r?.data || r || []).map((x: any) => ({ ...x }))
-    dirty.value = false
+    const rows: Plan[] = (r?.data || r || []).map((x: any) => ({ ...x }))
+    // 防御性兜底：两套学制必须齐全（后端已合成，这里兜底历史空库）
+    if (!rows.some(x => x.track === 'normal')) rows.push({ track: 'normal', label: '普通本科', majors: [] })
+    if (!rows.some(x => x.track === 'zsb')) rows.push({ track: 'zsb', label: '专升本', majors: [] })
+    items.value = rows
   } catch (e: any) { ElMessage.error(e?.message || t('加载失败')) }
-}
-
-function addPlan() {
-  items.value.push({
-    grade: new Date().getFullYear(),
-    major: '',
-    label: '',
-    gradReqRequired: 110, gradReqElective: 8, gradReqGeneral: 4, gradReqPractice: 2, gradReqCourses: 50,
-  })
-  editingIdx.value = items.value.length - 1
-  dirty.value = true
-}
-
-function startEdit(i: number) { editingIdx.value = i }
-
-function confirmEdit(i: number) {
-  const g = items.value[i]
-  if (!g.grade || g.grade < 2000) { ElMessage.warning(t('请填写年级（入学年份）')); return }
-  if (g.major) g.major = g.major.trim()
-  // 同「年级+专业」去重
-  const dup = items.value.some((x, xi) => xi !== i && x.grade === g.grade && (x.major || '') === (g.major || ''))
-  if (dup) { ElMessage.warning(t('该年级下已存在相同专业的方案')); return }
-  editingIdx.value = null
-  dirty.value = true
-}
-
-function removePlan(i: number) {
-  const g = items.value[i]
-  ElMessageBox.confirm(
-    t('删除 {grade} 级{major}的培养方案？删除后该{scope}回退为全校默认要求。',
-      { grade: g.grade, major: g.major ? '「' + g.major + '」专业的' : '', scope: g.major ? '专业' : '年级' }),
-    t('删除培养方案'),
-    { type: 'warning', confirmButtonText: t('删除'), cancelButtonText: t('取消') }
-  ).then(() => {
-    if (editingIdx.value === i) editingIdx.value = null
-    items.value.splice(i, 1)
-    dirty.value = true
-  }).catch(() => {})
-}
-
-async function saveAll() {
-  for (const g of items.value) {
-    if (!g.grade || g.grade < 2000) { ElMessage.warning(t('存在未填写年级的方案')); return }
-  }
-  saving.value = true
-  try {
-    const r: any = await http.post('/system/grade-reqs', {
-      items: items.value.map(g => ({
-        grade: g.grade, major: g.major || '', label: g.label || '',
-        gradReqRequired: g.gradReqRequired, gradReqElective: g.gradReqElective,
-        gradReqGeneral: g.gradReqGeneral, gradReqPractice: g.gradReqPractice,
-        gradReqCourses: g.gradReqCourses,
-      })),
-    })
-    ElMessage.success(r?.message || t('培养方案已保存'))
-    await load()
-  } catch (e: any) { ElMessage.error(e?.message || t('保存失败')) }
-  finally { saving.value = false }
 }
 
 onMounted(load)
@@ -219,6 +124,19 @@ onMounted(load)
 
 <style scoped>
 .tp-page { display: flex; flex-direction: column; gap: 16px; padding: 4px 0; }
+
+/* ===== 两个 Tab ===== */
+.tp-tabs { display: flex; gap: 6px; padding: 5px; border-radius: 14px; background: color-mix(in srgb, var(--text-light) 6%, transparent); border: 1px solid var(--border); }
+.tp-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 14px; border: none; border-radius: 10px; background: transparent; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 700; color: var(--text-light);
+  transition: background .2s, color .2s, box-shadow .2s; }
+.tp-tab small { flex-basis: 100%; font-size: 11px; font-weight: 400; color: var(--text-lighter); margin-top: -4px; }
+.tp-tab:hover { color: var(--text); background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.tp-tab.on { color: var(--primary); background: var(--card-bg); box-shadow: 0 2px 10px -4px rgba(0,0,0,.3), inset 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent); }
+.tp-tab.on small { color: var(--text-light); }
+.tp-tab-ico { display: inline-flex; }
+.tp-tab-ico :deep(.icon) { width: 18px; height: 18px; }
 
 /* ===== 页头 ===== */
 .tp-hero {
@@ -282,6 +200,12 @@ html.dark .tp-dirty { color: #fbbf24; }
 .tp-cat { text-align: center; padding: 9px 4px; border-radius: 10px; background: color-mix(in srgb, var(--text-light) 7%, transparent); }
 .tp-cat b { display: block; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
 .tp-cat span { font-size: 11px; color: var(--text-light); }
+/* 供给核对（培养方案可提供学分 vs 配置要求） */
+.tp-checks { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.tp-check { font-size: 11.5px; line-height: 1.5; }
+.tp-check.bx { color: var(--text-light, #64748b); }
+.tp-check.warn { color: #e11d48; font-weight: 600; }
+.tp-check.ok { color: #059669; }
 
 /* 操作 */
 .tp-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -325,4 +249,36 @@ html.dark .tp-dirty { color: #fbbf24; }
 html.dark .tp-hint-ico { color: #fbbf24; }
 
 @media (max-width: 900px) { .tp-grid { grid-template-columns: 1fr; } .tp-hero-stats { width: 100%; justify-content: space-around; } }
+
+/* ===== 毕业条件表（按专业逐行）===== */
+.tp-trackblock { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; }
+.tp-trackblock + .tp-trackblock { margin-top: 14px; }
+.tp-track-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.tp-track-badge { color: #fff; font-size: 12px; font-weight: 800; padding: 4px 12px; border-radius: 999px; flex-shrink: 0; }
+.tp-track-head b { font-size: 15px; color: var(--text); }
+.tp-track-note { font-size: 12px; color: var(--text-light); margin-left: auto; }
+.tp-mtable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tp-mtable th { text-align: center; padding: 8px 10px; color: var(--text-light); font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tp-mtable th:first-child, .tp-mtable td:first-child { text-align: left; }
+.tp-mtable td { padding: 8px 10px; border-bottom: 1px dashed var(--border); color: var(--text); text-align: center; }
+.tp-mname { font-weight: 700; text-align: left !important; }
+.tp-mnum { font-variant-numeric: tabular-nums; }
+.tp-mtotal { font-weight: 800; color: var(--primary, #2bb187); }
+.tp-tracknote { margin-top: 10px; font-size: 12px; color: var(--text-light); }
+
+
+/* 专业增减说明（红字） */
+.tp-rednote {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(225, 29, 72, 0.35);
+  background: rgba(244, 63, 94, 0.06);
+  color: #e11d48;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.tp-rednote b { font-weight: 800; }
+html.dark .tp-rednote { border-color: rgba(244, 63, 94, 0.4); background: rgba(244, 63, 94, 0.08); color: #fb7185; }
+
 </style>
