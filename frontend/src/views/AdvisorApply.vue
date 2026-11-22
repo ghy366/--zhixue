@@ -17,8 +17,20 @@
     </div>
 
     <template v-if="pageTab === 'select'">
-    <!-- ===== 顶部统计卡（统一高度/图标/字号 + 真实口径） ===== -->
-    <div class="stats-grid">
+    <!-- ===== 已确认：毕设旅程条（横向 8 节点，与工作台里程碑同源） ===== -->
+    <div v-if="approvedAdvise" class="aa-journey">
+      <div class="aj-track">
+        <template v-for="(s, i) in flowSteps" :key="i">
+          <div class="aj-step" :class="s.state">
+            <i class="aj-dot">{{ s.state === 'done' ? '✓' : i + 1 }}</i>
+            <span class="aj-name">{{ s.label }}</span>
+          </div>
+          <i v-if="i < flowSteps.length - 1" class="aj-line" :class="{ filled: s.state === 'done' }" />
+        </template>
+      </div>
+    </div>
+    <!-- ===== 未确认：双选数据卡 ===== -->
+    <div v-else class="stats-grid">
       <div class="stat-card">
         <div class="stat-icon blue" v-html="svgIcon('graduation-cap')" />
         <div>
@@ -77,6 +89,17 @@
           </div>
           <div class="aa-choice-field" v-if="g.preferenceText"><label>{{ t('意向说明') }}</label><span>{{ g.preferenceText }}</span></div>
           <div class="aa-choice-field" v-if="g.teacherReply"><label>{{ t('导师回复') }}</label><span class="aa-reply">{{ g.teacherReply }}</span></div>
+          <div v-if="g.status === 'approved'" class="aa-topic-line">🎯 {{ g.topic || t('课题待定') }}</div>
+          <div class="aa-btn-row">
+            <button class="aa-chip-btn primary" @click="$router.push('/workspace')">{{ t('进入工作台') }}</button>
+            <button class="aa-chip-btn" @click="$router.push({ path: '/workspace', query: { student: g.id, tab: 'chat' } })">{{ t('私聊导师') }}</button>
+          </div>
+          <div v-if="g.status === 'approved'" class="aa-grad-stats">
+            <div class="ags"><b>{{ guidanceCount }}</b><span>{{ t('指导记录') }}</span></div>
+            <div class="ags"><b>{{ plagInfo?.status === 'passed' ? plagInfo.repeatRate + '%' : '—' }}</b><span>{{ t('查重率') }}</span></div>
+            <div class="ags"><b :class="qualifiedNow ? 'ok' : 'no'">{{ qualifiedNow ? t('具备') : t('未达') }}</b><span>{{ t('答辩资格') }}</span></div>
+            <div class="ags"><b v-if="gradTotal != null" class="ok">{{ gradTotal }}</b><b v-else>—</b><span>{{ t('毕设总评') }}</span></div>
+          </div>
           <div class="aa-choice-foot">
             <span class="aa-choice-time">{{ fmtTime(g.createdAt) }}</span>
             <button v-if="g.status === 'pending'" class="btn btn-outline btn-sm aa-cancel"
@@ -90,6 +113,7 @@
           <div class="aa-flow-head">
             <span class="aa-flow-title">{{ t('双选流程') }}</span>
             <span class="aa-flow-next" v-if="nextStepHint">{{ t('下一步') }}：{{ nextStepHint }}</span>
+            <button class="aa-goto-ws" @click="$router.push('/workspace')">{{ t('去工作台推进 →') }}</button>
           </div>
           <div class="aa-flow-steps">
             <div v-for="(s, i) in flowSteps" :key="i" class="aa-flow-step" :class="s.state">
@@ -118,9 +142,13 @@
       <div class="section-header">
         <div class="section-title" v-html="svgIcon('graduation-cap') + ' ' + t('导师列表')"></div>
         <span class="aa-summary">{{ t('总余位') }} <b>{{ totalRemain }}</b> · {{ t('满额导师') }} <b>{{ fullCount }}</b></span>
+        <button v-if="approvedAdvise" class="aa-browse-toggle" @click="browseAdvisors = !browseAdvisors">
+          {{ browseAdvisors ? t('收起列表 ▲') : t('浏览全部导师 ▼') }}
+        </button>
       </div>
 
       <!-- 搜索与筛选 -->
+      <div v-show="!approvedAdvise || browseAdvisors">
       <div class="aa-filter">
         <input v-model="fKw" class="aa-input aa-search" type="text" :placeholder="t('搜索导师姓名 / 工号')">
         <!-- 学院同步：后端已按学生本院强制隔离，这里展示锁定徽章而非筛选 -->
@@ -174,6 +202,7 @@
       <div v-if="!filteredAdvisors.length" class="empty-state aa-no-match">
         <div class="empty-icon" v-html="svgIcon('graduation-cap')" />
         <div class="empty-title">{{ t('没有符合筛选条件的导师') }}</div>
+      </div>
       </div>
     </div>
     <div v-else class="empty-state">
@@ -575,6 +604,7 @@ async function withdrawProposal(p: any) {
 }
 
 /* ===== 筛选状态 ===== */
+const browseAdvisors = ref(false)
 const fKw = ref('')
 const fCollege = ref('')
 const fMajor = ref('')
@@ -604,12 +634,17 @@ const activeAdvisors = computed(() =>
 const approvedAdvise = computed(() => activeAdvisors.value.find((g: any) => g.status === 'approved') || null)
 
 /* 毕业工作台里程碑（开题/中期/终稿/答辩）：双选流程时间线与工作台同源同步 */
+const STAGE_ORDER = ['opening', 'midterm', 'final', 'defense']
 const flowMs = ref<any[]>([])
+const plagInfo = ref<any>(null)
+const guidanceCount = ref(0)
 async function loadFlowMs() {
   const a = approvedAdvise.value
-  if (!a?.id) { flowMs.value = []; return }
+  if (!a?.id) { flowMs.value = []; plagInfo.value = null; guidanceCount.value = 0; return }
   try { const r: any = await http.get('/workspace/milestones', { params: { advisorId: a.id } }); flowMs.value = r?.data || [] }
   catch { flowMs.value = [] }
+  try { const r2: any = await http.get('/workspace/plagiarism', { params: { advisorId: a.id } }); plagInfo.value = r2?.data || null } catch { plagInfo.value = null }
+  try { const r3: any = await http.get('/workspace/guidance', { params: { advisorId: a.id } }); guidanceCount.value = (r3?.data || []).length } catch { guidanceCount.value = 0 }
 }
 const pendingCount = computed(() => activeAdvisors.value.filter((g: any) => g.status === 'pending').length)
 const myStatusOf = (a: any) => {
@@ -663,32 +698,59 @@ const flowSteps = computed(() => {
   } else {
     topicStep = { label: t('确定课题'), state: 'current', detail: t('可在学院课题库申领，或在「自选课题」自拟提交导师审批') }
   }
-  // 「开题与中期」「答辩毕业」：由毕业工作台里程碑驱动（同一接口同口径），不再写死
+  // 「开题 → 中期 → 查重 → 答辩」：与毕业工作台里程碑/查重登记完全同源（真实 8 节点链）
   const msOf = (st: string) => flowMs.value.find((m: any) => m.stage === st)
   const opening = msOf('opening'), midterm = msOf('midterm'), fin = msOf('final'), defense = msOf('defense')
-  let s4: { label: any; state: string; detail?: string }
-  if (opening?.status === 'passed' && midterm?.status === 'passed') {
-    s4 = { label: t('开题与中期'), state: 'done', detail: t('开题报告与中期检查均已通过') }
-  } else if (hasTopic && !pendingProposal.value) {
-    s4 = { label: t('开题与中期'), state: 'current', detail: t('在「毕业设计工作台」推进进度') }
-  } else {
-    s4 = { label: t('开题与中期'), state: 'todo' }
+  const stMap: Record<string, string> = { none: t('未提交'), submitted: t('待审核'), passed: t('已通过'), returned: t('已退回') }
+  const msStep = (label: any, m: any, hint: any) => {
+    if (!m || m.status === 'none') {
+      const prevPassed = flowMs.value.filter((x: any) => x.stage && m && STAGE_ORDER.indexOf(x.stage) < STAGE_ORDER.indexOf(m.stage))
+        .every((x: any) => x.status === 'passed')
+      const reachable = prevPassed || m == null
+      return { label, state: m && reachable && hasTopic ? 'current' : 'todo', detail: reachable ? hint : undefined }
+    }
+    if (m.status === 'submitted') return { label, state: 'current', detail: t('{s} · 提交于 {t}', { s: stMap[m.status], t: fmtTime(m.submittedAt) }) }
+    if (m.status === 'returned') return { label, state: 'current', detail: t('已退回：{c}', { c: m.teacherComment || t('请查看导师评语') }) }
+    return { label, state: 'done', detail: t('已通过 · 审核 {t}', { t: fmtTime(m.reviewedAt) }) }
   }
-  let s5: { label: any; state: string; detail?: string }
-  if (defense?.status === 'passed') {
-    s5 = { label: t('答辩毕业'), state: 'done',
-      detail: defense.totalScore != null ? t('答辩通过 · 毕设总评 {n} 分', { n: defense.totalScore }) : t('答辩已通过') }
-  } else if ((fin && fin.status !== 'none') || (defense && defense.status !== 'none')) {
-    s5 = { label: t('答辩毕业'), state: 'current', detail: t('论文终稿与答辩推进中') }
+  const openingStep = msStep(t('开题报告'), opening, t('在「毕业设计工作台」提交开题报告'))
+  const midtermStep = msStep(t('中期检查'), midterm, t('在「毕业设计工作台」提交中期检查材料'))
+  // 查重：终稿通过后解锁登记，达标获得答辩资格
+  let plagStep: { label: any; state: string; detail?: string }
+  if (plagInfo.value?.status === 'passed') {
+    plagStep = { label: t('查重达标'), state: 'done', detail: t('重复率 {n}% · 已获答辩资格', { n: plagInfo.value.repeatRate }) }
+  } else if (plagInfo.value?.status === 'submitted') {
+    plagStep = { label: t('查重达标'), state: 'current', detail: t('重复率 {n}% · 待导师审核', { n: plagInfo.value.repeatRate }) }
+  } else if (plagInfo.value?.status === 'returned') {
+    plagStep = { label: t('查重达标'), state: 'current', detail: t('已退回：{c}', { c: plagInfo.value.teacherComment || t('请降低重复率后重新提交') }) }
+  } else if (fin?.status === 'passed') {
+    plagStep = { label: t('查重达标'), state: 'current', detail: t('在「毕业设计工作台」提交查重登记（上限 {n}%）', { n: plagInfo.value?.maxRate ?? 30 }) }
   } else {
-    s5 = { label: t('答辩毕业'), state: 'todo' }
+    plagStep = { label: t('查重达标'), state: 'todo' }
+  }
+  let defenseStep: { label: any; state: string; detail?: string }
+  if (defense?.status === 'passed') {
+    defenseStep = { label: t('答辩毕业'), state: 'done',
+      detail: defense.totalScore != null ? t('答辩通过 · 毕设总评 {n} 分（导师40% + 评阅20% + 答辩40%）', { n: defense.totalScore }) : t('答辩已通过') }
+  } else if (defense && defense.status !== 'none') {
+    defenseStep = { label: t('答辩毕业'), state: 'current', detail: t('答辩材料推进中') }
+  } else {
+    defenseStep = { label: t('答辩毕业'), state: 'todo' }
   }
   return [
     { label: t('提交志愿'), state: 'done', detail: fmtTime(a.createdAt) },
     { label: t('导师确认'), state: 'done', detail: fmtTime(a.updatedAt) },
     topicStep,
-    s4, s5,
+    openingStep, midtermStep, plagStep, defenseStep,
   ]
+})
+const gradTotal = computed(() => {
+  const d = flowMs.value.find((m: any) => m.stage === 'defense')
+  return d && d.totalScore != null ? d.totalScore : null
+})
+const qualifiedNow = computed(() => {
+  const midterm = flowMs.value.find((m: any) => m.stage === 'midterm')
+  return midterm?.status === 'passed' && plagInfo.value?.status === 'passed'
 })
 const nextStepHint = computed(() => {
   if (pendingProposal.value) {
@@ -1076,4 +1138,37 @@ onMounted(() => {
 .empty-state { text-align: center; padding: 60px 20px; color: var(--text-light); }
 .empty-icon { font-size: 48px; opacity: 0.3; margin-bottom: 10px; }
 .empty-title { font-size: 14px; font-weight: 600; }
+
+/* ===== 毕设关键数据条（已确认卡）===== */
+.aa-grad-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: auto; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--primary) 6%, transparent); }
+.ags { text-align: center; }
+.ags b { display: block; font-size: 16px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.ags b.ok { color: #16a34a; }
+.ags b.no { color: var(--text-light); }
+.ags span { font-size: 10.5px; color: var(--text-light); }
+.aa-goto-ws { margin-left: auto; padding: 5px 12px; border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent); border-radius: 999px; background: transparent; color: var(--primary); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .2s; }
+.aa-goto-ws:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+
+
+/* ===== 毕设旅程条（已确认态）===== */
+.aa-journey { background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 18px 22px; overflow-x: auto; }
+.aj-track { display: flex; align-items: flex-start; gap: 4px; min-width: 860px; }
+.aj-step { flex: 1; min-width: 86px; text-align: center; }
+.aj-dot { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; font-size: 13px; font-weight: 800; font-style: normal; background: color-mix(in srgb, var(--text-light) 14%, transparent); color: var(--text-light); }
+.aj-step.done .aj-dot { background: var(--primary); color: #fff; }
+.aj-step.current .aj-dot { background: #f59e0b; color: #fff; box-shadow: 0 0 0 4px rgba(245,158,11,.2); animation: aj-pulse 1.6s ease-in-out infinite; }
+@keyframes aj-pulse { 0%, 100% { box-shadow: 0 0 0 4px rgba(245,158,11,.18); } 50% { box-shadow: 0 0 0 7px rgba(245,158,11,.08); } }
+.aj-name { display: block; margin-top: 7px; font-size: 12px; color: var(--text-light); white-space: nowrap; }
+.aj-step.done .aj-name { color: var(--text); font-weight: 700; }
+.aj-step.current .aj-name { color: #d97706; font-weight: 800; }
+.aj-line { flex: 1; height: 3px; border-radius: 2px; margin-top: 14px; background: color-mix(in srgb, var(--text-light) 16%, transparent); }
+.aj-line.filled { background: var(--primary); }
+.aa-topic-line { font-size: 13px; color: var(--primary); margin-top: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aa-btn-row { display: flex; gap: 8px; margin-top: 10px; }
+.aa-chip-btn { flex: 1; padding: 7px 0; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--text); font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .2s, border-color .2s; }
+.aa-chip-btn.primary { border-color: color-mix(in srgb, var(--primary) 45%, transparent); color: var(--primary); }
+.aa-chip-btn:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.aa-browse-toggle { padding: 5px 14px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-light); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.aa-browse-toggle:hover { color: var(--text); border-color: var(--primary); }
+
 </style>

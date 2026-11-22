@@ -54,11 +54,31 @@ public class GraduateMilestone {
     @Column(name = "advisor_score")
     private Integer advisorScore;
 
+    /** 评阅教师 id（教务指派的交叉评阅，不能是导师本人；答辩节点使用） */
+    @Column(name = "reviewer_id")
+    private Long reviewerId;
+
+    /** 评阅教师姓名（冗余，指派时快照） */
+    @Column(name = "reviewer_name", length = 50)
+    private String reviewerName;
+
+    /** 评阅教师评分（0-100，答辩节点使用） */
+    @Column(name = "reviewer_score")
+    private Integer reviewerScore;
+
+    /** 评阅教师评语 */
+    @Column(name = "reviewer_comment", columnDefinition = "TEXT")
+    private String reviewerComment;
+
+    /** 评阅时间 */
+    @Column(name = "reviewer_at")
+    private LocalDateTime reviewerAt;
+
     /** 答辩组评分（0-100，答辩节点使用） */
     @Column(name = "defense_score")
     private Integer defenseScore;
 
-    /** 毕设总评 = 导师评分×40% + 答辩组评分×60% */
+    /** 毕设总评 = 导师评分×40% + 评阅教师×20% + 答辩组评分×40%（三方评分链） */
     @Column(name = "total_score")
     private Integer totalScore;
 
@@ -94,6 +114,16 @@ public class GraduateMilestone {
     public void setTeacherComment(String teacherComment) { this.teacherComment = teacherComment; }
     public Integer getAdvisorScore() { return advisorScore; }
     public void setAdvisorScore(Integer advisorScore) { this.advisorScore = advisorScore; }
+    public Long getReviewerId() { return reviewerId; }
+    public void setReviewerId(Long reviewerId) { this.reviewerId = reviewerId; }
+    public String getReviewerName() { return reviewerName; }
+    public void setReviewerName(String reviewerName) { this.reviewerName = reviewerName; }
+    public Integer getReviewerScore() { return reviewerScore; }
+    public void setReviewerScore(Integer reviewerScore) { this.reviewerScore = reviewerScore; }
+    public String getReviewerComment() { return reviewerComment; }
+    public void setReviewerComment(String reviewerComment) { this.reviewerComment = reviewerComment; }
+    public LocalDateTime getReviewerAt() { return reviewerAt; }
+    public void setReviewerAt(LocalDateTime reviewerAt) { this.reviewerAt = reviewerAt; }
     public Integer getDefenseScore() { return defenseScore; }
     public void setDefenseScore(Integer defenseScore) { this.defenseScore = defenseScore; }
     public Integer getTotalScore() { return totalScore; }

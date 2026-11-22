@@ -22,6 +22,32 @@
             <div class="ws-collect-foot">{{ t('提交率 {pct}% · 共 {n} 名学生', { pct: collectPct, n: teacherStudents.length }) }}</div>
           </div>
 
+          <!-- 评阅任务（三方评分链：教务指派的交叉评阅） -->
+          <div v-if="reviewTasks.length" class="ws-collect rt-box">
+            <div class="ws-collect-title">🧮 {{ t('评阅任务') }}
+              <span class="rt-badge" :class="{ done: reviewTasks.every(x => x.scored) }">
+                {{ reviewTasks.filter(x => x.scored).length }} / {{ reviewTasks.length }}
+              </span>
+            </div>
+            <div v-for="rt in reviewTasks" :key="rt.advisorId" class="rt-item">
+              <div class="rt-head">
+                <b>{{ rt.studentName }}</b>
+                <small>{{ rt.studentNo }} · {{ rt.advisorName }} 指导</small>
+              </div>
+              <div v-if="rt.topic" class="rt-topic">🎯 {{ rt.topic }}</div>
+              <template v-if="!rt.scored">
+                <div class="rt-form">
+                  <input type="number" v-model.number="rt._score" min="0" max="100" class="rt-score" :placeholder="t('评分')">
+                  <input v-model="rt._comment" class="rt-comment" :placeholder="t('评语（可选）')">
+                  <button class="rt-btn" :disabled="rt._score == null || rt._score < 0 || rt._score > 100" @click="submitReview(rt)">
+                    {{ t('提交评分') }}
+                  </button>
+                </div>
+              </template>
+              <div v-else class="rt-done">✅ {{ t('已评 {n} 分', { n: rt.reviewerScore }) }}<span v-if="rt.reviewerComment"> · {{ rt.reviewerComment }}</span></div>
+            </div>
+          </div>
+
           <!-- 筛选 -->
           <div class="ws-filter">
             <button v-for="f in FILTERS" :key="f.key" class="ws-filter-btn"
@@ -84,7 +110,8 @@
           <div class="sp-meta">
             <span>{{ t('论文') }} <b>v{{ stuPaperCount }}</b></span>
             <span v-if="stuPaperCount" class="sp-status" :class="stuPaperStatus">{{ paperLabel(stuPaperStatus) }}</span>
-            <span v-if="defenseTotal != null" class="sp-thesis">🎯 {{ t('毕设总评') }} <b>{{ defenseTotal }}</b><small>（{{ t('导师 40% + 答辩 60%') }}）</small></span>
+            <span v-if="plagInfo" class="sp-status" :class="plagChipCls">🔍 {{ plagChipText }}</span>
+            <span v-if="defenseTotal != null" class="sp-thesis">🎯 {{ t('毕设总评') }} <b>{{ defenseTotal }}</b><small>（{{ t('导师 40% + 评阅 20% + 答辩 40%') }}）</small></span>
             <span v-if="deadline" class="sp-deadline" :class="deadlineCls">{{ t('要求截止：') }}<b>{{ deadlineText }}</b></span>
             <span v-if="!msAllDone" class="sp-hint">{{ msNextHint }}</span>
             <span v-else class="sp-hint done">🎉 {{ t('全部流程已完成') }}</span>
@@ -121,6 +148,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import http from '@/api'
 import { t } from '@/i18n'
+import { ElMessage } from 'element-plus'
 import WorkspaceDetail from './WorkspaceDetail.vue'
 
 const route = useRoute()
@@ -132,6 +160,25 @@ const isTeacher = computed(() => role.value === 'teacher')
 const teacherStudents = ref<any[]>([])
 const myWorkspaces = ref<any[]>([])
 const teacherStartTab = ref<'req' | 'paper' | 'anno' | 'chat' | null>(null)
+
+/* ===== 评阅任务（三方评分链：教务指派的交叉评阅） ===== */
+const reviewTasks = ref<any[]>([])
+async function loadReviewTasks() {
+  if (!isTeacher.value) { reviewTasks.value = []; return }
+  try {
+    const r: any = await http.get('/workspace/my-review-tasks')
+    reviewTasks.value = (r?.data || []).map((x: any) => ({ ...x, _score: null, _comment: '' }))
+  } catch { reviewTasks.value = [] }
+}
+async function submitReview(rt: any) {
+  try {
+    await http.post('/workspace/review-score', { advisorId: rt.advisorId, score: rt._score, comment: rt._comment })
+    ElMessage.success(t('评阅评分已提交'))
+    await loadReviewTasks()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || t('提交失败'))
+  }
+}
 const wsDetail = ref<any>(null)
 const loading = ref(true)
 const selectedAdvisorId = ref<number | null>(null)
@@ -170,7 +217,23 @@ async function loadMs() {
     const r: any = await http.get('/workspace/milestones', { params: { advisorId: selectedAdvisorId.value } })
     msList.value = r?.data || []
   } catch { msList.value = [] }
+  try {
+    const r2: any = await http.get('/workspace/plagiarism', { params: { advisorId: selectedAdvisorId.value } })
+    plagInfo.value = r2?.data || null
+  } catch { plagInfo.value = null }
 }
+const plagInfo = ref<any>(null)
+const plagChipCls = computed(() => {
+  const st = plagInfo.value?.status
+  return st === 'passed' ? 'ok' : st === 'submitted' ? 'amber' : st === 'returned' ? 'bad' : ''
+})
+const plagChipText = computed(() => {
+  const st = plagInfo.value?.status
+  if (st === 'passed') return t('查重达标 {n}%', { n: plagInfo.value.repeatRate })
+  if (st === 'submitted') return t('查重待审核')
+  if (st === 'returned') return t('查重已退回')
+  return t('查重未登记')
+})
 const msDoneCount = computed(() => msList.value.filter((m: any) => m.status === 'passed').length)
 const msAllDone = computed(() => msList.value.length > 0 && msList.value.every((m: any) => m.status === 'passed'))
 const defenseTotal = computed(() => {
@@ -324,6 +387,8 @@ async function load() {
       if (list.length > 0) {
         selectedAdvisorId.value = list[0].advisorId
         await Promise.all([loadDetail(list[0].advisorId), loadMs()])
+      } else {
+        loading.value = false   // 尚未确认导师：结束加载态，让空态引导文案显示
       }
     } else if (isTeacher.value) {
       const r: any = await http.get('/workspace/teacher/students')
@@ -350,6 +415,7 @@ async function load() {
 onMounted(() => {
   auth.loadFromStorage()
   load()
+  loadReviewTasks()
 })
 </script>
 
@@ -476,4 +542,32 @@ onMounted(() => {
 .std-item.urgent .std-text { color: #b45309; }
 .std-item.danger .std-text { color: #be123c; font-weight: 600; }
 .std-go { font-size: 12px; color: var(--primary); font-weight: 600; flex-shrink: 0; }
+
+/* ===== 评阅任务 ===== */
+.rt-box { border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+.rt-badge { font-size: 11px; font-weight: 700; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); padding: 2px 8px; border-radius: 999px; margin-left: 6px; }
+.rt-badge.done { color: #16a34a; background: rgba(22,163,74,.12); }
+.rt-item { border-top: 1px dashed var(--border); padding: 8px 0 6px; }
+.rt-head { display: flex; align-items: baseline; gap: 6px; }
+.rt-head b { font-size: 13.5px; color: var(--text); }
+.rt-head small { font-size: 11.5px; color: var(--text-light); }
+.rt-topic { font-size: 12px; color: var(--primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-form { display: flex; gap: 6px; margin-top: 6px; }
+.rt-score { width: 64px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg); color: var(--text); font-family: inherit; }
+.rt-comment { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg); color: var(--text); font-family: inherit; font-size: 12px; }
+.rt-btn { padding: 5px 10px; border: none; border-radius: 8px; background: var(--primary); color: #fff; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.rt-btn:disabled { opacity: .45; cursor: not-allowed; }
+.rt-done { margin-top: 6px; font-size: 12.5px; color: #16a34a; }
+
+
+/* ===== 课题进度卡视觉升级 ===== */
+.stu-progress { padding: 18px 22px; border-radius: 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 5%, var(--card)), var(--card)); box-shadow: 0 10px 26px -20px rgba(0, 0, 0, .5); }
+.sp-dot { width: 22px; height: 22px; border: 2.5px solid rgba(148, 163, 184, .4); }
+.sp-step::before { top: 10px; height: 3px; border-radius: 2px; }
+.sp-step.done::before { background: linear-gradient(90deg, #2bb187, #4ade80); }
+.sp-step.cur .sp-dot { border-color: #2bb187; box-shadow: 0 0 0 5px rgba(43, 177, 135, .16); animation: sp-pulse 1.8s ease-in-out infinite; }
+@keyframes sp-pulse { 0%, 100% { box-shadow: 0 0 0 5px rgba(43, 177, 135, .15); } 50% { box-shadow: 0 0 0 8px rgba(43, 177, 135, .07); } }
+.sp-step span:last-child { font-size: 12.5px; }
+.sp-stage { padding: 2px 10px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 10%, transparent); }
+
 </style>

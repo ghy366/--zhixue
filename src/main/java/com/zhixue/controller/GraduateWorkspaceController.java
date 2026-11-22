@@ -80,6 +80,165 @@ public class GraduateWorkspaceController {
 
 
 
+    // ===== 指导记录（维普/超星同款过程管理环节）=====
+
+    @GetMapping("/guidance")
+    public ApiResponse<?> guidanceList(@RequestParam Long advisorId, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        try {
+            return ApiResponse.ok(ws.guidanceList(advisorId, u.getId(), u.getRole()));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/guidance")
+    public ApiResponse<?> addGuidance(@RequestBody Map<String, Object> body, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"teacher".equals(u.getRole())) return ApiResponse.fail("仅导师可登记指导记录");
+        try {
+            return ApiResponse.ok("指导记录已登记", ws.addGuidance(
+                    Long.valueOf(body.get("advisorId").toString()), u.getId(),
+                    (String) body.get("recordDate"), (String) body.get("method"), (String) body.get("content")));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/guidance/{id}")
+    public ApiResponse<?> delGuidance(@PathVariable Long id, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"teacher".equals(u.getRole())) return ApiResponse.fail("仅导师可删除指导记录");
+        try {
+            ws.deleteGuidance(id, u.getId());
+            return ApiResponse.ok("已删除", null);
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    // ===== 评阅教师（三方评分链）=====
+
+    /** 评阅教师的待评阅任务列表 */
+    @GetMapping("/my-review-tasks")
+    public ApiResponse<?> myReviewTasks(HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"teacher".equals(u.getRole())) return ApiResponse.fail("仅教师");
+        try {
+            return ApiResponse.ok(ws.myReviewTasks(u.getId()));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /** 评阅教师提交评分 */
+    @PostMapping("/review-score")
+    public ApiResponse<?> reviewScore(@RequestBody Map<String, Object> body, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"teacher".equals(u.getRole())) return ApiResponse.fail("仅评阅教师可评分");
+        try {
+            return ApiResponse.ok(ws.submitReviewScore(
+                    Long.valueOf(body.get("advisorId").toString()), u.getId(),
+                    body.get("score") == null ? null : Integer.valueOf(body.get("score").toString()),
+                    (String) body.get("comment")));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    // ===== 教务端：毕业进度总览 + 评阅指派（仅管理员）=====
+
+    @GetMapping("/admin-overview")
+    public ApiResponse<?> adminOverview(HttpServletRequest req) {
+        User u = me(req);
+        if (u == null || !"admin".equals(u.getRole())) return ApiResponse.fail("仅管理员可查看");
+        return ApiResponse.ok(ws.adminGradOverview());
+    }
+
+    @PostMapping("/assign-reviewer")
+    public ApiResponse<?> assignReviewer(@RequestBody Map<String, Object> body, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null || !"admin".equals(u.getRole())) return ApiResponse.fail("仅管理员可指派评阅教师");
+        try {
+            return ApiResponse.ok(ws.assignReviewer(
+                    Long.valueOf(body.get("advisorId").toString()),
+                    Long.valueOf(body.get("reviewerId").toString())));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    // ===== 查重登记（定稿 → 查重 → 达标获得答辩资格）=====
+
+    @GetMapping("/plagiarism")
+    public ApiResponse<?> plagiarismView(@RequestParam Long advisorId, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        try {
+            return ApiResponse.ok(ws.plagiarismView(advisorId, u.getId(), u.getRole()));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /** 学生提交查重登记（multipart：重复率 + 说明 + 报告单文件） */
+    @PostMapping(value = "/plagiarism", consumes = "multipart/form-data")
+    public ApiResponse<?> submitPlagiarism(@RequestParam Long advisorId,
+            @RequestParam Double rate,
+            @RequestParam(required = false) String content,
+            @RequestParam(required = false) MultipartFile file,
+            HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"student".equals(u.getRole())) return ApiResponse.fail("仅学生可提交查重登记");
+        try {
+            return ApiResponse.ok("查重登记已提交，等待导师审核", ws.submitPlagiarism(advisorId, u.getId(), rate, content, file));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /** 导师审核查重（passed/returned；重复率超上限不能通过） */
+    @PostMapping("/plagiarism/{id}/review")
+    public ApiResponse<?> reviewPlagiarism(@PathVariable Long id,
+            @RequestBody Map<String, Object> body, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ApiResponse.fail("未登录");
+        if (!"teacher".equals(u.getRole())) return ApiResponse.fail("仅导师可审核");
+        String decision = (String) body.get("decision");
+        String comment = (String) body.get("comment");
+        try {
+            return ApiResponse.ok("passed".equals(decision) ? "查重达标，已获得答辩资格" : "已退回",
+                    ws.reviewPlagiarism(id, u.getId(), decision, comment));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /** 查重报告单下载 */
+    @GetMapping("/plagiarism/download")
+    public ResponseEntity<Resource> downloadPlagiarism(@RequestParam Long advisorId, HttpServletRequest req) {
+        User u = me(req);
+        if (u == null) return ResponseEntity.status(401).build();
+        Path p = ws.plagiarismAbsPath(advisorId, u.getId(), u.getRole());
+        if (p == null || !p.toFile().exists()) return ResponseEntity.status(404).build();
+        try {
+            Resource res = new UrlResource(p.toUri());
+            String encoded = URLEncoder.encode(p.getFileName().toString(), StandardCharsets.UTF_8).replace("+", "%20");
+            return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(res);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
     // ===== 学生 =====
 
     @GetMapping("/my")

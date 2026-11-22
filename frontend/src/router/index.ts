@@ -49,7 +49,10 @@ const routes = [
       { path: 'stats', name: 'Stats', component: () => import('@/views/Stats.vue') },
       { path: 'advise-mgr', name: 'AdviseMgr', component: () => import('@/views/AdviseMgr.vue') },
       { path: 'logs', name: 'Logs', component: () => import('@/views/Logs.vue') },
+      { path: 'makeup-mgr', name: 'MakeupMgr', component: () => import('@/views/MakeupMgr.vue') },
+      { path: 'retake-mgr', name: 'RetakeMgr', component: () => import('@/views/RetakeMgr.vue') },
       { path: 'graduation-audit', name: 'GraduationAudit', component: () => import('@/views/GraduationAudit.vue') },
+    { path: 'graduate-mgr', name: 'GraduateMgr', component: () => import('@/views/GraduateMgr.vue') },
       { path: 'training-plans', name: 'TrainingPlans', component: () => import('@/views/TrainingPlans.vue') },
       { path: 'ai-channels', name: 'AiChannels', component: () => import('@/views/AiChannels.vue') },
 

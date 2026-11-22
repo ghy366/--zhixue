@@ -17,6 +17,10 @@ import com.zhixue.repository.GraduateAdvisorRepository;
 import com.zhixue.repository.GraduatePaperRepository;
 import com.zhixue.repository.GraduateRequirementRepository;
 import com.zhixue.repository.GraduateMilestoneRepository;
+import com.zhixue.repository.GraduateGuidanceRecordRepository;
+import com.zhixue.repository.GraduatePlagiarismRepository;
+import com.zhixue.entity.GraduatePlagiarism;
+import com.zhixue.entity.GraduateGuidanceRecord;
 import com.zhixue.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +44,11 @@ public class GraduateWorkspaceService {
     @Autowired private com.zhixue.repository.GraduateMessageRepository msgRepo;
     @Autowired private com.zhixue.repository.GraduateAnnouncementRepository annoRepo;
     @Autowired private GraduateMilestoneRepository msRepo;
+    @Autowired private GraduateGuidanceRecordRepository gRecRepo;
+    @Autowired private GraduatePlagiarismRepository plagRepo;
+
+    /** 查重重复率上限（%）：超过只能退回，达标才放行答辩资格 */
+    public static final double PLAGIARISM_MAX = 30.0;
     @Autowired private UserRepository userRepo;
     @Autowired private CourseRepository courseRepo;
     @Autowired private EnrollmentRepository enrollmentRepo;
@@ -308,14 +317,22 @@ public class GraduateWorkspaceService {
         for (String st : STAGES) {
             all.stream().filter(m -> st.equals(m.getStage())).findFirst().ifPresent(ordered::add);
         }
+        // 查重登记（终稿通过后解锁）：达标才放行答辩环节
+        GraduatePlagiarism plag = ensurePlagiarism(advisorId);
+        boolean plagPassed = "passed".equals(plag.getStatus());
         List<Map<String, Object>> out = new ArrayList<>();
         String prevStatus = "passed"; // 第一节点始终可提交
         for (GraduateMilestone m : ordered) {
             Map<String, Object> mm = milestoneMap(m);
             boolean unlocked = "passed".equals(prevStatus);
+            boolean canSubmit = "student".equals(role) && unlocked
+                    && ("none".equals(m.getStatus()) || "returned".equals(m.getStatus()));
+            if ("defense".equals(m.getStage()) && !plagPassed) {
+                canSubmit = false;   // 查重未达标：答辩环节锁定
+                mm.put("lockedByPlagiarism", true);
+            }
             mm.put("unlocked", unlocked);
-            mm.put("canSubmit", "student".equals(role) && unlocked
-                    && ("none".equals(m.getStatus()) || "returned".equals(m.getStatus())));
+            mm.put("canSubmit", canSubmit);
             mm.put("canReview", "teacher".equals(role) && "submitted".equals(m.getStatus()));
             out.add(mm);
             prevStatus = m.getStatus();
@@ -379,7 +396,11 @@ public class GraduateWorkspaceService {
         return msRepo.save(m);
     }
 
-    /** 导师审核节点；decision=passed/returned。答辩节点通过时须录入导师评分与答辩组评分（40%/60% 合成总评） */
+    /**
+     * 导师审核节点；decision=passed/returned。
+     * 答辩节点通过须三方分数齐全：导师评分 + 评阅教师评分（教务指派的交叉评阅已录入）+ 答辩组评分，
+     * 总评 = 导师×40% + 评阅×20% + 答辩×40%（对齐真实高校毕设三方评分链）。
+     */
     public GraduateMilestone reviewMilestone(Long id, Long teacherId, String decision, String comment,
             Integer advisorScore, Integer defenseScore) {
         GraduateMilestone m = msRepo.findById(id).orElse(null);
@@ -393,9 +414,16 @@ public class GraduateWorkspaceService {
                         || advisorScore < 0 || advisorScore > 100 || defenseScore < 0 || defenseScore > 100) {
                     throw new IllegalArgumentException("答辩通过须录入 0-100 的导师评分与答辩组评分");
                 }
+                if (m.getReviewerScore() == null) {
+                    throw new IllegalArgumentException("评阅教师尚未评分，暂不能通过答辩节点（三方评分链：导师40% + 评阅20% + 答辩40%）");
+                }
+                GraduatePlagiarism plag = plagRepo.findByAdvisorId(m.getAdvisorId()).orElse(null);
+                if (plag == null || !"passed".equals(plag.getStatus())) {
+                    throw new IllegalArgumentException("查重未达标，暂不能通过答辩节点（先完成查重登记并通过审核）");
+                }
                 m.setAdvisorScore(advisorScore);
                 m.setDefenseScore(defenseScore);
-                m.setTotalScore((int) Math.round(advisorScore * 0.4 + defenseScore * 0.6));
+                m.setTotalScore((int) Math.round(advisorScore * 0.4 + m.getReviewerScore() * 0.2 + defenseScore * 0.4));
             }
             m.setStatus("passed");
         } else if ("returned".equals(decision)) {
@@ -406,6 +434,366 @@ public class GraduateWorkspaceService {
         if (comment != null) m.setTeacherComment(comment.trim());
         m.setReviewedAt(LocalDateTime.now());
         return msRepo.save(m);
+    }
+
+    // ============ 评阅教师（三方评分链：教务指派交叉评阅） ============
+
+    /** 教务指派评阅教师：中期已通过才可指派，且不能是导师本人 */
+    public Map<String, Object> assignReviewer(Long advisorId, Long reviewerId) {
+        GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+        if (ga == null) throw new IllegalArgumentException("双选关系不存在");
+        if (!"approved".equals(ga.getStatus())) throw new IllegalArgumentException("导师关系未确认");
+        User reviewer = userRepo.findById(reviewerId).orElse(null);
+        if (reviewer == null || !"teacher".equals(reviewer.getRole())) throw new IllegalArgumentException("评阅教师必须是教师账号");
+        if (reviewer.getId().equals(ga.getTeacherId())) throw new IllegalArgumentException("评阅教师不能是导师本人");
+        // 中期已通过才进入评阅阶段
+        boolean midtermPassed = msRepo.findByAdvisorId(advisorId).stream()
+                .anyMatch(m -> "midterm".equals(m.getStage()) && "passed".equals(m.getStatus()));
+        if (!midtermPassed) throw new IllegalArgumentException("中期检查通过后才能指派评阅教师");
+        GraduateMilestone defense = msRepo.findByAdvisorId(advisorId).stream()
+                .filter(m -> "defense".equals(m.getStage())).findFirst().orElse(null);
+        if (defense == null) throw new IllegalArgumentException("流程节点异常：缺答辩节点");
+        defense.setReviewerId(reviewer.getId());
+        defense.setReviewerName(reviewer.getName());
+        // 换人时清空旧评分
+        defense.setReviewerScore(null);
+        defense.setReviewerComment(null);
+        defense.setReviewerAt(null);
+        msRepo.save(defense);
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("advisorId", advisorId);
+        r.put("reviewerId", reviewer.getId());
+        r.put("reviewerName", reviewer.getName());
+        r.put("msg", "已指派 " + reviewer.getName() + " 为评阅教师");
+        return r;
+    }
+
+    /** 评阅教师的待评阅任务：我作为评阅教师、中期已通过的任务列表 */
+    public List<Map<String, Object>> myReviewTasks(Long reviewerId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (GraduateMilestone m : msRepo.findAll()) {
+            if (!"defense".equals(m.getStage()) || !reviewerId.equals(m.getReviewerId())) continue;
+            GraduateAdvisor ga = gaRepo.findById(m.getAdvisorId()).orElse(null);
+            if (ga == null) continue;
+            boolean midtermPassed = msRepo.findByAdvisorId(m.getAdvisorId()).stream()
+                    .anyMatch(x -> "midterm".equals(x.getStage()) && "passed".equals(x.getStatus()));
+            if (!midtermPassed) continue;
+            User stu = userRepo.findById(ga.getStudentId()).orElse(null);
+            User tea = userRepo.findById(ga.getTeacherId()).orElse(null);
+            Map<String, Object> t = new LinkedHashMap<>();
+            t.put("advisorId", m.getAdvisorId());
+            t.put("studentName", stu != null ? stu.getName() : "未知");
+            t.put("studentNo", stu != null ? stu.getNo() : "");
+            t.put("studentMajor", stu != null ? stu.getMajor() : "");
+            t.put("advisorName", tea != null ? tea.getName() : "未知");
+            t.put("topic", ga.getTopic());
+            t.put("scored", m.getReviewerScore() != null);
+            t.put("reviewerScore", m.getReviewerScore());
+            t.put("reviewerComment", m.getReviewerComment());
+            out.add(t);
+        }
+        return out;
+    }
+
+    /** 评阅教师提交评分（0-100）+ 评语 */
+    public Map<String, Object> submitReviewScore(Long advisorId, Long reviewerId, Integer score, String comment) {
+        GraduateMilestone m = msRepo.findByAdvisorId(advisorId).stream()
+                .filter(x -> "defense".equals(x.getStage())).findFirst().orElse(null);
+        if (m == null) throw new IllegalArgumentException("流程节点异常：缺答辩节点");
+        if (!reviewerId.equals(m.getReviewerId())) throw new IllegalArgumentException("您未被指派为该生的评阅教师");
+        boolean midtermPassed = msRepo.findByAdvisorId(advisorId).stream()
+                .anyMatch(x -> "midterm".equals(x.getStage()) && "passed".equals(x.getStatus()));
+        if (!midtermPassed) throw new IllegalArgumentException("中期检查未通过，尚未进入评阅阶段");
+        if (score == null || score < 0 || score > 100) throw new IllegalArgumentException("评分须为 0-100");
+        m.setReviewerScore(score);
+        m.setReviewerComment(comment == null ? "" : comment.trim());
+        m.setReviewerAt(LocalDateTime.now());
+        // 兼容历史数据：答辩节点已按旧 40/60 公式通过的学生，补录评阅分后按三方公式重算总评
+        if ("passed".equals(m.getStatus()) && m.getAdvisorScore() != null && m.getDefenseScore() != null) {
+            m.setTotalScore((int) Math.round(m.getAdvisorScore() * 0.4 + score * 0.2 + m.getDefenseScore() * 0.4));
+        }
+        msRepo.save(m);
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("msg", "评阅评分已提交");
+        r.put("score", score);
+        return r;
+    }
+
+    // ============ 指导记录（维普/超星同款过程管理环节） ============
+
+    public List<Map<String, Object>> guidanceList(Long advisorId, Long userId, String role) {
+        GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+        if (ga == null) throw new IllegalArgumentException("工作台不存在");
+        boolean ok = "admin".equals(role)
+                || ("student".equals(role) && ga.getStudentId().equals(userId))
+                || ("teacher".equals(role) && ga.getTeacherId().equals(userId));
+        if (!ok) throw new IllegalArgumentException("无权查看");
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (GraduateGuidanceRecord g : gRecRepo.findByAdvisorIdOrderByRecordDateDescIdDesc(advisorId)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", g.getId());
+            m.put("recordDate", g.getRecordDate() != null ? g.getRecordDate().toString() : null);
+            m.put("method", g.getMethod());
+            m.put("content", g.getContent());
+            m.put("createdAt", g.getCreatedAt() != null ? java.sql.Timestamp.valueOf(g.getCreatedAt()).getTime() : null);
+            out.add(m);
+        }
+        return out;
+    }
+
+    public GraduateGuidanceRecord addGuidance(Long advisorId, Long teacherId, String recordDate, String method, String content) {
+        GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+        if (ga == null) throw new IllegalArgumentException("工作台不存在");
+        if (!ga.getTeacherId().equals(teacherId)) throw new IllegalArgumentException("仅导师可登记指导记录");
+        if (content == null || content.isBlank()) throw new IllegalArgumentException("指导内容不能为空");
+        GraduateGuidanceRecord g = new GraduateGuidanceRecord();
+        g.setAdvisorId(advisorId);
+        g.setStudentId(ga.getStudentId());
+        g.setTeacherId(teacherId);
+        try {
+            g.setRecordDate(recordDate == null || recordDate.isBlank()
+                    ? java.time.LocalDate.now() : java.time.LocalDate.parse(recordDate));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("指导日期格式应为 yyyy-MM-dd");
+        }
+        g.setMethod(method == null || method.isBlank() ? "面谈" : method);
+        g.setContent(content.trim());
+        g.setCreatedAt(LocalDateTime.now());
+        return gRecRepo.save(g);
+    }
+
+    public void deleteGuidance(Long id, Long teacherId) {
+        GraduateGuidanceRecord g = gRecRepo.findById(id).orElse(null);
+        if (g == null) throw new IllegalArgumentException("记录不存在");
+        if (!g.getTeacherId().equals(teacherId)) throw new IllegalArgumentException("只能删除本人登记的记录");
+        gRecRepo.delete(g);
+    }
+
+    // ============ 查重登记（定稿 → 查重 → 达标获得答辩资格） ============
+
+    /** 幂等创建：终稿通过后首次查询即生成记录 */
+    public GraduatePlagiarism ensurePlagiarism(Long advisorId) {
+        return plagRepo.findByAdvisorId(advisorId).orElseGet(() -> {
+            GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+            if (ga == null) throw new IllegalArgumentException("工作台不存在");
+            GraduatePlagiarism c = new GraduatePlagiarism();
+            c.setAdvisorId(advisorId);
+            c.setStudentId(ga.getStudentId());
+            c.setTeacherId(ga.getTeacherId());
+            c.setStatus("none");
+            c.setCreatedAt(LocalDateTime.now());
+            return plagRepo.save(c);
+        });
+    }
+
+    public Map<String, Object> plagiarismView(Long advisorId, Long userId, String role) {
+        GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+        if (ga == null) throw new IllegalArgumentException("工作台不存在");
+        boolean ok = "admin".equals(role)
+                || ("student".equals(role) && ga.getStudentId().equals(userId))
+                || ("teacher".equals(role) && ga.getTeacherId().equals(userId));
+        if (!ok) throw new IllegalArgumentException("无权查看");
+        GraduatePlagiarism c = ensurePlagiarism(advisorId);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", c.getId());
+        m.put("status", c.getStatus());
+        m.put("repeatRate", c.getRepeatRate());
+        m.put("maxRate", PLAGIARISM_MAX);
+        m.put("fileName", c.getFileName());
+        m.put("fileSizeBytes", c.getFileSizeBytes());
+        m.put("content", c.getContent());
+        m.put("teacherComment", c.getTeacherComment());
+        m.put("submittedAt", c.getSubmittedAt() != null ? java.sql.Timestamp.valueOf(c.getSubmittedAt()).getTime() : null);
+        m.put("reviewedAt", c.getReviewedAt() != null ? java.sql.Timestamp.valueOf(c.getReviewedAt()).getTime() : null);
+        // 操作标记：终稿通过后才可提交
+        GraduateMilestone fin = msRepo.findByAdvisorId(advisorId).stream()
+                .filter(x -> "final".equals(x.getStage())).findFirst().orElse(null);
+        boolean finalPassed = fin != null && "passed".equals(fin.getStatus());
+        m.put("canSubmit", "student".equals(role) && finalPassed
+                && ("none".equals(c.getStatus()) || "returned".equals(c.getStatus())));
+        m.put("canReview", "teacher".equals(role) && "submitted".equals(c.getStatus()));
+        m.put("finalPassed", finalPassed);
+        return m;
+    }
+
+    @Transactional
+    public GraduatePlagiarism submitPlagiarism(Long advisorId, Long studentId, Double rate,
+            String content, MultipartFile file) throws IOException {
+        GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+        if (ga == null || !ga.getStudentId().equals(studentId)) throw new IllegalArgumentException("无权提交");
+        GraduateMilestone fin = msRepo.findByAdvisorId(advisorId).stream()
+                .filter(x -> "final".equals(x.getStage())).findFirst().orElse(null);
+        if (fin == null || !"passed".equals(fin.getStatus())) throw new IllegalArgumentException("论文终稿通过后才能提交查重登记");
+        GraduatePlagiarism c = ensurePlagiarism(advisorId);
+        if (!"none".equals(c.getStatus()) && !"returned".equals(c.getStatus()))
+            throw new IllegalArgumentException("查重登记当前不可提交（待审核或已达标）");
+        if (rate == null || rate < 0 || rate > 100) throw new IllegalArgumentException("重复率须为 0-100 的数字");
+        if (content == null || content.isBlank() && (file == null || file.isEmpty()))
+            throw new IllegalArgumentException("请填写查重系统说明或上传报告单");
+        if (file != null && !file.isEmpty()) {
+            long maxBytes = 100L * 1024 * 1024;
+            if (file.getSize() > maxBytes) throw new IllegalArgumentException("文件超过 100MB");
+            String origName = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
+            String lower = origName.toLowerCase();
+            boolean okExt = lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx")
+                          || lower.endsWith(".txt") || lower.endsWith(".zip") || lower.endsWith(".rar");
+            if (!okExt) throw new IllegalArgumentException("查重报告仅支持 pdf/doc/docx/txt/zip/rar");
+            String safeName = origName.replaceAll("[\\\\/:*?\"<>|]", "_");
+            String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            String relPath = "plagiarism/" + advisorId + "/" + ts + "_" + safeName;
+            Path absDir = Paths.get(uploadRoot, "plagiarism", String.valueOf(advisorId));
+            Files.createDirectories(absDir);
+            Files.copy(file.getInputStream(), absDir.resolve(ts + "_" + safeName), StandardCopyOption.REPLACE_EXISTING);
+            c.setFileName(safeName);
+            c.setFilePath(relPath);
+            c.setFileSizeBytes(file.getSize());
+        }
+        c.setRepeatRate(rate);
+        if (content != null && !content.isBlank()) c.setContent(content.trim());
+        c.setStatus("submitted");
+        c.setSubmittedAt(LocalDateTime.now());
+        return plagRepo.save(c);
+    }
+
+    @Transactional
+    public GraduatePlagiarism reviewPlagiarism(Long id, Long teacherId, String decision, String comment) {
+        GraduatePlagiarism c = plagRepo.findById(id).orElse(null);
+        if (c == null) throw new IllegalArgumentException("查重登记不存在");
+        if (!c.getTeacherId().equals(teacherId)) throw new IllegalArgumentException("无权审核");
+        if (!"submitted".equals(c.getStatus())) throw new IllegalArgumentException("该登记没有待审核的提交");
+        if ("passed".equals(decision)) {
+            if (c.getRepeatRate() == null || c.getRepeatRate() > PLAGIARISM_MAX) {
+                throw new IllegalArgumentException("重复率超过 " + PLAGIARISM_MAX + "%，不能达标（只能退回重新修改）");
+            }
+            c.setStatus("passed");
+        } else if ("returned".equals(decision)) {
+            c.setStatus("returned");
+        } else {
+            throw new IllegalArgumentException("decision 必须是 passed 或 returned");
+        }
+        if (comment != null) c.setTeacherComment(comment.trim());
+        c.setReviewedAt(LocalDateTime.now());
+        return plagRepo.save(c);
+    }
+
+    /** 查重报告下载（学生本人 / 指导教师 / 管理员 / 评阅教师） */
+    public Path plagiarismAbsPath(Long advisorId, Long userId, String role) {
+        GraduatePlagiarism c = plagRepo.findByAdvisorId(advisorId).orElse(null);
+        if (c == null || c.getFilePath() == null) return null;
+        GraduateAdvisor ga = gaRepo.findById(advisorId).orElse(null);
+        if (ga == null) return null;
+        boolean allowed = "admin".equals(role)
+                || ("student".equals(role) && ga.getStudentId().equals(userId))
+                || ("teacher".equals(role) && (ga.getTeacherId().equals(userId) || isReviewerOf(ga.getId(), userId)));
+        return allowed ? Paths.get(uploadRoot, c.getFilePath()) : null;
+    }
+
+    private boolean isReviewerOf(Long advisorId, Long teacherId) {
+        return msRepo.findByAdvisorId(advisorId).stream()
+                .anyMatch(m -> "defense".equals(m.getStage()) && teacherId.equals(m.getReviewerId()));
+    }
+
+    /** 教务端毕业进度总览：双选/课题/各阶段漏斗 + 每对师生明细（停留天数/评阅指派/总评） */
+    public Map<String, Object> adminGradOverview() {
+        List<GraduateAdvisor> approved = gaRepo.findAll().stream()
+                .filter(g -> "approved".equals(g.getStatus())).toList();
+        int confirmed = approved.size();
+        int withTopic = 0, openingPassed = 0, midtermPassed = 0, finalPassed = 0, plagPassed = 0, defenseDone = 0;
+        List<Map<String, Object>> pairs = new ArrayList<>();
+        for (GraduateAdvisor ga : approved) {
+            User stu = userRepo.findById(ga.getStudentId()).orElse(null);
+            User tea = userRepo.findById(ga.getTeacherId()).orElse(null);
+            List<GraduateMilestone> ms = msRepo.findByAdvisorId(ga.getId());
+            GraduateMilestone opening = stage(ms, "opening"), midterm = stage(ms, "midterm"),
+                    fin = stage(ms, "final"), defense = stage(ms, "defense");
+            boolean topicSet = ga.getTopic() != null && !ga.getTopic().isBlank();
+            if (topicSet) withTopic++;
+            if (opening != null && "passed".equals(opening.getStatus())) openingPassed++;
+            if (midterm != null && "passed".equals(midterm.getStatus())) midtermPassed++;
+            if (fin != null && "passed".equals(fin.getStatus())) finalPassed++;
+            GraduatePlagiarism pl = plagRepo.findByAdvisorId(ga.getId()).orElse(null);
+            if (pl != null && "passed".equals(pl.getStatus())) plagPassed++;
+            if (defense != null && "passed".equals(defense.getStatus())) defenseDone++;
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("advisorId", ga.getId());
+            p.put("studentNo", stu != null ? stu.getNo() : "");
+            p.put("studentName", stu != null ? stu.getName() : "未知");
+            p.put("studentMajor", stu != null ? stu.getMajor() : "");
+            p.put("advisorName", tea != null ? tea.getName() : "未知");
+            p.put("topic", topicSet ? ga.getTopic() : "未确定课题");
+            p.put("stage", currentStage(opening, midterm, fin, defense, topicSet));
+            p.put("opening", statusCn(opening));
+            p.put("midterm", statusCn(midterm));
+            p.put("final", statusCn(fin));
+            p.put("defense", statusCn(defense));
+            p.put("reviewerName", defense != null ? defense.getReviewerName() : null);
+            p.put("reviewerScore", defense != null ? defense.getReviewerScore() : null);
+            p.put("totalScore", defense != null ? defense.getTotalScore() : null);
+            p.put("guidanceCount", gRecRepo.countByAdvisorId(ga.getId()));
+            GraduatePlagiarism plag = plagRepo.findByAdvisorId(ga.getId()).orElse(null);
+            String plagStatus = plag == null ? "未提交"
+                    : switch (plag.getStatus()) { case "submitted" -> "待审核"; case "passed" -> "已达标";
+                        case "returned" -> "已退回"; default -> "未提交"; };
+            p.put("plagiarism", plagStatus);
+            p.put("repeatRate", plag != null ? plag.getRepeatRate() : null);
+            // 答辩资格（派生）：中期通过 + 查重达标
+            boolean qualified = "已达标".equals(plagStatus) && midterm != null && "passed".equals(midterm.getStatus());
+            p.put("qualified", qualified);
+            // 停留天数：当前阶段最近一次状态变更距今
+            LocalDateTime last = lastTouch(opening, midterm, fin, defense, ga);
+            p.put("stayDays", last == null ? 0 : java.time.temporal.ChronoUnit.DAYS.between(last.toLocalDate(), java.time.LocalDate.now()));
+            pairs.add(p);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("studentTotal", userRepo.findByRole("student").size());
+        out.put("confirmed", confirmed);
+        out.put("withTopic", withTopic);
+        out.put("openingPassed", openingPassed);
+        out.put("midtermPassed", midtermPassed);
+        out.put("finalPassed", finalPassed);
+        out.put("plagPassed", plagPassed);
+        out.put("defenseDone", defenseDone);
+        out.put("pairs", pairs);
+        return out;
+    }
+
+    private GraduateMilestone stage(List<GraduateMilestone> ms, String stage) {
+        return ms.stream().filter(m -> stage.equals(m.getStage())).findFirst().orElse(null);
+    }
+
+    private String currentStage(GraduateMilestone opening, GraduateMilestone midterm,
+                                GraduateMilestone fin, GraduateMilestone defense, boolean topicSet) {
+        if (defense != null && "passed".equals(defense.getStatus())) return "答辩完成";
+        if (fin != null && "passed".equals(fin.getStatus())) return "论文终稿已通过";
+        if (fin != null && "submitted".equals(fin.getStatus())) return "论文终稿待审";
+        if (midterm != null && "passed".equals(midterm.getStatus())) return "评阅与答辩准备";
+        if (midterm != null && "submitted".equals(midterm.getStatus())) return "中期检查待审";
+        if (opening != null && "passed".equals(opening.getStatus())) return "中期进行中";
+        if (opening != null && "submitted".equals(opening.getStatus())) return "开题报告待审";
+        if (opening != null && "returned".equals(opening.getStatus())) return "开题报告已退回";
+        return topicSet ? "待提交开题报告" : "待确定课题";
+    }
+
+    private String statusCn(GraduateMilestone m) {
+        if (m == null) return "—";
+        return switch (m.getStatus()) {
+            case "none" -> "未提交";
+            case "submitted" -> "待审核";
+            case "passed" -> "已通过";
+            case "returned" -> "已退回";
+            default -> m.getStatus();
+        };
+    }
+
+    private LocalDateTime lastTouch(GraduateMilestone opening, GraduateMilestone midterm,
+                                    GraduateMilestone fin, GraduateMilestone defense, GraduateAdvisor ga) {
+        LocalDateTime latest = ga.getUpdatedAt() != null ? ga.getUpdatedAt() : ga.getCreatedAt();
+        for (GraduateMilestone m : new GraduateMilestone[]{opening, midterm, fin, defense}) {
+            if (m == null) continue;
+            if (m.getReviewedAt() != null && m.getReviewedAt().isAfter(latest)) latest = m.getReviewedAt();
+            if (m.getSubmittedAt() != null && m.getSubmittedAt().isAfter(latest)) latest = m.getSubmittedAt();
+        }
+        return latest;
     }
 
     /** 毕设总评（答辩节点合成结果；未出成绩返回 null） */
@@ -459,6 +847,11 @@ public class GraduateWorkspaceService {
         mm.put("fileSizeBytes", m.getFileSizeBytes());
         mm.put("teacherComment", m.getTeacherComment());
         mm.put("advisorScore", m.getAdvisorScore());
+        mm.put("reviewerId", m.getReviewerId());
+        mm.put("reviewerName", m.getReviewerName());
+        mm.put("reviewerScore", m.getReviewerScore());
+        mm.put("reviewerComment", m.getReviewerComment());
+        mm.put("reviewerAt", m.getReviewerAt() != null ? java.sql.Timestamp.valueOf(m.getReviewerAt()).getTime() : null);
         mm.put("defenseScore", m.getDefenseScore());
         mm.put("totalScore", m.getTotalScore());
         mm.put("submittedAt", m.getSubmittedAt() != null ? java.sql.Timestamp.valueOf(m.getSubmittedAt()).getTime() : null);

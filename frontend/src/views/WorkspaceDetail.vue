@@ -22,22 +22,26 @@
     <!-- ===== 原版 ws-tabs（加 Tab: 流程 / 聊天）===== -->
     <div class="ws-tabs">
       <div class="ws-tab" :class="{ active: activeTab === 'flow' }" @click="activeTab = 'flow'">
-        🎓 {{ t('流程') }}
+        <span class="ws-tab-ico" v-html="svgIcon('refresh')" />{{ t('流程') }}
         <span v-if="flowPendingReview" class="ws-tab-dot warn">{{ flowPendingReview }}</span>
       </div>
+      <div class="ws-tab" :class="{ active: activeTab === 'guide' }" @click="activeTab = 'guide'; loadGuidance()">
+        <span class="ws-tab-ico" v-html="svgIcon('book-open')" />{{ t('指导记录') }}
+        <span v-if="guidance.length" class="ws-badge approved">{{ guidance.length }}</span>
+      </div>
       <div class="ws-tab" :class="{ active: activeTab === 'req' }" @click="activeTab = 'req'">
-        📋 {{ role === 'teacher' ? t('发布要求') : t('查看要求') }}
+        <span class="ws-tab-ico" v-html="svgIcon('clipboard')" />{{ role === 'teacher' ? t('发布要求') : t('查看要求') }}
         <span v-if="role === 'student' && reqDeadlineTag" class="ws-tab-dot" :class="reqDeadlineTag.cls">{{ reqDeadlineTag.short }}</span>
       </div>
       <div class="ws-tab" :class="{ active: activeTab === 'paper' }" @click="activeTab = 'paper'">
-        📄 {{ t('论文') }}{{ role === 'teacher' ? t('管理') : t('上传') }}
+        <span class="ws-tab-ico" v-html="svgIcon('file-text')" />{{ t('论文') }}{{ role === 'teacher' ? t('管理') : t('上传') }}
         <span v-if="ws.papers?.length" class="ws-badge" :class="paperBadgeCls">{{ ws.papers.length }}</span>
       </div>
       <div class="ws-tab" :class="{ active: activeTab === 'anno' }" @click="activeTab = 'anno'">
-        📢 {{ t('公告') }}
+        <span class="ws-tab-ico" v-html="svgIcon('megaphone')" />{{ t('公告') }}
         <span v-if="announcements.length" class="ws-badge approved">{{ announcements.length }}</span>
       </div>
-      <div class="ws-tab" :class="{ active: activeTab === 'chat' }" @click="switchChatTab">💬 {{ t('聊天') }}</div>
+      <div class="ws-tab" :class="{ active: activeTab === 'chat' }" @click="switchChatTab"><span class="ws-tab-ico" v-html="svgIcon('message-square')" />{{ t('聊天') }}</div>
     </div>
 
     <!-- ===== Tab 0: 流程里程碑（开题 → 中期 → 论文 → 答辩）===== -->
@@ -46,7 +50,7 @@
       <div class="flow-progress">
         <template v-for="(m, i) in milestones" :key="'p' + m.id">
           <div class="flow-step" :class="m.status">
-            <span class="flow-step-ico">{{ statusIcon(m.status) }}</span>
+            <span class="flow-step-ico" v-html="statusIconSvg(m.status)" />
             <span class="flow-step-name">{{ m.stageName }}</span>
           </div>
           <div v-if="i < milestones.length - 1" class="flow-arrow" :class="{ done: m.status === 'passed' }">→</div>
@@ -58,7 +62,61 @@
 
       <!-- 时间线节点 -->
       <div class="flow-list">
-        <div v-for="m in milestones" :key="m.id" class="flow-node" :class="m.status">
+        <template v-for="m in milestones" :key="m.id">
+        <!-- 查重登记卡：终稿通过后解锁，达标才放行答辩 -->
+        <div v-if="m.stage === 'defense'" class="flow-node plag" :class="plag.status">
+          <div class="flow-dot" v-html="statusIconSvg(plag.status === 'passed' ? 'passed' : plag.status === 'submitted' ? 'submitted' : plag.status === 'returned' ? 'returned' : 'none')" />
+          <div class="flow-body">
+            <div class="flow-head">
+              <b class="flow-stage">{{ t('查重登记') }}</b>
+              <span class="flow-badge" :class="plag.status">{{ plagStatusText }}</span>
+              <span class="flow-times">{{ plag.submittedAt ? t('提交') + ' ' + fmtTime(plag.submittedAt) : '' }} {{ plag.reviewedAt ? t('· 审核') + ' ' + fmtTime(plag.reviewedAt) : '' }}</span>
+            </div>
+            <div class="flow-detail">
+              <div v-if="plag.repeatRate != null" class="flow-title">📈 {{ t('重复率') }} <b :class="{ over: plag.repeatRate > plag.maxRate }">{{ plag.repeatRate }}%</b> <small class="flow-size">（{{ t('上限 {n}%', { n: plag.maxRate }) }}）</small></div>
+              <div v-if="plag.content" class="flow-content">{{ plag.content }}</div>
+            </div>
+            <div v-if="plag.fileName" class="flow-file">
+              📎 <a @click.prevent="downloadPlagiarism()" href="#">{{ plag.fileName }}</a>
+              <span class="flow-size">{{ fmtSize(plag.fileSizeBytes) }}</span>
+            </div>
+            <div v-if="plag.teacherComment" class="flow-comment" :class="plag.status">
+              <span class="fc-label">{{ t('导师评语') }}</span>{{ plag.teacherComment }}
+            </div>
+
+            <!-- 学生提交表单 -->
+            <div v-if="plag.canSubmit" class="flow-form">
+              <div class="ff-title">{{ plag.status === 'returned' ? t('已退回，请修改后重新提交') : t('提交查重登记') }}</div>
+              <div class="ff-row">
+                <input type="number" v-model.number="plagForm.rate" min="0" max="100" class="form-input score" :placeholder="t('重复率 %（如 12.5）')">
+                <input type="file" class="ff-file" @change="(e: any) => plagForm.file = e.target.files[0]">
+              </div>
+              <textarea v-model="plagForm.content" class="form-input" rows="2" :placeholder="t('查重系统说明（如：知网 PMLC / 维普），可选')"></textarea>
+              <div class="ff-row">
+                <button class="btn btn-primary btn-sm" :disabled="plagSubmitting || plagForm.rate == null || plagForm.rate < 0 || plagForm.rate > 100" @click="submitPlagiarism()">
+                  {{ plagSubmitting ? t('提交中…') : t('提交查重登记') }}
+                </button>
+              </div>
+              <div class="ff-hint">{{ t('报告单支持 pdf/doc/docx/txt/zip/rar · 重复率 ≤ {n}% 才能达标', { n: plag.maxRate }) }}</div>
+            </div>
+
+            <!-- 教师审核表单 -->
+            <div v-if="plag.canReview" class="flow-form review">
+              <textarea v-model="plagReview.comment" class="form-input" rows="2" :placeholder="t('评语（达标确认或退回原因）')"></textarea>
+              <div class="ff-row">
+                <button class="btn btn-primary btn-sm" :disabled="plagSubmitting || plag.repeatRate == null || plag.repeatRate > plag.maxRate" @click="reviewPlagiarism('passed')">✅ {{ t('达标，放行答辩') }}</button>
+                <button class="btn btn-outline btn-sm ff-return" :disabled="plagSubmitting" @click="reviewPlagiarism('returned')">↩️ {{ t('退回修改') }}</button>
+              </div>
+              <div v-if="plag.repeatRate != null && plag.repeatRate > plag.maxRate" class="ff-reviewer-warn">⚠️ {{ t('重复率超 {n}%，只能退回', { n: plag.maxRate }) }}</div>
+            </div>
+
+            <div v-if="!plag.canSubmit && !plag.canReview && plag.status !== 'passed'" class="flow-locked">
+              🔒 {{ plag.finalPassed ? t('等待提交查重登记') : t('论文终稿通过后解锁') }}
+            </div>
+          </div>
+        </div>
+
+        <div class="flow-node" :class="m.status">
           <div class="flow-dot" v-html="statusIconSvg(m.status)" />
           <div class="flow-body">
             <div class="flow-head">
@@ -89,9 +147,14 @@
             <div v-if="m.stage === 'defense' && m.totalScore != null" class="flow-score">
               <span>{{ t('导师评分') }} <b>{{ m.advisorScore }}</b> × 40%</span>
               <span>＋</span>
-              <span>{{ t('答辩组评分') }} <b>{{ m.defenseScore }}</b> × 60%</span>
+              <span>{{ t('评阅教师') }}<template v-if="m.reviewerName">（{{ m.reviewerName }}）</template> <b>{{ m.reviewerScore }}</b> × 20%</span>
+              <span>＋</span>
+              <span>{{ t('答辩组评分') }} <b>{{ m.defenseScore }}</b> × 40%</span>
               <span class="fs-eq">=</span>
               <span class="fs-total">{{ t('总评') }} <b>{{ m.totalScore }}</b></span>
+            </div>
+            <div v-else-if="m.stage === 'defense' && role === 'teacher'" class="flow-reviewer-tip">
+              {{ m.reviewerName ? t('评阅教师 {n}：{s} 分', { n: m.reviewerName, s: m.reviewerScore ?? '未评分' }) : t('评阅教师尚未指派（教务在「毕业管理」指派）') }}
             </div>
 
             <!-- 学生提交表单 -->
@@ -113,11 +176,13 @@
               <textarea v-model="reviewForm.comment" class="form-input" rows="2" :placeholder="t('评语（通过寄语或退回原因）')"></textarea>
               <div v-if="m.stage === 'defense'" class="ff-scores">
                 <label>{{ t('导师评分(40%)') }}<input type="number" v-model.number="reviewForm.advisorScore" min="0" max="100" class="form-input score"></label>
-                <label>{{ t('答辩组评分(60%)') }}<input type="number" v-model.number="reviewForm.defenseScore" min="0" max="100" class="form-input score"></label>
-                <span class="fs-preview" v-if="validScores">{{ t('合成总评 {n}', { n: computedTotal }) }}</span>
+                <label>{{ t('评阅教师(20%)') }}<input type="number" :value="m.reviewerScore ?? ''" disabled class="form-input score" :placeholder="m.reviewerName || t('未指派')"></label>
+                <label>{{ t('答辩组评分(40%)') }}<input type="number" v-model.number="reviewForm.defenseScore" min="0" max="100" class="form-input score"></label>
+                <span class="fs-preview" v-if="canPassDefense(m)">{{ t('合成总评 {n}', { n: computedTotal(m) }) }}</span>
+                <div v-if="m.reviewerScore == null" class="ff-reviewer-warn">⚠️ {{ t('评阅教师尚未评分，无法通过答辩节点') }}</div>
               </div>
               <div class="ff-row">
-                <button class="btn btn-primary btn-sm" :disabled="flowSubmitting || (m.stage === 'defense' && !validScores)" @click="reviewMilestone(m, 'passed')">✅ {{ t('通过') }}</button>
+                <button class="btn btn-primary btn-sm" :disabled="flowSubmitting || (m.stage === 'defense' && !canPassDefense(m))" @click="reviewMilestone(m, 'passed')">✅ {{ t('通过') }}</button>
                 <button class="btn btn-outline btn-sm ff-return" :disabled="flowSubmitting" @click="reviewMilestone(m, 'returned')">↩️ {{ t('退回修改') }}</button>
               </div>
             </div>
@@ -126,8 +191,40 @@
             <div v-if="!m.unlocked" class="flow-locked">🔒 {{ t('完成前一道环节后解锁') }}</div>
           </div>
         </div>
+        </template>
       </div>
       <div v-if="!milestones.length" class="empty-card">{{ t('暂无流程数据') }}</div>
+    </div>
+
+    <!-- ===== Tab 0.5: 指导记录（过程管理环节）===== -->
+    <div v-if="activeTab === 'guide'" class="guide-wrap">
+      <div class="guide-head">
+        <b>📝 {{ t('指导记录') }}</b>
+        <span class="guide-sub">{{ t('每次指导登记时间 / 方式 / 内容，作为教务检查的过程性依据') }}</span>
+      </div>
+      <div v-if="role === 'teacher'" class="guide-form">
+        <div class="gf-row">
+          <input type="date" v-model="guideForm.recordDate" class="form-input gf-date">
+          <select v-model="guideForm.method" class="form-input gf-method">
+            <option value="面谈">面谈</option><option value="线上">线上</option><option value="电话">电话</option><option value="其他">其他</option>
+          </select>
+        </div>
+        <textarea v-model="guideForm.content" class="form-input" rows="3" :placeholder="t('指导内容：讨论要点 / 修改意见 / 下一步安排…')"></textarea>
+        <button class="btn btn-primary btn-sm" :disabled="guideSaving || !guideForm.content" @click="addGuidance">
+          {{ guideSaving ? t('保存中…') : t('登记本次指导') }}
+        </button>
+      </div>
+      <div v-if="guidance.length" class="guide-list">
+        <div v-for="g in guidance" :key="g.id" class="guide-item">
+          <div class="gi-head">
+            <span class="gi-date">📅 {{ g.recordDate }}</span>
+            <span class="gi-method">{{ g.method }}</span>
+            <button v-if="role === 'teacher'" class="gi-del" :title="t('删除')" @click="delGuidance(g)">🗑</button>
+          </div>
+          <div class="gi-content">{{ g.content }}</div>
+        </div>
+      </div>
+      <div v-else class="empty-card">{{ role === 'teacher' ? t('还没有指导记录，用上方表单登记第一次指导') : t('暂无指导记录') }}</div>
     </div>
 
     <!-- ===== Tab 1: 要求 & 推荐题目 ===== -->
@@ -475,12 +572,13 @@ import http from '@/api'
 import { t } from '@/i18n'
 
 const props = defineProps<{ ws: any; role: 'student' | 'teacher'; advisorId: number; startTab?: 'flow' | 'req' | 'paper' | 'anno' | 'chat' | null }>()
+const svgIcon = (n: string) => `<svg class="icon"><use href="#i-${n}"/></svg>`
 const emit = defineEmits<{ (e: 'refresh'): void }>()
 const auth = useAuthStore()
 
 const partner = computed(() => props.role === 'student' ? props.ws.teacher : props.ws.student)
 
-const activeTab = ref<'flow' | 'req' | 'paper' | 'anno' | 'chat'>('flow')
+const activeTab = ref<'flow' | 'guide' | 'req' | 'paper' | 'anno' | 'chat'>('flow')
 
 // 待办跳转：Workspace.vue 通过 startTab 传入目标标签
 watch(() => props.startTab, (t) => {
@@ -507,21 +605,124 @@ const validScores = computed(() => {
   return Number.isFinite(s.advisorScore) && Number.isFinite(s.defenseScore)
     && s.advisorScore >= 0 && s.advisorScore <= 100 && s.defenseScore >= 0 && s.defenseScore <= 100
 })
-const computedTotal = computed(() =>
-  Math.round(reviewForm.value.advisorScore * 0.4 + reviewForm.value.defenseScore * 0.6))
+/** 答辩可否通过：导师/答辩组评分合法 + 评阅教师已评分（三方评分链） */
+function canPassDefense(m: any) {
+  return validScores.value && m.reviewerScore != null
+}
+/** 合成总评预览：导师40% + 评阅20%（服务端已录入） + 答辩40% */
+function computedTotal(m: any) {
+  return Math.round(reviewForm.value.advisorScore * 0.4 + (m.reviewerScore || 0) * 0.2 + reviewForm.value.defenseScore * 0.4)
+}
+
+// ===== 指导记录 =====
+const guidance = ref<any[]>([])
+const guideSaving = ref(false)
+const guideForm = ref<any>({ recordDate: '', method: '面谈', content: '' })
+async function loadGuidance() {
+  try {
+    const r: any = await http.get('/workspace/guidance', { params: { advisorId: props.advisorId } })
+    guidance.value = r?.data || []
+  } catch { guidance.value = [] }
+}
+async function addGuidance() {
+  if (guideSaving.value) return
+  guideSaving.value = true
+  try {
+    await http.post('/workspace/guidance', { advisorId: props.advisorId, ...guideForm.value })
+    ElMessage.success(t('指导记录已登记'))
+    guideForm.value = { recordDate: guideForm.value.recordDate, method: '面谈', content: '' }
+    await loadGuidance()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || t('保存失败'))
+  }
+  guideSaving.value = false
+}
+async function delGuidance(g: any) {
+  try {
+    await http.delete(`/workspace/guidance/${g.id}`)
+    await loadGuidance()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || t('删除失败'))
+  }
+}
 
 async function loadMilestones() {
   try {
     const r: any = await http.get('/workspace/milestones', { params: { advisorId: props.advisorId } })
     milestones.value = r?.data || []
   } catch { milestones.value = [] }
+  await loadPlagiarism()
+}
+
+// ===== 查重登记（终稿 → 查重 → 答辩资格）=====
+const plag = ref<any>({ status: 'none', maxRate: 30, canSubmit: false, canReview: false, finalPassed: false })
+const plagForm = ref<any>({ rate: null, content: '', file: null })
+const plagReview = ref<any>({ comment: '' })
+const plagSubmitting = ref(false)
+const plagStatusText = computed(() => {
+  const map: Record<string, string> = { none: t('未提交'), submitted: t('待审核'), passed: t('已达标'), returned: t('已退回') }
+  return map[plag.value.status] || plag.value.status
+})
+async function loadPlagiarism() {
+  try {
+    const r: any = await http.get('/workspace/plagiarism', { params: { advisorId: props.advisorId } })
+    plag.value = { maxRate: 30, ...r?.data }
+  } catch { /* 保持默认 */ }
+}
+async function submitPlagiarism() {
+  if (plagSubmitting.value) return
+  plagSubmitting.value = true
+  try {
+    const fd = new FormData()
+    fd.append('advisorId', String(props.advisorId))
+    fd.append('rate', String(plagForm.value.rate))
+    if (plagForm.value.content) fd.append('content', plagForm.value.content)
+    if (plagForm.value.file) fd.append('file', plagForm.value.file)
+    await http.post('/workspace/plagiarism', fd)
+    ElMessage.success(t('查重登记已提交，等待导师审核'))
+    plagForm.value = { rate: null, content: '', file: null }
+    await loadMilestones()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || t('提交失败'))
+  }
+  plagSubmitting.value = false
+}
+async function reviewPlagiarism(decision: string) {
+  if (plagSubmitting.value) return
+  plagSubmitting.value = true
+  try {
+    await http.post(`/workspace/plagiarism/${plag.value.id}/review`, { decision, comment: plagReview.value.comment })
+    ElMessage.success(decision === 'passed' ? t('查重达标，已获得答辩资格') : t('已退回'))
+    plagReview.value = { comment: '' }
+    await loadMilestones()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || t('操作失败'))
+  }
+  plagSubmitting.value = false
+}
+async function downloadPlagiarism() {
+  try {
+    const r: any = await http.get('/workspace/plagiarism/download', { params: { advisorId: props.advisorId }, responseType: 'blob' })
+    const url = window.URL.createObjectURL(new Blob([r.data]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = plag.value.fileName || '查重报告单'
+    a.click()
+    window.URL.revokeObjectURL(url)
+  } catch { ElMessage.error(t('下载失败')) }
 }
 
 function statusIcon(s: string) {
   return ({ none: '⬜', submitted: '⏳', passed: '✅', returned: '↩️' } as Record<string, string>)[s] || '⬜'
 }
 function statusIconSvg(s: string) {
-  return ({ none: '⬜', submitted: '⏳', passed: '✅', returned: '↩️' } as Record<string, string>)[s] || '⬜'
+  const map: Record<string, string> = {
+    passed: '<svg viewBox="0 0 16 16"><path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    submitted: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 4.8v3.2l2.1 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    returned: '<svg viewBox="0 0 16 16"><path d="M8 3.4v5.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="8" cy="12.1" r="1.2" fill="currentColor"/></svg>',
+    none: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.7" fill="currentColor"/></svg>',
+  }
+  return map[s] || map.none
 }
 function flowStatusText(m: any) {
   const map: Record<string, string> = { none: t('未提交'), submitted: t('待审核'), passed: t('已通过'), returned: t('已退回') }
@@ -1280,4 +1481,52 @@ onMounted(() => {
 .ff-scores .score { width: 76px; padding: 5px 9px; }
 .fs-preview { color: var(--primary); font-weight: 700; }
 .flow-locked { font-size: 12px; color: var(--text-lighter); padding: 4px 0 2px; }
+
+/* ===== 指导记录 Tab ===== */
+.guide-wrap { display: flex; flex-direction: column; gap: 14px; }
+.guide-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.guide-head b { font-size: 15px; color: var(--text); }
+.guide-sub { font-size: 12px; color: var(--text-light); }
+.guide-form { background: color-mix(in srgb, var(--text-light) 5%, transparent); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.gf-row { display: flex; gap: 8px; }
+.gf-date { flex: 1; }
+.gf-method { flex: 0 0 110px; }
+.guide-list { display: flex; flex-direction: column; gap: 10px; }
+.guide-item { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.gi-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.gi-date { font-size: 12.5px; font-weight: 700; color: var(--text); }
+.gi-method { font-size: 11.5px; color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); padding: 2px 10px; border-radius: 999px; }
+.gi-del { margin-left: auto; background: none; border: none; cursor: pointer; opacity: .55; font-size: 14px; }
+.gi-del:hover { opacity: 1; }
+.gi-content { font-size: 13px; line-height: 1.7; color: var(--text); white-space: pre-wrap; }
+/* 评阅提示 */
+.flow-reviewer-tip { margin-top: 8px; font-size: 12.5px; color: var(--text-light); background: color-mix(in srgb, var(--text-light) 6%, transparent); border-radius: 8px; padding: 6px 10px; display: inline-block; }
+.ff-reviewer-warn { font-size: 12px; color: #d97706; margin-top: 4px; }
+
+
+/* 查重登记卡 */
+.flow-node.plag .flow-badge.passed { color: #16a34a; background: rgba(22,163,74,.12); }
+.flow-title b.over { color: #e11d48; }
+.flow-node.plag .ff-hint { font-size: 11.5px; color: var(--text-light); }
+
+
+/* ===== 视觉升级：tab 图标 / 流程节点 SVG / 表单 ===== */
+.ws-tab-ico { display: inline-flex; }
+.ws-tab-ico .icon { width: 15px; height: 15px; }
+.flow-dot svg { width: 18px; height: 18px; }
+.flow-node .flow-dot { color: var(--text-lighter); }
+.flow-node.passed .flow-dot { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 3px 12px -3px rgba(43, 177, 135, .65); }
+.flow-node.submitted .flow-dot { border-color: #f59e0b; background: rgba(245, 158, 11, .13); color: #b45309; }
+.flow-node.returned .flow-dot { border-color: #f43f5e; background: rgba(244, 63, 94, .09); color: #be123c; }
+.flow-node.none .flow-dot { opacity: .8; }
+.flow-step-ico { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; align-items: center; justify-content: center; }
+.flow-step-ico svg { width: 12px; height: 12px; }
+.flow-step.passed .flow-step-ico { background: var(--primary); color: #fff; }
+.flow-step.submitted .flow-step-ico { background: rgba(245, 158, 11, .16); color: #b45309; }
+.flow-step.returned .flow-step-ico { background: rgba(244, 63, 94, .12); color: #be123c; }
+.flow-step.none .flow-step-ico { background: rgba(148, 163, 184, .16); color: #94a3b8; }
+.ff-file { padding: 7px 10px; border: 1.5px dashed var(--border); border-radius: 10px; background: var(--card); cursor: pointer; }
+.ff-file::file-selector-button { padding: 6px 14px; margin-right: 10px; border: none; border-radius: 8px; background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); font-family: inherit; font-weight: 700; font-size: 12px; cursor: pointer; }
+.flow-form .btn-primary { padding: 7px 24px; font-weight: 700; }
+
 </style>
